@@ -41,14 +41,22 @@ b71f35e docs: add task decomposition (TASKS.md)                                 
 144da03 chore: init project structure                                           ← Phase 2
 ```
 
-### ✅ NO uncommitted work — clean checkpoint, Епік 1 RUNTIME VALIDATED
+### ✅ NO uncommitted work — clean checkpoint
+**Епік 1 RUNTIME VALIDATED + Епік 2 на 2.7 (Jupiter parser DONE)**
 
 ### Runtime stack online
-- ✅ Supabase: 5 tables + 6 partitions + RLS + policies + current_user_id() — verified via verify-supabase.ts
-- ✅ Helius free WebSocket: onLogs subscription works, full pipeline tested (81 tx persisted in 5s smoke run, then truncated)
+- ✅ Supabase: 5 tables + 6 partitions + RLS + policies + current_user_id()
+- ✅ Helius free WebSocket: onLogs + getTransaction pipeline (81 tx persisted у smoke run, truncated)
 - ✅ Privy: creds у .env (runtime check у 3.3)
-- ✅ Telegram bot: test ping надіслано, працює (runtime check у 5.12)
+- ✅ Telegram bot: test ping working (runtime check у 5.12)
 - ⏳ GitHub repo: пропущено (зробимо потім)
+
+### Jupiter parser працює на 5/5 mainnet fixtures
+- 3 strategy mint resolution (direct mint accounts → token-account map → owner-spent flows)
+- Native SOL wrap detection (wSOL injection у ownerSpentMints)
+- Manual byte decode (BorshInstructionCoder ламається на variable-length route_plan)
+- VARIANT_LAYOUTS map: v1 fields-at-end, v2 fields-at-start
+- Підтримує: route, shared_accounts_route, *_v2, *_with_token_ledger, exact_out_route variants
 
 ### Helper scripts (packages/db/scripts/)
 - `verify-supabase.ts` — перевіряє state БД
