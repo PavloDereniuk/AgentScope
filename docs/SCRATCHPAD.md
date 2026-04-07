@@ -100,10 +100,12 @@ b71f35e docs: add task decomposition (TASKS.md)                                 
 - **2.11** Інтеграція парсера у ingestion (заповнює `instruction_name` + `parsed_args`)
 - **2.12** (вже частково зроблено у 1.11 client-side — server-side filter NOT applicable з WebSocket fallback)
 
-### Прогрес: 13 / 99 (≈13%) — Епік 1 RUNTIME complete
-- ✅ Епік 1 (Foundation): 12/12 + 1.9b (WS fallback) = 13 tasks committed
+### Прогрес: 24 / 99 (≈24%) — Епік 2 ЗАВЕРШЕНО
+- ✅ Епік 1 (Foundation): 13/13 RUNTIME validated
+- ✅ Епік 2 (Parsers): 11/12 (2.12 N/A для WS fallback). 22 unit tests з реальними mainnet fixtures.
 - ✅ Setup: Supabase + Helius + Privy + Telegram (GitHub later)
-- 📦 Епік 2 (Parsers): починаємо
+- 📦 Епік 3 (REST API) — наступний
+- ⏳ Mainnet runtime валідація (jupiter/kamino persist) — у Тиждень 5
 
 ---
 
