@@ -464,7 +464,10 @@ E8 → E9 (deploy потребує всього)
 
 ## Поточний стан
 
-**Завершено:** 12 / 99 задач (Епік 1 closed for code).
-**Поточна:** **2.1** (Парсер foundation — `packages/parser` deps + types).
+**Завершено:** 24 / 99 задач (Епік 1 + Епік 2).
+**Поточна:** **3.1** (Hono API skeleton + `/health`).
 
-**Юзеру паралельно:** див. `docs/USER-SETUP.md` (інструкції для 1.0a-e + деплой E9).
+**Епік 1:** ✅ 13/13 RUNTIME validated на справжньому Supabase + Helius
+**Епік 2:** ✅ 11/12 (2.12 = N/A для WS fallback). 22 unit tests з реальними mainnet fixtures.
+**Епік 3 (REST API):** наступний.
+**Тести:** 34/34 зелені (27 shared + 7 db PGlite + 22 parser).
