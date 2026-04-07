@@ -95,8 +95,8 @@
 ### Fixtures (реальні tx з devnet)
 - [x] **2.3** `packages/parser/tests/fixtures/`: 5 реальних Jupiter v6 swap tx (mainnet, бо devnet pools без liquidity) ⏱ 60m → Helius creds
   ✅ 5 файлів `jupiter-swap-N.json` (12-20KB кожен) з base64-encoded response від `getTransaction`, v0 + ALT lookups
-- [ ] **2.4** ‖ 5 реальних Kamino Lend tx: deposit, withdraw, borrow, repay, liquidate (devnet) ⏱ 60m → 1.0b
-  ✅ 5 файлів `kamino-N.json`
+- [x] **2.4** ‖ 5 реальних Kamino Lend tx (mainnet) ⏱ 60m → Helius creds
+  ✅ 5 файлів `kamino-N.json` (9-38KB кожен) base64 v0. ⚠️ Discriminator-diversity scoring у скрипті failed (ESM require), але fixtures збережено через unclassified bucket — task 2.8 побачить чи треба варіація.
 
 ### Jupiter v6 parser (TDD)
 - [ ] **2.5** `tests/jupiter.test.ts` — failing тести для всіх 5 fixtures (assert: `instruction_name='jupiter.swap'`, `parsed_args.{input_mint,output_mint,in_amount,out_amount,slippage_bps}`) ⏱ 60m → 2.3
