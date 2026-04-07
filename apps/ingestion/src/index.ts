@@ -14,6 +14,7 @@
  */
 
 import { loadConfig } from './config';
+import { getDb } from './db';
 import {
   attachStreamHandlers,
   buildSubscribeRequest,
@@ -21,6 +22,8 @@ import {
   sendSubscribeRequest,
 } from './grpc-client';
 import { logger } from './logger';
+import { persistTx } from './persist';
+import { createWalletRegistry } from './registry';
 
 async function main(): Promise<void> {
   const config = loadConfig();
@@ -33,6 +36,9 @@ async function main(): Promise<void> {
     },
     'ingestion worker started',
   );
+
+  const db = getDb(config);
+  const registry = await createWalletRegistry(db, logger);
 
   const { stream } = await connectYellowstone({
     url: config.YELLOWSTONE_GRPC_URL,
@@ -50,17 +56,9 @@ async function main(): Promise<void> {
         }
       },
       onTransaction: (tx) => {
-        // Task 1.10: log signature + program_ids for any non-vote tx.
-        // Task 1.11 will write the raw row to agent_transactions.
-        // Task 2.12 will narrow the subscription filter to registered wallets.
-        logger.info(
-          {
-            sig: tx.signature,
-            slot: tx.slot,
-            programs: tx.programIds,
-          },
-          'tx',
-        );
+        // Fire-and-forget — persist errors are logged inside persistTx.
+        // We don't await so the stream doesn't backpressure on slow DB writes.
+        void persistTx({ db, registry, logger }, tx);
       },
       onPing: () => logger.debug('yellowstone ping'),
       onError: (err) => {
@@ -75,12 +73,19 @@ async function main(): Promise<void> {
     logger,
   );
 
+  // 2.12 will populate accountInclude with registry.wallets() for server-
+  // side filtering. For now we keep the broad filter (vote=false, failed=
+  // false) and rely on persist's client-side wallet→agent lookup.
   await sendSubscribeRequest(stream, buildSubscribeRequest({ slots: true, transactions: true }));
-  logger.info('subscribed to slots + transactions (CONFIRMED, no account filter)');
+  logger.info(
+    { registeredAgents: registry.size() },
+    'subscribed to slots + transactions (CONFIRMED, client-side wallet filter)',
+  );
 
   // Graceful shutdown handlers — detach + close stream + flush pino.
   const shutdown = (signal: string) => {
     logger.info({ signal }, 'shutting down');
+    registry.stop();
     detach();
     stream.end();
     setTimeout(() => process.exit(0), 100);

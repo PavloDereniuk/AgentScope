@@ -67,8 +67,8 @@
   ✅ Лог "received slot N" зʼявляється кожні ~400ms
 - [ ] **1.10** Subscribe на transactions для devnet (без фільтра поки) — лог signature + program_ids ⏱ 45m → 1.9
   ✅ Лог `tx <sig> programs=[...]` тече у консоль
-- [ ] **1.11** Insert raw transaction у `agent_transactions` + filter by registered wallets (поєднано з 1.12 — потребують спільної infra: db client + wallet registry) ⏱ 45m → 1.10, 1.6
-  ✅ Запит `SELECT count(*) FROM agent_transactions` росте
+- [x] **1.11** Insert raw tx у `agent_transactions` (client-side filter by wallet→agent map). 2.12 додасть server-side `accountInclude` фільтр у Yellowstone request для bandwidth saving. ⏱ 45m → 1.10, 1.6
+  ✅ Code complete (db client + WalletRegistry + persistTx). Runtime `count(*)` росте — чекає DATABASE_URL + Helius creds
 
 ### CI sanity
 - [ ] **1.12** Зробити `pnpm lint && pnpm typecheck && pnpm test && pnpm build` зеленим у CI ⏱ 30m → all above
@@ -459,7 +459,7 @@ E8 → E9 (deploy потребує всього)
 
 ## Поточний стан
 
-**Завершено:** 7 / 99 задач.
-**Поточна:** **1.8** (ingestion app skeleton — tsx + pino).
+**Завершено:** 11 / 99 задач.
+**Поточна:** **1.12** (CI sanity — pnpm lint && typecheck && test && build зеленим).
 
 **Юзеру паралельно:** див. `docs/USER-SETUP.md` (інструкції для 1.0a-e + деплой E9).

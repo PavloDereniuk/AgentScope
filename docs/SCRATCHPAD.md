@@ -25,6 +25,8 @@
 
 ### Закомічено (git log)
 ```
+<NEXT> feat(ingestion): persist matched transactions to db                       ← 1.11
+03e2393 docs: refresh SCRATCHPAD checkpoint with current state                  ← (recovery anchor)
 f7148ff feat(ingestion): worker skeleton, yellowstone client, tx subscription   ← 1.8+1.9+1.10
 58c6fc4 feat(db): rls session helpers and pglite smoke tests                    ← 1.6+1.7
 b12f0d9 feat(db): rls policies and partitioned transactions                     ← 1.4+1.5
@@ -36,22 +38,7 @@ b71f35e docs: add task decomposition (TASKS.md)                                 
 144da03 chore: init project structure                                           ← Phase 2
 ```
 
-### ⚠️ UNCOMMITTED — задача 1.11 (insert raw tx з фільтром)
-**Стан:** код написано, lint+typecheck зелені, очікує затвердження користувача.
-
-**Файли (untracked):**
-- `apps/ingestion/src/db.ts` — `getDb(config)` lazy singleton (5 conn)
-- `apps/ingestion/src/registry.ts` — `WalletRegistry` з in-memory cache + 30s refresh
-- `apps/ingestion/src/persist.ts` — `persistTx(ctx, tx)` first-match strategy
-
-**Файли (modified):**
-- `apps/ingestion/src/index.ts` — wired db + registry + persistTx у onTransaction
-- `docs/TASKS.md` — оновлено опис 1.11 (filter перенесено з 2.12)
-- `pnpm-lock.yaml` — нові deps
-
-**Що показано користувачу:** повний diff, дрібні рішення, очікуваний runtime output.
-
-**Очікуване рішення:** ОК → закомітити як `feat(ingestion): persist matched transactions to db`.
+### ✅ NO uncommitted work — clean checkpoint
 
 ### Юзер setup status (USER-SETUP.md)
 - ❌ 1.0a Supabase — НЕ зроблено
@@ -70,7 +57,7 @@ b71f35e docs: add task decomposition (TASKS.md)                                 
 6. **Helius free Yellowstone — не підтверджено** — якщо вони не дають gRPC безкоштовно, треба fallback на `connection.onSlotChange()` через WS.
 
 ### Поточна задача
-**1.11** — uncommitted, чекає на ОК від користувача.
+**1.12** — CI sanity (lint+typecheck+test+build зеленим). Чекаю на старт.
 
 ### Наступні задачі (черга)
 - **1.12** CI sanity — `pnpm lint && typecheck && test && build` зеленим у CI
@@ -81,8 +68,8 @@ b71f35e docs: add task decomposition (TASKS.md)                                 
 - **2.5-2.7** TDD Jupiter parser (failing test → IDL → parser → green)
 - **2.8-2.10** TDD Kamino parser
 
-### Прогрес: 10 / 99 (≈10%)
-- Епік 1 (Foundation): 10 / 17 кодинг-задач закомічено + 1 uncommitted (1.11)
+### Прогрес: 11 / 99 (≈11%)
+- Епік 1 (Foundation): 11 / 12 кодинг-задач закомічено (лишається 1.12 — CI sanity)
 - Setup-задачі (1.0a-e): чекаю на користувача
 - Решта епіків: не починалися
 
