@@ -51,10 +51,10 @@
 ### Пакет: db (Drizzle + Supabase)
 - [x] **1.3** `packages/db`: drizzle-orm + drizzle-kit + postgres deps, `drizzle.config.ts`, базовий `client.ts` ⏱ 30m
   ✅ `pnpm --filter @agentscope/db typecheck` зелений
-- [ ] **1.4** `packages/db/src/schema.ts` — таблиці `users`, `agents`, `agent_transactions` (партиціонована), `reasoning_logs`, `alerts`, ENUM-и ⏱ 90m → 1.3
+- [x] **1.4** `packages/db/src/schema.ts` — таблиці `users`, `agents`, `agent_transactions` (партиціонована), `reasoning_logs`, `alerts`, ENUM-и ⏱ 90m → 1.3
   ✅ `pnpm --filter @agentscope/db db:generate` створює міграцію без помилок
-- [ ] **1.5** Перша міграція + RLS policies (raw SQL у `migrations/0001_rls.sql`) ⏱ 60m → 1.4
-  ✅ `db:push` на Supabase працює, у Studio видно всі таблиці і політики
+- [x] **1.5** Перша міграція + RLS policies (raw SQL у `migrations/0001_rls_and_partition.sql`) ⏱ 60m → 1.4
+  ✅ Drizzle generate idempotent. ⏳ Runtime `db:push` на Supabase — чекає DATABASE_URL з USER-SETUP §1
 - [ ] **1.6** `packages/db/src/index.ts` — експорт `db` singleton + усі схеми ⏱ 15m → 1.5
   ✅ `import { db, agents } from '@agentscope/db'` працює з інших пакетів
 - [ ] **1.7** Smoke-тест на pg-mem: insert агента → select → assert ⏱ 30m → 1.6
@@ -459,7 +459,7 @@ E8 → E9 (deploy потребує всього)
 
 ## Поточний стан
 
-**Завершено:** 3 / 99 задач.
-**Поточна:** **1.4** (Drizzle schema — 5 таблиць).
+**Завершено:** 5 / 99 задач.
+**Поточна:** **1.6** (db index re-exports + RLS helper).
 
 **Юзеру паралельно:** див. `docs/USER-SETUP.md` (інструкції для 1.0a-e + деплой E9).

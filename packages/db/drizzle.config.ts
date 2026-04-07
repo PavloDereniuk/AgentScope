@@ -1,19 +1,17 @@
 import { defineConfig } from 'drizzle-kit';
 
-const url = process.env.DATABASE_URL;
-if (!url) {
-  throw new Error(
-    'DATABASE_URL must be set when running drizzle-kit (db:generate / db:migrate / db:push)',
-  );
-}
-
+/**
+ * `db:generate` only needs the schema file — no DB connection.
+ * `db:migrate` / `db:push` / `db:studio` will fail loudly inside drizzle-kit
+ * if DATABASE_URL is missing, which is the better place for that error.
+ */
 export default defineConfig({
   schema: './src/schema.ts',
   out: './src/migrations',
   dialect: 'postgresql',
   casing: 'snake_case',
   dbCredentials: {
-    url,
+    url: process.env.DATABASE_URL ?? '',
   },
   verbose: true,
   strict: true,

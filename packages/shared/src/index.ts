@@ -1,3 +1,3 @@
-export * from './brand.js';
-export * from './types.js';
-export * from './schemas.js';
+export * from './brand';
+export * from './types';
+export * from './schemas';

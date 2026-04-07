@@ -21,6 +21,7 @@
     "clean": "rm -rf dist .turbo"
   },
   "dependencies": {
+    "@agentscope/shared": "workspace:*",
     "drizzle-orm": "^0.36.4",
     "postgres": "^3.4.5"
   },

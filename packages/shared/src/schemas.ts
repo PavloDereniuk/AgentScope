@@ -24,7 +24,7 @@ import type {
   UUID,
   UpdateAgentInput,
   User,
-} from './types.js';
+} from './types';
 import {
   AGENT_FRAMEWORKS,
   AGENT_STATUSES,
@@ -33,7 +33,7 @@ import {
   ALERT_SEVERITIES,
   DELIVERY_CHANNELS,
   DELIVERY_STATUSES,
-} from './types.js';
+} from './types';
 
 // ─── Branded primitives ────────────────────────────────────────────────────
 

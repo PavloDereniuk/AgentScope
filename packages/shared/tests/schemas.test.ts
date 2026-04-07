@@ -9,7 +9,7 @@ import {
   solanaSignatureSchema,
   sseEventSchema,
   userSchema,
-} from '../src/schemas.js';
+} from '../src/schemas';
 import type {
   Agent,
   AgentTransaction,
@@ -18,7 +18,7 @@ import type {
   ReasoningLog,
   SseEvent,
   User,
-} from '../src/types.js';
+} from '../src/types';
 
 // ─── Fixtures ──────────────────────────────────────────────────────────────
 

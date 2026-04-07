@@ -35,7 +35,7 @@ export type DeliveryStatus = (typeof DELIVERY_STATUSES)[number];
 
 // ─── Branded primitives ───────────────────────────────────────────────────────
 
-import type { Brand } from './brand.js';
+import type { Brand } from './brand';
 
 /** Solana base58 wallet pubkey (32-byte). */
 export type SolanaPubkey = Brand<string, 'SolanaPubkey'>;
