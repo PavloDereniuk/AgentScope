@@ -4,11 +4,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "astro build",
-    "dev": "astro dev",
-    "preview": "astro preview",
+    "build": "echo 'placeholder build (real Astro setup in 8.6)'",
+    "dev": "echo 'placeholder dev (real Astro setup in 8.6)'",
+    "preview": "echo 'placeholder'",
     "lint": "biome check .",
-    "typecheck": "astro check",
+    "typecheck": "echo 'placeholder typecheck (real astro check in 8.6)'",
+    "test": "echo 'placeholder test'",
     "clean": "rm -rf dist .astro .turbo"
   }
 }

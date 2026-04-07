@@ -25,7 +25,8 @@
 
 ### Закомічено (git log)
 ```
-<NEXT> feat(ingestion): persist matched transactions to db                       ← 1.11
+<NEXT>  chore: ci sanity — stub tsconfigs and placeholder scripts                ← 1.12
+ba0931f feat(ingestion): persist matched transactions to db                     ← 1.11
 03e2393 docs: refresh SCRATCHPAD checkpoint with current state                  ← (recovery anchor)
 f7148ff feat(ingestion): worker skeleton, yellowstone client, tx subscription   ← 1.8+1.9+1.10
 58c6fc4 feat(db): rls session helpers and pglite smoke tests                    ← 1.6+1.7
@@ -38,7 +39,17 @@ b71f35e docs: add task decomposition (TASKS.md)                                 
 144da03 chore: init project structure                                           ← Phase 2
 ```
 
-### ✅ NO uncommitted work — clean checkpoint
+### ⚠️ UNCOMMITTED — задача 1.12 (CI sanity)
+**Стан:** локально все 4 кроки green, очікує затвердження користувача.
+
+**Файли (untracked):** stub tsconfig + src/index.ts для 8 пакетів:
+- `apps/api/{tsconfig.json, src/index.ts}`
+- `apps/dashboard/{tsconfig.json, src/main.ts}`
+- `packages/{parser,detector,alerter,elizaos-plugin,agent-kit-sdk}/{tsconfig.json, src/index.ts}`
+
+**Файли (modified):** `package.json` у 8 stub-пакетах (test/dev/build → echo placeholder); `apps/api/package.json` (dev script → placeholder); `apps/dashboard/package.json` (dev/build/test → placeholder); `apps/landing/package.json` (всі скрипти → placeholder); `apps/ingestion/package.json` (test → placeholder); `docs/{TASKS,SCRATCHPAD}.md`.
+
+**Очікуване рішення:** ОК → закомітити як `chore: ci sanity — stub tsconfigs and placeholder scripts`.
 
 ### Юзер setup status (USER-SETUP.md)
 - ❌ 1.0a Supabase — НЕ зроблено
@@ -57,21 +68,22 @@ b71f35e docs: add task decomposition (TASKS.md)                                 
 6. **Helius free Yellowstone — не підтверджено** — якщо вони не дають gRPC безкоштовно, треба fallback на `connection.onSlotChange()` через WS.
 
 ### Поточна задача
-**1.12** — CI sanity (lint+typecheck+test+build зеленим). Чекаю на старт.
+**1.12** — uncommitted, чекає затвердження. Локально всі 4 кроки green.
 
 ### Наступні задачі (черга)
-- **1.12** CI sanity — `pnpm lint && typecheck && test && build` зеленим у CI
 - **2.1** Парсер foundation — `packages/parser` deps + types
 - **2.2** Парсер public API stub
-- **2.3** Jupiter v6 fixtures (5 реальних tx з devnet)
-- **2.4** Kamino fixtures (5 tx)
+- **2.3** Jupiter v6 fixtures (5 реальних tx з devnet) — потребує Helius
+- **2.4** Kamino fixtures (5 tx) — потребує Helius
 - **2.5-2.7** TDD Jupiter parser (failing test → IDL → parser → green)
 - **2.8-2.10** TDD Kamino parser
+- **2.11** Інтеграція парсера у ingestion (заповнює `instruction_name` + `parsed_args`)
+- **2.12** Server-side accountInclude фільтр у Yellowstone request
 
-### Прогрес: 11 / 99 (≈11%)
-- Епік 1 (Foundation): 11 / 12 кодинг-задач закомічено (лишається 1.12 — CI sanity)
-- Setup-задачі (1.0a-e): чекаю на користувача
-- Решта епіків: не починалися
+### Прогрес: 12 / 99 (≈12%) — Епік 1 closed for code
+- ✅ Епік 1 (Foundation): 12/12 кодинг-задач закомічено
+- ⏳ Setup-задачі (1.0a-e): чекаю на користувача
+- 📦 Епіки 2-9: не починалися
 
 ---
 

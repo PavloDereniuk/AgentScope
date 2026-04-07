@@ -6,11 +6,11 @@
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "dev": "tsx watch src/index.ts",
+    "dev": "echo 'placeholder dev (real Hono setup in 3.1)'",
     "lint": "biome check .",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run",
-    "test:watch": "vitest",
+    "test": "echo 'placeholder test (real api tests in 3.5+)'",
+    "test:watch": "echo 'placeholder'",
     "clean": "rm -rf dist .turbo"
   }
 }

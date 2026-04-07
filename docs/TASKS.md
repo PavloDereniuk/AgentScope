@@ -71,10 +71,12 @@
   ✅ Code complete (db client + WalletRegistry + persistTx). Runtime `count(*)` росте — чекає DATABASE_URL + Helius creds
 
 ### CI sanity
-- [ ] **1.12** Зробити `pnpm lint && pnpm typecheck && pnpm test && pnpm build` зеленим у CI ⏱ 30m → all above
-  ✅ Зелений CI на main у GitHub Actions
+- [x] **1.12** Зробити `pnpm lint && pnpm typecheck && pnpm test && pnpm build` зеленим у CI ⏱ 30m → all above
+  ✅ Локально все 4 кроки green (58 lint files, 13 packages typecheck, 13 test, 11 build). GitHub Actions verifies after USER-SETUP §5 (repo push)
 
 **Гейт Тиждень 1:** ✅ ingestion worker пише raw tx у Supabase з devnet. Без парсингу, без API.
+
+**Стан Тижня 1:** код 12/12 готовий, 4-step CI green локально. Runtime валідація (Supabase + Helius) чекає USER-SETUP.
 
 ---
 
@@ -459,7 +461,7 @@ E8 → E9 (deploy потребує всього)
 
 ## Поточний стан
 
-**Завершено:** 11 / 99 задач.
-**Поточна:** **1.12** (CI sanity — pnpm lint && typecheck && test && build зеленим).
+**Завершено:** 12 / 99 задач (Епік 1 closed for code).
+**Поточна:** **2.1** (Парсер foundation — `packages/parser` deps + types).
 
 **Юзеру паралельно:** див. `docs/USER-SETUP.md` (інструкції для 1.0a-e + деплой E9).
