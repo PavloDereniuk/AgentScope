@@ -106,12 +106,12 @@
 - [x] **2.7** `src/jupiter/parser.ts` — manual byte decode (BorshInstructionCoder fails on variable-length route_plan) + 3-strategy mint resolution + native SOL wrap detection ⏱ 120m → 2.6
   ✅ Всі 5 jupiter тестів зелені (route + shared_accounts_route variants), 15/15 total
 
-### Kamino parser (TDD)
-- [ ] **2.8** `tests/kamino.test.ts` — failing тести для 5 fixtures ⏱ 60m → 2.4
-  ✅ 5 тестів падають
-- [ ] **2.9** `src/kamino/idl.json` — заморожений Kamino Lend IDL ⏱ 15m → 2.8
-  ✅ Файл присутній
-- [ ] **2.10** `src/kamino/parser.ts` — decode + нормалізація → 2.8 зелені ⏱ 150m → 2.9
+### Kamino parser (TDD) — порядок змінено: IDL → tests → impl
+- [x] **2.9** `src/kamino/idl.json` — заморожений Kamino Lend IDL fetched on-chain ⏱ 15m
+  ✅ 123 KB, 56 instructions (старий Anchor format без explicit discriminators — обчислюємо як sha256("global:<snake_case>")[..8])
+- [ ] **2.8** `tests/kamino.test.ts` — TDD targets для 5 fixtures (skipped) ⏱ 60m → 2.9
+  ✅ 5 тестів описують контракт; 2.10 unskip'не
+- [ ] **2.10** `src/kamino/parser.ts` — decode + нормалізація → 2.8 зелені ⏱ 150m → 2.9, 2.8
   ✅ Всі 5 тестів зелені
 
 ### Integration into ingestion
