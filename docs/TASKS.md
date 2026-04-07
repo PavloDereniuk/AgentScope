@@ -87,8 +87,8 @@
 **Мета:** надійні TDD-парсери Jupiter v6 та Kamino Lend з фікстурами реальних tx.
 
 ### Parser foundation
-- [ ] **2.1** `packages/parser`: deps (`@coral-xyz/anchor`, `@solana/web3.js`), типи `ParsedInstruction` у `src/types.ts` ⏱ 30m
-  ✅ Тип експортується, typecheck зелений
+- [x] **2.1** `packages/parser`: deps (`@coral-xyz/anchor`, `@solana/web3.js`), типи `ParsedInstruction` / `ParsedTx` / `ParseInput` / `ProgramParser` у `src/types.ts` ⏱ 30m
+  ✅ Типи експортуються, typecheck зелений
 - [ ] **2.2** `packages/parser/src/index.ts` — public API: `parseTransaction(tx) → ParsedTx` (поки повертає stub) ⏱ 20m → 2.1
   ✅ Викликається з тесту, повертає валідний обʼєкт
 

@@ -15,5 +15,10 @@
     "test": "echo 'placeholder test (real parser tests in 2.5+)'",
     "test:watch": "echo 'placeholder'",
     "clean": "rm -rf dist .turbo"
+  },
+  "dependencies": {
+    "@agentscope/shared": "workspace:^",
+    "@coral-xyz/anchor": "^0.30.1",
+    "@solana/web3.js": "^1.95.5"
   }
 }
