@@ -35,8 +35,7 @@ export type DeliveryStatus = (typeof DELIVERY_STATUSES)[number];
 
 // ─── Branded primitives ───────────────────────────────────────────────────────
 
-declare const __brand: unique symbol;
-type Brand<T, B> = T & { readonly [__brand]: B };
+import type { Brand } from './brand.js';
 
 /** Solana base58 wallet pubkey (32-byte). */
 export type SolanaPubkey = Brand<string, 'SolanaPubkey'>;
@@ -67,13 +66,16 @@ export interface User {
 /**
  * Per-agent override for default detector thresholds.
  * Any field omitted falls back to env-configured global default.
+ *
+ * Optional fields use `T | undefined` explicitly to align with Zod's
+ * `.optional()` output under `exactOptionalPropertyTypes: true`.
  */
 export interface AlertRuleThresholds {
-  slippagePctThreshold?: number;
-  gasMultThreshold?: number;
-  drawdownPctThreshold?: number;
-  errorRatePctThreshold?: number;
-  staleMinutesThreshold?: number;
+  slippagePctThreshold?: number | undefined;
+  gasMultThreshold?: number | undefined;
+  drawdownPctThreshold?: number | undefined;
+  errorRatePctThreshold?: number | undefined;
+  staleMinutesThreshold?: number | undefined;
 }
 
 export interface Agent {
@@ -93,13 +95,22 @@ export interface Agent {
   lastSeenAt: ISOTimestamp | null;
 }
 
-export type CreateAgentInput = Pick<Agent, 'walletPubkey' | 'name' | 'framework' | 'agentType'> & {
-  tags?: readonly string[];
-  webhookUrl?: string | null;
-  alertRules?: AlertRuleThresholds;
-};
+export interface CreateAgentInput {
+  walletPubkey: SolanaPubkey;
+  name: string;
+  framework: AgentFramework;
+  agentType: AgentType;
+  tags?: readonly string[] | undefined;
+  webhookUrl?: string | null | undefined;
+  alertRules?: AlertRuleThresholds | undefined;
+}
 
-export type UpdateAgentInput = Partial<Pick<Agent, 'name' | 'tags' | 'webhookUrl' | 'alertRules'>>;
+export interface UpdateAgentInput {
+  name?: string | undefined;
+  tags?: readonly string[] | undefined;
+  webhookUrl?: string | null | undefined;
+  alertRules?: AlertRuleThresholds | undefined;
+}
 
 // ─── Transaction ──────────────────────────────────────────────────────────────
 
@@ -183,7 +194,7 @@ export interface Alert {
 export interface ApiError {
   code: 'INVALID_INPUT' | 'UNAUTHORIZED' | 'NOT_FOUND' | 'RATE_LIMITED' | 'INTERNAL';
   message: string;
-  details?: Record<string, unknown>;
+  details?: Record<string, unknown> | undefined;
 }
 
 export interface ApiErrorResponse {
