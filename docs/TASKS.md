@@ -67,7 +67,7 @@
   ✅ Лог "received slot N" зʼявляється кожні ~400ms
 - [ ] **1.10** Subscribe на transactions для devnet (без фільтра поки) — лог signature + program_ids ⏱ 45m → 1.9
   ✅ Лог `tx <sig> programs=[...]` тече у консоль
-- [ ] **1.11** Insert raw transaction у `agent_transactions` (без парсингу, parsed_args=null) ⏱ 45m → 1.10, 1.6
+- [ ] **1.11** Insert raw transaction у `agent_transactions` + filter by registered wallets (поєднано з 1.12 — потребують спільної infra: db client + wallet registry) ⏱ 45m → 1.10, 1.6
   ✅ Запит `SELECT count(*) FROM agent_transactions` росте
 
 ### CI sanity
