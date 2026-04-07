@@ -2,13 +2,17 @@
  * @agentscope/parser — Solana instruction parsers.
  *
  * Public surface:
- *   parseTransaction(input)  — dispatcher with empty registry (2.2)
+ *   parseTransaction(input)  — dispatcher with auto-registered parsers
  *   registerParser(parser)   — extension point for per-program parsers
- *   ParsedTx, ParsedInstruction, ParseInput, ProgramParser  — types (2.1)
- *   jupiterParser, kaminoParser  — per-program implementations (2.7, 2.10)
+ *   jupiterParser            — Jupiter v6 swap parser (auto-registered)
+ *   ParsedTx, ParsedInstruction, ParseInput, ProgramParser  — types
  */
 
+// Import for side-effect: parser modules call registerParser at load time
+import './jupiter/parser';
+
 export { parseTransaction, registerParser } from './dispatcher';
+export { jupiterParser } from './jupiter/parser';
 export type {
   ParseInput,
   ParsedInstruction,

@@ -103,8 +103,8 @@
   ✅ 5 тестів описують контракт як `describe.skip` (HEAD зелений для recovery), 2.7 unskip'не. + 1 жваве test перевіряє loader.
 - [x] **2.6** `src/jupiter/idl.json` — заморожений Jupiter v6 IDL fetched on-chain через Anchor IDL PDA ⏱ 15m → 2.5
   ✅ 24.8KB, 17 instructions включно з `route`, `shared_accounts_route`, `route_v2`, ... + v2 variants. Args для swap: `in_amount/quoted_out_amount/slippage_bps`. Accounts: source/destination_mint.
-- [ ] **2.7** `src/jupiter/parser.ts` — Anchor decode → нормалізація args → тести 2.5 зелені ⏱ 120m → 2.6
-  ✅ Всі 5 тестів зелені
+- [x] **2.7** `src/jupiter/parser.ts` — manual byte decode (BorshInstructionCoder fails on variable-length route_plan) + 3-strategy mint resolution + native SOL wrap detection ⏱ 120m → 2.6
+  ✅ Всі 5 jupiter тестів зелені (route + shared_accounts_route variants), 15/15 total
 
 ### Kamino parser (TDD)
 - [ ] **2.8** `tests/kamino.test.ts` — failing тести для 5 fixtures ⏱ 60m → 2.4

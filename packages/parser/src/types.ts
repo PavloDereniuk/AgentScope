@@ -85,8 +85,36 @@ export interface ParseInput {
 }
 
 /**
- * Per-program parser entry. The registry in `index.ts` looks up the
- * matching ProgramParser by programId before decoding each instruction.
+ * Read-only context the dispatcher passes to every parser. Lets the
+ * parser look up data that lives in `meta` (token balances, fee, logs)
+ * without coupling to the full VersionedTransactionResponse type.
+ */
+export interface ParseContext {
+  /**
+   * Map from SPL token account pubkey → mint pubkey, derived from
+   * `meta.preTokenBalances` ∪ `meta.postTokenBalances`. Useful for
+   * recovering "what mint flowed through this account" when an
+   * instruction takes a token account by name but not the mint
+   * directly.
+   */
+  tokenAccountMints: ReadonlyMap<SolanaPubkey, SolanaPubkey>;
+  /**
+   * Mints whose balance for `ownerPubkey` decreased over the
+   * transaction (delta < 0). Almost always the SOURCE side of a swap.
+   * Empty if the owner had no token balance entries.
+   */
+  ownerSpentMints: readonly SolanaPubkey[];
+  /**
+   * Mints whose balance for `ownerPubkey` increased (delta > 0).
+   * Almost always the DESTINATION side of a swap.
+   */
+  ownerGainedMints: readonly SolanaPubkey[];
+}
+
+/**
+ * Per-program parser entry. The registry in `dispatcher.ts` looks up
+ * the matching ProgramParser by programId before decoding each
+ * instruction.
  */
 export interface ProgramParser {
   /** Solana program ID this parser handles. */
@@ -102,5 +130,6 @@ export interface ProgramParser {
     rawIxData: Uint8Array,
     accountKeys: readonly SolanaPubkey[],
     accountIndexes: readonly number[],
+    context: ParseContext,
   ): { name: string; args: ParsedArgs } | null;
 }

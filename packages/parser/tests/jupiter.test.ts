@@ -12,19 +12,14 @@
  * are committed deliberately so the next task has a clear target.
  */
 
-import { beforeEach, describe, expect, it } from 'vitest';
-import { _clearParserRegistry } from '../src/dispatcher';
+import { describe, expect, it } from 'vitest';
+// Importing src/index ensures the jupiter parser self-registers via
+// its import side-effect. We don't clear the registry between tests
+// here because the parser is supposed to be active for every assertion.
 import { parseTransaction } from '../src/index';
 import { loadFixtureAsParseInput } from './helpers/load-fixture';
 
 const JUPITER_V6 = 'JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4';
-
-beforeEach(() => {
-  _clearParserRegistry();
-  // The jupiter parser will register itself when imported. Once 2.7
-  // lands we'll add `import '../src/jupiter';` here so the tests
-  // exercise it. Today the registry stays empty intentionally.
-});
 
 const FIXTURES = [
   'jupiter-swap-1',
@@ -34,10 +29,7 @@ const FIXTURES = [
   'jupiter-swap-5',
 ] as const;
 
-// SKIP: these tests describe the contract for the jupiter parser
-// landing in task 2.7. Until then they serve as a visible TDD target.
-// Remove `.skip` once `import '../src/jupiter'` is added in beforeEach.
-describe.skip('jupiter v6 parser', () => {
+describe('jupiter v6 parser', () => {
   for (const name of FIXTURES) {
     it(`${name} → identifies jupiter.swap with normalized args`, () => {
       const input = loadFixtureAsParseInput(name);
