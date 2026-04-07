@@ -5,6 +5,7 @@
  * agnostic and friendly to test harnesses with ephemeral DBs.
  */
 
+import { sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 
@@ -38,3 +39,49 @@ export function createDb(config: DbConfig) {
 }
 
 export type Database = ReturnType<typeof createDb>;
+
+/**
+ * Bind the current request's user_id to the database session via the
+ * `app.user_id` setting. RLS policies in migration 0001 read this value
+ * through the `current_user_id()` SQL function.
+ *
+ * Must be called inside a transaction (drizzle's `db.transaction`) so
+ * `SET LOCAL` is scoped to the current connection and released on commit
+ * — otherwise the binding would leak across pooled connections.
+ *
+ * @param tx     Drizzle transaction (NOT the top-level db client).
+ * @param userId UUID string of the authenticated user, or null to clear.
+ */
+export async function setRequestUserId(
+  tx: { execute: (q: ReturnType<typeof sql>) => Promise<unknown> },
+  userId: string | null,
+): Promise<void> {
+  if (userId === null) {
+    await tx.execute(sql`SET LOCAL app.user_id = ''`);
+    return;
+  }
+  await tx.execute(sql`SET LOCAL app.user_id = ${userId}`);
+}
+
+/**
+ * Convenience: run `fn` inside a transaction with the user_id pre-bound.
+ * The transaction commits on success, rolls back on throw, and releases
+ * the session variable either way.
+ *
+ * Usage from API routes:
+ * ```ts
+ * const result = await withRequestUser(db, userId, async (tx) => {
+ *   return tx.select().from(agents);
+ * });
+ * ```
+ */
+export async function withRequestUser<T>(
+  database: Database,
+  userId: string,
+  fn: (tx: Parameters<Parameters<Database['transaction']>[0]>[0]) => Promise<T>,
+): Promise<T> {
+  return database.transaction(async (tx) => {
+    await setRequestUserId(tx, userId);
+    return fn(tx);
+  });
+}

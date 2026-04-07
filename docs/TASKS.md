@@ -55,10 +55,10 @@
   ✅ `pnpm --filter @agentscope/db db:generate` створює міграцію без помилок
 - [x] **1.5** Перша міграція + RLS policies (raw SQL у `migrations/0001_rls_and_partition.sql`) ⏱ 60m → 1.4
   ✅ Drizzle generate idempotent. ⏳ Runtime `db:push` на Supabase — чекає DATABASE_URL з USER-SETUP §1
-- [ ] **1.6** `packages/db/src/index.ts` — експорт `db` singleton + усі схеми ⏱ 15m → 1.5
-  ✅ `import { db, agents } from '@agentscope/db'` працює з інших пакетів
-- [ ] **1.7** Smoke-тест на pg-mem: insert агента → select → assert ⏱ 30m → 1.6
-  ✅ `pnpm --filter @agentscope/db test` зелений
+- [x] **1.6** `packages/db/src/index.ts` — експорт + RLS helpers (`setRequestUserId`, `withRequestUser`) ⏱ 15m → 1.5
+  ✅ `import { createDb, agents, withRequestUser } from '@agentscope/db'` працює з інших пакетів
+- [x] **1.7** Smoke-тест на PGlite (real PG16 in WASM, not pg-mem): insert агента → select → assert + cascade + unique ⏱ 30m → 1.6
+  ✅ `pnpm --filter @agentscope/db test` зелений (7/7)
 
 ### Apps: ingestion POC
 - [ ] **1.8** `apps/ingestion`: tsx + pino + dotenv setup, `src/index.ts` з health log ⏱ 20m → 1.6
@@ -459,7 +459,7 @@ E8 → E9 (deploy потребує всього)
 
 ## Поточний стан
 
-**Завершено:** 5 / 99 задач.
-**Поточна:** **1.6** (db index re-exports + RLS helper).
+**Завершено:** 7 / 99 задач.
+**Поточна:** **1.8** (ingestion app skeleton — tsx + pino).
 
 **Юзеру паралельно:** див. `docs/USER-SETUP.md` (інструкції для 1.0a-e + деплой E9).

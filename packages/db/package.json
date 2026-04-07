@@ -26,6 +26,7 @@
     "postgres": "^3.4.5"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.2.13",
     "@types/pg": "^8.11.10",
     "drizzle-kit": "^0.28.1"
   }
