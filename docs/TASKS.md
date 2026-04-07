@@ -115,8 +115,9 @@
   ✅ Всі 7 kamino тестів зелені, 22/22 total
 
 ### Integration into ingestion
-- [ ] **2.11** `apps/ingestion`: викликати `parseTransaction` після persist, оновити row з `instruction_name` + `parsed_args` ⏱ 45m → 2.7, 2.10, 1.11
-  ✅ У Supabase зʼявляються рядки з `instruction_name='jupiter.swap'`
+- [x] **2.11** `apps/ingestion`: parser integration — TxUpdate → ParseInput → parseTransaction, primary instruction picking, parsed_args + sol/token deltas + raw logs у insert ⏱ 45m → 2.7, 2.10, 1.11
+  ✅ Code complete (typecheck зелений). Runtime валідація `instruction_name='jupiter.swap'` чекає Week 5 mainnet міграції — по плану.
+- [ ] **2.12** Фільтрація: ingestion витягує `wallet_pubkey` із `agents` (вже у 1.11) — N/A для WS fallback (немає server-side filter як у Yellowstone)
 - [ ] **2.12** Фільтрація: ingestion витягує `wallet_pubkey` із `agents`, ігнорує tx не від цих wallets ⏱ 30m → 2.11
   ✅ Тільки tx від зареєстрованих агентів пишуться у БД
 

@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@agentscope/db": "workspace:^",
+    "@agentscope/parser": "workspace:^",
     "@agentscope/shared": "workspace:^",
     "@grpc/grpc-js": "^1.12.5",
     "@solana/web3.js": "^1.95.5",

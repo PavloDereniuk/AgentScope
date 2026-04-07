@@ -1,12 +1,15 @@
 /**
  * Persistence layer for incoming transactions.
  *
- * 1.11: write the raw row (no parsing yet — instructionName/parsedArgs null).
- * 2.11 will append the parsed instruction details and token deltas.
+ * 1.11: write the raw row keyed by registered agent wallet
+ * 2.11: enrich with parsed instruction name + args + accurate
+ *       sol/token deltas computed by @agentscope/parser
  * 5.9 will invoke the detector after each persist.
  */
 
 import { type Database, agentTransactions } from '@agentscope/db';
+import { type ParseInput, type ParsedTx, parseTransaction } from '@agentscope/parser';
+import type { ISOTimestamp, SolanaPubkey, SolanaSignature } from '@agentscope/shared';
 import type { TxUpdate } from './grpc-client';
 import type { Logger } from './logger';
 import type { WalletRegistry } from './registry';
@@ -18,12 +21,26 @@ export interface PersistContext {
 }
 
 /**
- * Match a tx to a registered agent and persist it.
- *
- * Matching strategy: walk the tx's account keys (signer keys come first
- * in the message), pick the FIRST account that's in the registry. This
- * attributes the tx to the most likely "owner" agent — the signer or,
- * failing that, the first referenced wallet.
+ * Pick the most "interesting" parsed instruction in the tx — the
+ * primary user-visible operation. We prefer recognized lending /
+ * swap ops over utility wrappers (refresh_*, init_*, ATA setup) so
+ * the timeline shows "kamino.deposit" instead of "kamino.refresh_reserve".
+ */
+function pickPrimaryInstruction(parsed: ParsedTx) {
+  const recognized = parsed.instructions.filter((ix) => !ix.name.endsWith('.unknown'));
+  // Skip refresh / utility instructions when picking the primary.
+  const meaningful = recognized.filter(
+    (ix) => !ix.name.startsWith('kamino.refresh_') && !ix.name.startsWith('kamino.init_'),
+  );
+  return meaningful[0] ?? recognized[0] ?? parsed.instructions[0] ?? null;
+}
+
+/**
+ * Match a tx to a registered agent and persist it. If the tx update
+ * carries a rawTx (ws-stream populates it via getTransaction), we
+ * run the parser dispatcher to fill in the instruction name, args,
+ * and accurate balance deltas. The grpc-client path leaves rawTx
+ * undefined and we fall back to a raw insert.
  *
  * Returns the inserted row's id, or null if no registered wallet matched.
  */
@@ -34,10 +51,31 @@ export async function persistTx(ctx: PersistContext, tx: TxUpdate): Promise<numb
   const agentId = ctx.registry.lookup(matchedWallet);
   if (!agentId) return null;
 
-  const blockTime = new Date().toISOString();
-  // NOTE: Yellowstone tx updates don't carry block_time directly — only
-  // slot. We use the receive time as a stand-in until task 2.11 augments
-  // this with a proper block_time fetch via getBlockTime() RPC.
+  // Parse if we have the raw tx; otherwise insert minimal row.
+  let parsed: ParsedTx | null = null;
+  if (tx.rawTx) {
+    try {
+      const input: ParseInput = {
+        signature: tx.signature as SolanaSignature,
+        slot: tx.slot,
+        blockTime: tx.blockTime as ISOTimestamp,
+        ownerPubkey: matchedWallet as SolanaPubkey,
+        transaction: tx.rawTx,
+      };
+      parsed = parseTransaction(input);
+    } catch (err) {
+      ctx.logger.warn({ err, signature: tx.signature }, 'parser threw, falling back to raw insert');
+    }
+  }
+
+  const primary = parsed ? pickPrimaryInstruction(parsed) : null;
+  const allInstructions =
+    parsed?.instructions.map((ix) => ({
+      index: ix.index,
+      programId: ix.programId,
+      name: ix.name,
+      args: ix.args,
+    })) ?? [];
 
   try {
     const inserted = await ctx.db
@@ -46,15 +84,15 @@ export async function persistTx(ctx: PersistContext, tx: TxUpdate): Promise<numb
         agentId,
         signature: tx.signature,
         slot: tx.slot,
-        blockTime,
-        programId: tx.programIds[0] ?? '',
-        instructionName: null,
-        parsedArgs: null,
-        solDelta: '0',
-        tokenDeltas: [],
-        feeLamports: 0,
-        success: true,
-        rawLogs: [],
+        blockTime: tx.blockTime,
+        programId: primary?.programId ?? tx.programIds[0] ?? '',
+        instructionName: primary?.name ?? null,
+        parsedArgs: primary ? { ...primary.args, _all: allInstructions } : null,
+        solDelta: parsed?.solDelta ?? '0',
+        tokenDeltas: parsed ? [...parsed.tokenDeltas] : [],
+        feeLamports: parsed?.feeLamports ?? 0,
+        success: parsed?.success ?? true,
+        rawLogs: parsed ? [...parsed.rawLogs] : [],
       })
       .returning({ id: agentTransactions.id });
 
@@ -66,7 +104,8 @@ export async function persistTx(ctx: PersistContext, tx: TxUpdate): Promise<numb
         agentId,
         signature: tx.signature,
         slot: tx.slot,
-        programs: tx.programIds.length,
+        instruction: primary?.name ?? '(none)',
+        ixCount: allInstructions.length,
       },
       'persisted tx',
     );

@@ -102,9 +102,13 @@ export async function createWsStream(
       const update: TxUpdate = {
         signature: logs.signature,
         slot: ctx.slot,
+        blockTime: tx.blockTime
+          ? new Date(tx.blockTime * 1000).toISOString()
+          : new Date().toISOString(),
         isVote: false,
         programIds,
         rawAccountKeys: staticKeys,
+        rawTx: tx,
       };
 
       handlers.onTransaction?.(update);

@@ -12,6 +12,7 @@
  */
 
 import type { ClientDuplexStream } from '@grpc/grpc-js';
+import type { VersionedTransactionResponse } from '@solana/web3.js';
 import Client, {
   CommitmentLevel,
   type SubscribeRequest,
@@ -99,13 +100,23 @@ export function buildSubscribeRequest(opts: {
  * Lightweight projection of a transaction update — just the bits we
  * need to log / route to parsers, without dragging the full proto type
  * through the rest of the codebase.
+ *
+ * `rawTx` is optional and only populated by streams that fetch a
+ * VersionedTransactionResponse alongside the program-id projection
+ * (e.g. ws-stream's getTransaction hydrate path). The grpc client
+ * leaves it undefined because Yellowstone gRPC streams the same data
+ * inline and a separate VersionedTransactionResponse reconstruction
+ * isn't worth the cost.
  */
 export interface TxUpdate {
   signature: string;
   slot: number;
+  /** Block timestamp ISO string when known; otherwise the receive time. */
+  blockTime: string;
   isVote: boolean;
   programIds: string[];
   rawAccountKeys: string[];
+  rawTx?: VersionedTransactionResponse | undefined;
 }
 
 export interface SubscriptionHandlers {
@@ -150,7 +161,14 @@ function projectTx(update: SubscribeUpdate): TxUpdate | null {
     ),
   );
 
-  return { signature, slot, isVote, programIds, rawAccountKeys };
+  return {
+    signature,
+    slot,
+    blockTime: new Date().toISOString(),
+    isVote,
+    programIds,
+    rawAccountKeys,
+  };
 }
 
 /**
