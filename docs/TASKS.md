@@ -43,7 +43,7 @@
   ✅ Repo створено, push пройшов, CI на GitHub запустився
 
 ### Пакет: shared types
-- [ ] **1.1** `packages/shared/src/types.ts` — базові TS типи (`Agent`, `AgentTransaction`, `ReasoningLog`, `Alert`, `AlertRule`) ⏱ 30m
+- [x] **1.1** `packages/shared/src/types.ts` — базові TS типи (`Agent`, `AgentTransaction`, `ReasoningLog`, `Alert`, `AlertRule`) ⏱ 30m
   ✅ Експортується з `@agentscope/shared`, `pnpm typecheck` зелений
 - [ ] **1.2** `packages/shared/src/schemas.ts` — Zod schemas для всіх вище типів ⏱ 45m → 1.1
   ✅ Schemas і типи з 1.1 синхронізовані через `z.infer`, тести з валідними/невалідними прикладами
@@ -459,7 +459,7 @@ E8 → E9 (deploy потребує всього)
 
 ## Поточний стан
 
-**Завершено:** 0 / 99 задач.
-**Поточна:** очікує затвердження TASKS.md → старт E1.
+**Завершено:** 1 / 99 задач.
+**Поточна:** **1.2** (Zod schemas).
 
-**Наступна задача коли почнемо:** **1.0a** (Supabase project setup — юзер сам).
+**Юзеру паралельно:** 1.0a-e (Supabase / Helius / Privy / Telegram bot / GitHub repo).
