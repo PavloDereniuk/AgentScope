@@ -89,8 +89,8 @@
 ### Parser foundation
 - [x] **2.1** `packages/parser`: deps (`@coral-xyz/anchor`, `@solana/web3.js`), типи `ParsedInstruction` / `ParsedTx` / `ParseInput` / `ProgramParser` у `src/types.ts` ⏱ 30m
   ✅ Типи експортуються, typecheck зелений
-- [ ] **2.2** `packages/parser/src/index.ts` — public API: `parseTransaction(tx) → ParsedTx` (поки повертає stub) ⏱ 20m → 2.1
-  ✅ Викликається з тесту, повертає валідний обʼєкт
+- [x] **2.2** `packages/parser/src/dispatcher.ts` + `index.ts` — реальна дispatcher з sol/token delta computation, registry, fallbacks ⏱ 20m → 2.1
+  ✅ 9/9 тестів зелені (empty registry, token deltas, registered parser, failed tx)
 
 ### Fixtures (реальні tx з devnet)
 - [ ] **2.3** `packages/parser/tests/fixtures/`: 5 реальних Jupiter v6 swap tx (devnet, JSON-снапшоти) ⏱ 60m → 1.0b

@@ -12,8 +12,8 @@
     "build": "tsc -p tsconfig.json",
     "lint": "biome check .",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "echo 'placeholder test (real parser tests in 2.5+)'",
-    "test:watch": "echo 'placeholder'",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "clean": "rm -rf dist .turbo"
   },
   "dependencies": {
