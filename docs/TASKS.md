@@ -101,8 +101,8 @@
 ### Jupiter v6 parser (TDD)
 - [x] **2.5** `tests/jupiter.test.ts` + `tests/helpers/load-fixture.ts` — TDD targets для 5 fixtures (assert: `name='jupiter.swap'`, args має inputMint/outputMint/inAmount/outAmount/slippageBps) ⏱ 60m → 2.3
   ✅ 5 тестів описують контракт як `describe.skip` (HEAD зелений для recovery), 2.7 unskip'не. + 1 жваве test перевіряє loader.
-- [ ] **2.6** `src/jupiter/idl.json` — заморожений Jupiter v6 IDL ⏱ 15m → 2.5
-  ✅ Файл присутній, валідний JSON
+- [x] **2.6** `src/jupiter/idl.json` — заморожений Jupiter v6 IDL fetched on-chain через Anchor IDL PDA ⏱ 15m → 2.5
+  ✅ 24.8KB, 17 instructions включно з `route`, `shared_accounts_route`, `route_v2`, ... + v2 variants. Args для swap: `in_amount/quoted_out_amount/slippage_bps`. Accounts: source/destination_mint.
 - [ ] **2.7** `src/jupiter/parser.ts` — Anchor decode → нормалізація args → тести 2.5 зелені ⏱ 120m → 2.6
   ✅ Всі 5 тестів зелені
 
