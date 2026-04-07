@@ -25,6 +25,8 @@
 
 ### Закомічено (git log)
 ```
+dc9bd16 feat(ingestion): websocket fallback for helius free tier                 ← 1.9b + scripts + RUNTIME VALIDATED ✅
+c209a10 docs: scratchpad — close epic 1 checkpoint
 5a6ee81 chore: ci sanity — stub tsconfigs and placeholder scripts                ← 1.12
 ba0931f feat(ingestion): persist matched transactions to db                     ← 1.11
 03e2393 docs: refresh SCRATCHPAD checkpoint with current state                  ← (recovery anchor)
@@ -39,7 +41,27 @@ b71f35e docs: add task decomposition (TASKS.md)                                 
 144da03 chore: init project structure                                           ← Phase 2
 ```
 
-### ✅ NO uncommitted work — clean checkpoint, Епік 1 closed for code
+### ✅ NO uncommitted work — clean checkpoint, Епік 1 RUNTIME VALIDATED
+
+### Runtime stack online
+- ✅ Supabase: 5 tables + 6 partitions + RLS + policies + current_user_id() — verified via verify-supabase.ts
+- ✅ Helius free WebSocket: onLogs subscription works, full pipeline tested (81 tx persisted in 5s smoke run, then truncated)
+- ✅ Privy: creds у .env (runtime check у 3.3)
+- ✅ Telegram bot: test ping надіслано, працює (runtime check у 5.12)
+- ⏳ GitHub repo: пропущено (зробимо потім)
+
+### Helper scripts (packages/db/scripts/)
+- `verify-supabase.ts` — перевіряє state БД
+- `seed-test-agent.ts` — створює test user+agent (вимагає AGENT_WALLET env)
+- `reset-test-data.ts` — truncate + delete seeded data
+- `count-tx.ts` — quick count(*)
+
+### Архітектурні зміни (з 1.9b)
+- **Замість Yellowstone gRPC → @solana/web3.js WebSocket** (Helius LaserStream paywalled)
+- Latency: ~1-3s замість ~500ms — прийнятно для MVP
+- Per-wallet `onLogs` subscriptions з reconcile loop
+- `getTransaction()` follow-up для program IDs (N+1 pattern, ОК для low volume)
+- `grpc-client.ts` лишається у repo для post-MVP коли LaserStream стане доступним
 
 ### Юзер setup status (USER-SETUP.md)
 - ❌ 1.0a Supabase — НЕ зроблено
@@ -58,22 +80,22 @@ b71f35e docs: add task decomposition (TASKS.md)                                 
 6. **Helius free Yellowstone — не підтверджено** — якщо вони не дають gRPC безкоштовно, треба fallback на `connection.onSlotChange()` через WS.
 
 ### Поточна задача
-**1.12** — uncommitted, чекає затвердження. Локально всі 4 кроки green.
+**2.1** — Парсер foundation (`packages/parser` deps + types)
 
 ### Наступні задачі (черга)
 - **2.1** Парсер foundation — `packages/parser` deps + types
 - **2.2** Парсер public API stub
-- **2.3** Jupiter v6 fixtures (5 реальних tx з devnet) — потребує Helius
-- **2.4** Kamino fixtures (5 tx) — потребує Helius
+- **2.3** Jupiter v6 fixtures (5 реальних tx з devnet)
+- **2.4** Kamino fixtures (5 tx)
 - **2.5-2.7** TDD Jupiter parser (failing test → IDL → parser → green)
 - **2.8-2.10** TDD Kamino parser
 - **2.11** Інтеграція парсера у ingestion (заповнює `instruction_name` + `parsed_args`)
-- **2.12** Server-side accountInclude фільтр у Yellowstone request
+- **2.12** (вже частково зроблено у 1.11 client-side — server-side filter NOT applicable з WebSocket fallback)
 
-### Прогрес: 12 / 99 (≈12%) — Епік 1 closed for code
-- ✅ Епік 1 (Foundation): 12/12 кодинг-задач закомічено
-- ⏳ Setup-задачі (1.0a-e): чекаю на користувача
-- 📦 Епіки 2-9: не починалися
+### Прогрес: 13 / 99 (≈13%) — Епік 1 RUNTIME complete
+- ✅ Епік 1 (Foundation): 12/12 + 1.9b (WS fallback) = 13 tasks committed
+- ✅ Setup: Supabase + Helius + Privy + Telegram (GitHub later)
+- 📦 Епік 2 (Parsers): починаємо
 
 ---
 
