@@ -88,7 +88,7 @@ b71f35e docs: add task decomposition (TASKS.md)                                 
 6. **Helius free Yellowstone — не підтверджено** — якщо вони не дають gRPC безкоштовно, треба fallback на `connection.onSlotChange()` через WS.
 
 ### Поточна задача
-**2.8** — Kamino TDD failing tests (after 2.7 jupiter complete)
+**Епік 2 ЗАВЕРШЕНО** — переходимо до Епіку 3 (REST API)
 
 ### Наступні задачі (черга)
 - **2.1** Парсер foundation — `packages/parser` deps + types
