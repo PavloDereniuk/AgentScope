@@ -49,7 +49,7 @@
   ✅ Schemas і типи з 1.1 синхронізовані через `z.infer`, тести з валідними/невалідними прикладами
 
 ### Пакет: db (Drizzle + Supabase)
-- [ ] **1.3** `packages/db`: drizzle-orm + drizzle-kit + postgres deps, `drizzle.config.ts`, базовий `client.ts` ⏱ 30m
+- [x] **1.3** `packages/db`: drizzle-orm + drizzle-kit + postgres deps, `drizzle.config.ts`, базовий `client.ts` ⏱ 30m
   ✅ `pnpm --filter @agentscope/db typecheck` зелений
 - [ ] **1.4** `packages/db/src/schema.ts` — таблиці `users`, `agents`, `agent_transactions` (партиціонована), `reasoning_logs`, `alerts`, ENUM-и ⏱ 90m → 1.3
   ✅ `pnpm --filter @agentscope/db db:generate` створює міграцію без помилок
@@ -459,7 +459,7 @@ E8 → E9 (deploy потребує всього)
 
 ## Поточний стан
 
-**Завершено:** 2 / 99 задач.
-**Поточна:** **1.3** (Drizzle + Postgres deps у `packages/db`).
+**Завершено:** 3 / 99 задач.
+**Поточна:** **1.4** (Drizzle schema — 5 таблиць).
 
-**Юзеру паралельно:** 1.0a-e (Supabase / Helius / Privy / Telegram bot / GitHub repo).
+**Юзеру паралельно:** див. `docs/USER-SETUP.md` (інструкції для 1.0a-e + деплой E9).
