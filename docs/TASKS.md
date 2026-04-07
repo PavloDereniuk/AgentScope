@@ -99,8 +99,8 @@
   ✅ 5 файлів `kamino-N.json` (9-38KB кожен) base64 v0. ⚠️ Discriminator-diversity scoring у скрипті failed (ESM require), але fixtures збережено через unclassified bucket — task 2.8 побачить чи треба варіація.
 
 ### Jupiter v6 parser (TDD)
-- [ ] **2.5** `tests/jupiter.test.ts` — failing тести для всіх 5 fixtures (assert: `instruction_name='jupiter.swap'`, `parsed_args.{input_mint,output_mint,in_amount,out_amount,slippage_bps}`) ⏱ 60m → 2.3
-  ✅ 5 тестів падають з очікуваними assertions
+- [x] **2.5** `tests/jupiter.test.ts` + `tests/helpers/load-fixture.ts` — TDD targets для 5 fixtures (assert: `name='jupiter.swap'`, args має inputMint/outputMint/inAmount/outAmount/slippageBps) ⏱ 60m → 2.3
+  ✅ 5 тестів описують контракт як `describe.skip` (HEAD зелений для recovery), 2.7 unskip'не. + 1 жваве test перевіряє loader.
 - [ ] **2.6** `src/jupiter/idl.json` — заморожений Jupiter v6 IDL ⏱ 15m → 2.5
   ✅ Файл присутній, валідний JSON
 - [ ] **2.7** `src/jupiter/parser.ts` — Anchor decode → нормалізація args → тести 2.5 зелені ⏱ 120m → 2.6
