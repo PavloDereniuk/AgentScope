@@ -109,10 +109,10 @@
 ### Kamino parser (TDD) — порядок змінено: IDL → tests → impl
 - [x] **2.9** `src/kamino/idl.json` — заморожений Kamino Lend IDL fetched on-chain ⏱ 15m
   ✅ 123 KB, 56 instructions (старий Anchor format без explicit discriminators — обчислюємо як sha256("global:<snake_case>")[..8])
-- [ ] **2.8** `tests/kamino.test.ts` — TDD targets для 5 fixtures (skipped) ⏱ 60m → 2.9
-  ✅ 5 тестів описують контракт; 2.10 unskip'не
-- [ ] **2.10** `src/kamino/parser.ts` — decode + нормалізація → 2.8 зелені ⏱ 150m → 2.9, 2.8
-  ✅ Всі 5 тестів зелені
+- [x] **2.8** `tests/kamino.test.ts` — fixture coverage tests + args tests (НЕ skipped — parser написався з першого разу) ⏱ 60m → 2.9
+  ✅ 7 тестів зелені (5 fixture coverage + 2 args specifics)
+- [x] **2.10** `src/kamino/parser.ts` — composite-account flatten + computed discriminators (sha256) + fixed-offset u64 args ⏱ 150m → 2.9, 2.8
+  ✅ Всі 7 kamino тестів зелені, 22/22 total
 
 ### Integration into ingestion
 - [ ] **2.11** `apps/ingestion`: викликати `parseTransaction` після persist, оновити row з `instruction_name` + `parsed_args` ⏱ 45m → 2.7, 2.10, 1.11
