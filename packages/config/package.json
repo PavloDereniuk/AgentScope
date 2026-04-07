@@ -1,0 +1,11 @@
+{
+  "name": "@agentscope/config",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./tsconfig": "./tsconfig.base.json",
+    "./biome": "./biome.json"
+  },
+  "files": ["tsconfig.base.json", "biome.json"]
+}

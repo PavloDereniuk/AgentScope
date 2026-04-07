@@ -1,0 +1,62 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+build/
+.next/
+.turbo/
+.astro/
+*.tsbuildinfo
+
+# Coverage
+coverage/
+.nyc_output/
+
+# Logs
+*.log
+logs/
+pnpm-debug.log*
+npm-debug.log*
+
+# Environment
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# IDE
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+*.swp
+*.swo
+
+# Claude Code (local-only)
+.claude/settings.local.json
+.claude/projects/
+.claude/.cache/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Drizzle
+drizzle/meta/_journal.json.bak
+
+# Solana keypairs (security)
+*.keypair.json
+keypairs/
+wallets/
+*-keypair.json
+
+# Vercel
+.vercel
+
+# Misc
+*.pem
+*.key
+.cache/

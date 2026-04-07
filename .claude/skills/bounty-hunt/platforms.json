@@ -1,0 +1,606 @@
+[
+  {
+    "id": "solodit",
+    "name": "Solodit",
+    "category": "audit-aggregator",
+    "tier": 1,
+    "status": "active",
+    "priority": 1,
+    "owner": "main",
+    "isSPA": true,
+    "mainUrl": "https://solodit.cyfrin.io/",
+    "apiUrl": "https://solodit.cyfrin.io/api/contests?status=active",
+    "apiSchema": {
+      "resultPath": "data",
+      "nameField": "title",
+      "rewardField": "prize_pool",
+      "deadlineField": "end_date",
+      "statusField": "status",
+      "activeStatusValues": ["active", "upcoming"],
+      "platformField": "platform"
+    },
+    "aggregates": ["code4rena", "sherlock", "codehawks", "cantina"],
+    "searchQueries": [
+      "solodit.cyfrin.io contests active {YEAR}",
+      "solodit.cyfrin.io upcoming audit contest"
+    ],
+    "cacheTTL": 21600,
+    "notes": "Aggregator for audit contests. Check FIRST. If yields results, skip C4/Sherlock/CodeHawks/Cantina."
+  },
+  {
+    "id": "immunefi",
+    "name": "Immunefi",
+    "category": "bug-bounty",
+    "tier": 1,
+    "status": "active",
+    "priority": 2,
+    "owner": "main",
+    "isSPA": true,
+    "mainUrl": "https://immunefi.com/bug-bounty/",
+    "apiUrl": "https://immunefi.com/api/bounties",
+    "apiSchema": {
+      "resultPath": ".",
+      "nameField": "project",
+      "rewardField": "maxBounty",
+      "deadlineField": null,
+      "statusField": "status",
+      "activeStatusValues": ["active", "boost"],
+      "urlPattern": "https://immunefi.com/bug-bounty/{id}/"
+    },
+    "searchQueries": [
+      "immunefi.com boost active {YEAR} smart contract",
+      "immunefi new bounty launch {YEAR} reward"
+    ],
+    "cacheTTL": 86400,
+    "notes": "Largest Web3 bug bounty. Ongoing programs. High rewards $1K-$10M+. Search for 'boost' (time-limited increased rewards) rather than ongoing programs."
+  },
+  {
+    "id": "code4rena",
+    "name": "Code4rena",
+    "category": "audit-contest",
+    "tier": 1,
+    "status": "active",
+    "priority": 10,
+    "owner": "main",
+    "isSPA": true,
+    "coveredBy": "solodit",
+    "mainUrl": "https://code4rena.com/audits",
+    "apiUrl": "https://code4rena.com/api/v1/audits?status=active",
+    "apiSchema": {
+      "resultPath": "data",
+      "nameField": "title",
+      "rewardField": "prize",
+      "deadlineField": "end_time",
+      "statusField": "status",
+      "activeStatusValues": ["active", "upcoming"]
+    },
+    "searchQueries": [
+      "code4rena.com audit active {YEAR} prize pool",
+      "code4rena contest live upcoming {YEAR}"
+    ],
+    "cacheTTL": 21600,
+    "notes": "Top audit contest. $10K-$200K+. Skip ONLY if Solodit yielded >=3 results."
+  },
+  {
+    "id": "sherlock",
+    "name": "Sherlock",
+    "category": "audit-contest",
+    "tier": 1,
+    "status": "active",
+    "priority": 10,
+    "owner": "main",
+    "isSPA": true,
+    "coveredBy": "solodit",
+    "mainUrl": "https://audits.sherlock.xyz/contests",
+    "searchQueries": [
+      "site:audits.sherlock.xyz contest active {YEAR}",
+      "sherlock protocol audit contest prize {YEAR}"
+    ],
+    "cacheTTL": 21600,
+    "notes": "Major DeFi audit platform. Skip if Solodit covered."
+  },
+  {
+    "id": "codehawks",
+    "name": "CodeHawks",
+    "category": "audit-contest",
+    "tier": 1,
+    "status": "active",
+    "priority": 10,
+    "owner": "main",
+    "isSPA": true,
+    "coveredBy": "solodit",
+    "mainUrl": "https://codehawks.cyfrin.io/",
+    "searchQueries": [
+      "site:codehawks.cyfrin.io contest active {YEAR}",
+      "codehawks audit contest first flight {YEAR}"
+    ],
+    "cacheTTL": 21600,
+    "notes": "By Cyfrin. 'First Flights' = beginner (no prize). Skip if Solodit covered."
+  },
+  {
+    "id": "cantina",
+    "name": "Cantina",
+    "category": "audit-contest",
+    "tier": 1,
+    "status": "active",
+    "priority": 10,
+    "owner": "main",
+    "isSPA": true,
+    "coveredBy": "solodit",
+    "mainUrl": "https://cantina.xyz/competitions",
+    "searchQueries": [
+      "cantina.xyz competition active {YEAR} prize",
+      "cantina audit competition live {YEAR} reward"
+    ],
+    "cacheTTL": 21600,
+    "notes": "By Spearbit. High-quality audits. Skip ONLY if Solodit yielded >=3 results."
+  },
+  {
+    "id": "hackerone",
+    "name": "HackerOne",
+    "category": "bug-bounty",
+    "tier": 1,
+    "status": "active",
+    "priority": 3,
+    "owner": "main",
+    "isSPA": true,
+    "mainUrl": "https://hackerone.com/opportunities/all",
+    "searchQueries": [
+      "site:hackerone.com bug bounty crypto blockchain {YEAR}",
+      "hackerone bug bounty program web3 smart contract active"
+    ],
+    "cacheTTL": 86400,
+    "notes": "Largest general bug bounty. SPA — rely on search snippets. Long cache OK."
+  },
+  {
+    "id": "superteam",
+    "name": "Superteam Earn",
+    "category": "bounty",
+    "tier": 1,
+    "status": "active",
+    "priority": 3,
+    "owner": "main",
+    "isSPA": false,
+    "mainUrl": "https://earn.superteam.fun/",
+    "apiUrl": "https://superteam.fun/api/listings?type=bounty&status=open",
+    "apiSchema": {
+      "resultPath": ".",
+      "nameField": "title",
+      "rewardField": "rewardAmount",
+      "deadlineField": "deadline",
+      "statusField": "status",
+      "activeStatusValues": ["open", "OPEN"],
+      "urlPattern": "https://superteam.fun/earn/listing/{slug}/",
+      "extraFields": {
+        "submissionCount": "Submission",
+        "commentCount": "Comments",
+        "agentAccess": "agentAccess",
+        "compensationType": "compensationType",
+        "sponsorVerified": "sponsor.isVerified"
+      }
+    },
+    "searchQueries": [
+      "site:superteam.fun earn listing bounty active",
+      "superteam earn solana bounty open {YEAR}"
+    ],
+    "cacheTTL": 21600,
+    "notes": "Solana bounties $50-$5K. Server-rendered. Quick turnaround."
+  },
+  {
+    "id": "bugcrowd",
+    "name": "Bugcrowd",
+    "category": "bug-bounty",
+    "tier": 1,
+    "status": "active",
+    "priority": 6,
+    "owner": "main",
+    "isSPA": false,
+    "mainUrl": "https://bugcrowd.com/engagements",
+    "searchQueries": [
+      "site:bugcrowd.com bug bounty program active crypto",
+      "bugcrowd engagements bounty reward {YEAR}"
+    ],
+    "cacheTTL": 86400,
+    "notes": "Major bug bounty. Mix of Web2+Web3. Non-SPA."
+  },
+  {
+    "id": "spearbit",
+    "name": "Spearbit",
+    "category": "audit-contest",
+    "tier": 1,
+    "status": "active",
+    "priority": 5,
+    "owner": "main",
+    "isSPA": true,
+    "mainUrl": "https://spearbit.com/",
+    "searchQueries": [
+      "spearbit audit competition open {YEAR}",
+      "spearbit security review engagement active"
+    ],
+    "cacheTTL": 86400,
+    "notes": "Elite audit firm. Direct engagements + Cantina competitions. High-quality, high-reward."
+  },
+  {
+    "id": "ethereum-foundation",
+    "name": "Ethereum Foundation",
+    "category": "bounty",
+    "tier": 1,
+    "status": "active",
+    "priority": 4,
+    "owner": "main",
+    "isSPA": false,
+    "mainUrl": "https://ethereum.org/en/bug-bounty/",
+    "searchQueries": [
+      "ethereum foundation bug bounty program active {YEAR}",
+      "ethereum.org bounty grants developer {YEAR}"
+    ],
+    "cacheTTL": 86400,
+    "notes": "ETH bug bounty up to $250K. Ongoing. Also EF grants for ecosystem tools."
+  },
+  {
+    "id": "intigriti",
+    "name": "Intigriti",
+    "category": "bug-bounty",
+    "tier": 2,
+    "status": "active",
+    "priority": 4,
+    "owner": "discovery-bounties",
+    "isSPA": true,
+    "mainUrl": "https://www.intigriti.com/programs",
+    "searchQueries": [
+      "site:intigriti.com bug bounty program active {YEAR}",
+      "intigriti bounty program blockchain crypto web3"
+    ],
+    "cacheTTL": 86400,
+    "notes": "European bug bounty. Growing Web3 programs."
+  },
+  {
+    "id": "yeswehack",
+    "name": "YesWeHack",
+    "category": "bug-bounty",
+    "tier": 2,
+    "status": "active",
+    "priority": 5,
+    "owner": "discovery-bounties",
+    "isSPA": true,
+    "mainUrl": "https://yeswehack.com/programs",
+    "searchQueries": [
+      "site:yeswehack.com bug bounty program active {YEAR}",
+      "yeswehack bounty program crypto blockchain"
+    ],
+    "cacheTTL": 86400,
+    "notes": "European bug bounty. Enterprise focus."
+  },
+  {
+    "id": "secure3",
+    "name": "Secure3",
+    "category": "audit-contest",
+    "tier": 2,
+    "status": "active",
+    "priority": 4,
+    "owner": "discovery-bounties",
+    "isSPA": true,
+    "mainUrl": "https://app.secure3.io/",
+    "searchQueries": [
+      "secure3 audit contest active {YEAR}",
+      "secure3.io smart contract audit competition"
+    ],
+    "cacheTTL": 21600,
+    "notes": "Growing audit platform. Smaller pools but less competition."
+  },
+  {
+    "id": "hats",
+    "name": "Hats Finance",
+    "category": "audit-contest",
+    "tier": 2,
+    "status": "active",
+    "priority": 5,
+    "owner": "discovery-bounties",
+    "isSPA": true,
+    "mainUrl": "https://app.hats.finance/bug-bounties",
+    "searchQueries": [
+      "site:hats.finance audit competition active {YEAR}",
+      "hats finance bug bounty vault active"
+    ],
+    "cacheTTL": 21600,
+    "notes": "Decentralized audit competitions. On-chain rewards."
+  },
+  {
+    "id": "bountycaster",
+    "name": "Bountycaster",
+    "category": "bounty",
+    "tier": 2,
+    "status": "active",
+    "priority": 4,
+    "owner": "discovery-bounties",
+    "isSPA": true,
+    "mainUrl": "https://www.bountycaster.xyz/",
+    "searchQueries": [
+      "bountycaster farcaster bounty active {YEAR}",
+      "bountycaster.xyz open bounty reward"
+    ],
+    "cacheTTL": 21600,
+    "notes": "Farcaster bounties $20-$2000. Quick micro-bounties."
+  },
+  {
+    "id": "onlydust",
+    "name": "OnlyDust",
+    "category": "open-source",
+    "tier": 2,
+    "status": "active",
+    "priority": 5,
+    "owner": "discovery-bounties",
+    "isSPA": true,
+    "mainUrl": "https://app.onlydust.com/projects",
+    "searchQueries": [
+      "site:onlydust.com open source contribution reward",
+      "onlydust paid open source issues blockchain {YEAR}"
+    ],
+    "cacheTTL": 43200,
+    "notes": "Paid open source contributions."
+  },
+  {
+    "id": "gitcoin",
+    "name": "Gitcoin",
+    "category": "grant",
+    "tier": 2,
+    "status": "active",
+    "priority": 6,
+    "owner": "discovery-bounties",
+    "isSPA": true,
+    "mainUrl": "https://explorer.gitcoin.co/",
+    "searchQueries": ["gitcoin grants round active {YEAR}", "gitcoin explorer grant round open"],
+    "cacheTTL": 86400,
+    "notes": "Quadratic funding rounds. Long cache OK — rounds run for weeks."
+  },
+  {
+    "id": "optimism-grants",
+    "name": "Optimism Grants",
+    "category": "grant",
+    "tier": 2,
+    "status": "active",
+    "priority": 5,
+    "owner": "discovery-bounties",
+    "isSPA": true,
+    "mainUrl": "https://app.charmverse.io/op-grants/",
+    "searchQueries": [
+      "optimism grants program open {YEAR} developer",
+      "optimism retro funding round active {YEAR}"
+    ],
+    "cacheTTL": 86400,
+    "notes": "RetroPGF + builder grants. Significant funding."
+  },
+  {
+    "id": "solana-grants",
+    "name": "Solana Foundation Grants",
+    "category": "grant",
+    "tier": 2,
+    "status": "active",
+    "priority": 5,
+    "owner": "discovery-bounties",
+    "isSPA": true,
+    "mainUrl": "https://solana.org/grants",
+    "searchQueries": [
+      "solana foundation grants program open {YEAR}",
+      "solana developer grant application active"
+    ],
+    "cacheTTL": 86400,
+    "notes": "Solana grants $5K-$250K. Good fit for user's Solana experience."
+  },
+  {
+    "id": "chainlink",
+    "name": "Chainlink Bug Bounty",
+    "category": "bug-bounty",
+    "tier": 2,
+    "status": "active",
+    "priority": 4,
+    "owner": "discovery-bounties",
+    "isSPA": false,
+    "mainUrl": "https://immunefi.com/bug-bounty/chainlink/",
+    "searchQueries": [
+      "chainlink bug bounty program active {YEAR}",
+      "chainlink immunefi bounty smart contract"
+    ],
+    "cacheTTL": 86400,
+    "notes": "One of biggest Immunefi programs. Up to $1.5M. Hosted on Immunefi."
+  },
+  {
+    "id": "devpost",
+    "name": "Devpost",
+    "category": "hackathon",
+    "tier": 1,
+    "status": "active",
+    "priority": 4,
+    "owner": "main",
+    "isSPA": true,
+    "mainUrl": "https://devpost.com/hackathons",
+    "apiUrl": "https://devpost.com/api/hackathons?status[]=open&status[]=upcoming",
+    "apiSchema": {
+      "resultPath": "hackathons",
+      "nameField": "title",
+      "rewardField": "prize_amount",
+      "deadlineField": "submission_period_ends_at",
+      "statusField": "status",
+      "activeStatusValues": ["open", "upcoming"],
+      "urlField": "url"
+    },
+    "searchQueries": [
+      "site:devpost.com hackathon open prize {YEAR}",
+      "devpost online hackathon blockchain web3 prize {YEAR}"
+    ],
+    "cacheTTL": 43200,
+    "notes": "Largest hackathon platform."
+  },
+  {
+    "id": "dorahacks",
+    "name": "DoraHacks",
+    "category": "hackathon",
+    "tier": 2,
+    "status": "active",
+    "priority": 5,
+    "owner": "discovery-hackathons",
+    "isSPA": true,
+    "mainUrl": "https://dorahacks.io/hackathon",
+    "searchQueries": [
+      "site:dorahacks.io hackathon active prize blockchain {YEAR}",
+      "dorahacks BUIDL hackathon open web3 {YEAR}"
+    ],
+    "cacheTTL": 43200,
+    "notes": "Web3 hackathons."
+  },
+  {
+    "id": "kaggle",
+    "name": "Kaggle",
+    "category": "competition",
+    "tier": 2,
+    "status": "active",
+    "priority": 7,
+    "owner": "discovery-hackathons",
+    "isSPA": false,
+    "mainUrl": "https://www.kaggle.com/competitions",
+    "apiUrl": "https://www.kaggle.com/api/v1/competitions/list?sortBy=prize&category=all",
+    "apiSchema": {
+      "resultPath": ".",
+      "nameField": "title",
+      "rewardField": "reward",
+      "deadlineField": "deadline",
+      "statusField": "isActive",
+      "activeStatusValues": [true],
+      "urlPattern": "https://www.kaggle.com/competitions/{ref}"
+    },
+    "searchQueries": [
+      "site:kaggle.com competition active prize money {YEAR}",
+      "kaggle competition open cash prize"
+    ],
+    "cacheTTL": 86400,
+    "notes": "ML competitions. Big prizes but very high competition. Poor Claude Code fit for ML."
+  },
+  {
+    "id": "trust-security",
+    "name": "Trust Security",
+    "category": "audit-contest",
+    "tier": 2,
+    "status": "active",
+    "priority": 5,
+    "owner": "discovery-bounties",
+    "isSPA": true,
+    "mainUrl": "https://www.trust-security.xyz/",
+    "searchQueries": [
+      "trust security audit contest active {YEAR}",
+      "trust-security.xyz smart contract competition"
+    ],
+    "cacheTTL": 21600,
+    "notes": "Growing audit contest platform. Web3 focused."
+  },
+  {
+    "id": "questbook",
+    "name": "Questbook",
+    "category": "grant",
+    "tier": 3,
+    "status": "active",
+    "priority": 8,
+    "owner": "discovery-hackathons",
+    "isSPA": true,
+    "mainUrl": "https://questbook.app/",
+    "searchQueries": [
+      "questbook grant application open blockchain {YEAR}",
+      "questbook.app DAO grant program"
+    ],
+    "cacheTTL": 86400,
+    "notes": "Decentralized grant platform."
+  },
+  {
+    "id": "layer3",
+    "name": "Layer3",
+    "category": "quest",
+    "tier": 3,
+    "status": "active",
+    "priority": 8,
+    "owner": "discovery-hackathons",
+    "isSPA": true,
+    "mainUrl": "https://app.layer3.xyz/quests",
+    "searchQueries": ["layer3 quest reward crypto active {YEAR}", "app.layer3.xyz quest bounty"],
+    "cacheTTL": 86400,
+    "notes": "Crypto quests. Small rewards."
+  },
+  {
+    "id": "zealy",
+    "name": "Zealy",
+    "category": "quest",
+    "tier": 3,
+    "status": "active",
+    "priority": 8,
+    "owner": "discovery-hackathons",
+    "isSPA": true,
+    "mainUrl": "https://zealy.io/explore",
+    "searchQueries": ["zealy quest sprint reward crypto {YEAR}", "zealy.io community sprint prize"],
+    "cacheTTL": 86400,
+    "notes": "Quest/sprint platform."
+  },
+  {
+    "id": "galxe",
+    "name": "Galxe",
+    "category": "quest",
+    "tier": 3,
+    "status": "active",
+    "priority": 8,
+    "owner": "discovery-hackathons",
+    "isSPA": true,
+    "mainUrl": "https://galxe.com/earn",
+    "searchQueries": [
+      "galxe campaign quest reward active {YEAR}",
+      "galxe.com earn campaign crypto"
+    ],
+    "cacheTTL": 86400,
+    "notes": "Crypto quest campaigns."
+  },
+  {
+    "id": "replit",
+    "name": "Replit Bounties",
+    "category": "bounty",
+    "tier": 3,
+    "status": "deprecated",
+    "priority": 99,
+    "owner": "none",
+    "isSPA": true,
+    "mainUrl": "https://replit.com/bounties",
+    "searchQueries": [],
+    "cacheTTL": 0,
+    "notes": "DEPRECATED — shut down in 2024."
+  },
+  {
+    "id": "hackenproof",
+    "name": "HackenProof",
+    "category": "bug-bounty",
+    "tier": 2,
+    "status": "active",
+    "priority": 4,
+    "owner": "main",
+    "isSPA": false,
+    "mainUrl": "https://hackenproof.com/programs",
+    "apiUrl": "https://hackenproof.com/api/v1/programs?status=active",
+    "searchQueries": [
+      "hackenproof.com programs active {YEAR} smart contract reward",
+      "hackenproof new bounty program launched {YEAR}"
+    ],
+    "cacheTTL": 43200,
+    "notes": "Web3 bug bounty platform. 200+ active programs. Non-SPA, fetchable. New programs launched frequently."
+  },
+  {
+    "id": "ethglobal",
+    "name": "ETHGlobal",
+    "category": "hackathon",
+    "tier": 2,
+    "status": "active",
+    "priority": 5,
+    "owner": "main",
+    "isSPA": false,
+    "mainUrl": "https://ethglobal.com/events",
+    "searchQueries": [
+      "ethglobal.com hackathon {YEAR} prizes online",
+      "ethglobal upcoming event hackathon {YEAR}"
+    ],
+    "cacheTTL": 86400,
+    "notes": "Top Ethereum hackathons. $10K-$100K+ prize pools. Mix of in-person and online."
+  }
+]

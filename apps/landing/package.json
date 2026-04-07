@@ -1,0 +1,14 @@
+{
+  "name": "@agentscope/landing",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "astro build",
+    "dev": "astro dev",
+    "preview": "astro preview",
+    "lint": "biome check .",
+    "typecheck": "astro check",
+    "clean": "rm -rf dist .astro .turbo"
+  }
+}
