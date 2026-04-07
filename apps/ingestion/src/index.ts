@@ -2,12 +2,13 @@
  * AgentScope ingestion worker entrypoint.
  *
  * Responsibilities (built up across tasks 1.8 → 5.10):
- *   1.8  — startup logging + env config (this file)
- *   1.9  — Yellowstone gRPC client connection
+ *   1.8  — startup logging + env config
+ *   1.9  — Yellowstone gRPC client (paywalled on Helius free → unused)
+ *   1.9b — WebSocket fallback via @solana/web3.js (current implementation)
  *   1.10 — subscribe to devnet transactions
  *   1.11 — persist raw transactions to agent_transactions
  *   2.11 — invoke parser + update parsed_args
- *   2.12 — filter by registered agent wallets
+ *   2.12 — narrow subscriptions to registered agent wallets only
  *   5.9  — invoke detector after each persist
  *   5.10 — periodic cron for time-based rules
  *   5.14 — alerter delivery on detector trigger
@@ -15,15 +16,10 @@
 
 import { loadConfig } from './config';
 import { getDb } from './db';
-import {
-  attachStreamHandlers,
-  buildSubscribeRequest,
-  connectYellowstone,
-  sendSubscribeRequest,
-} from './grpc-client';
 import { logger } from './logger';
 import { persistTx } from './persist';
 import { createWalletRegistry } from './registry';
+import { createWsStream } from './ws-stream';
 
 async function main(): Promise<void> {
   const config = loadConfig();
@@ -31,7 +27,7 @@ async function main(): Promise<void> {
   logger.info(
     {
       network: config.SOLANA_NETWORK,
-      yellowstone: config.YELLOWSTONE_GRPC_URL,
+      rpc: config.SOLANA_RPC_URL,
       env: config.NODE_ENV,
     },
     'ingestion worker started',
@@ -40,14 +36,12 @@ async function main(): Promise<void> {
   const db = getDb(config);
   const registry = await createWalletRegistry(db, logger);
 
-  const { stream } = await connectYellowstone({
-    url: config.YELLOWSTONE_GRPC_URL,
-    token: config.YELLOWSTONE_GRPC_TOKEN,
-  });
-
   let lastLoggedSlot = 0;
-  const detach = attachStreamHandlers(
-    stream,
+  const stream = await createWsStream(
+    {
+      rpcUrl: config.SOLANA_RPC_URL,
+      ...(config.SOLANA_WS_URL ? { wsUrl: config.SOLANA_WS_URL } : {}),
+    },
     {
       onSlot: (slot) => {
         if (slot !== lastLoggedSlot) {
@@ -57,37 +51,32 @@ async function main(): Promise<void> {
       },
       onTransaction: (tx) => {
         // Fire-and-forget — persist errors are logged inside persistTx.
-        // We don't await so the stream doesn't backpressure on slow DB writes.
         void persistTx({ db, registry, logger }, tx);
       },
-      onPing: () => logger.debug('yellowstone ping'),
       onError: (err) => {
-        logger.error({ err }, 'yellowstone subscription failed; exiting for restart');
-        process.exit(1);
-      },
-      onEnd: () => {
-        logger.warn('yellowstone stream ended; exiting for restart');
-        process.exit(1);
+        logger.error({ err }, 'rpc stream error');
       },
     },
     logger,
   );
 
-  // 2.12 will populate accountInclude with registry.wallets() for server-
-  // side filtering. For now we keep the broad filter (vote=false, failed=
-  // false) and rely on persist's client-side wallet→agent lookup.
-  await sendSubscribeRequest(stream, buildSubscribeRequest({ slots: true, transactions: true }));
-  logger.info(
-    { registeredAgents: registry.size() },
-    'subscribed to slots + transactions (CONFIRMED, client-side wallet filter)',
-  );
+  // Subscribe to logs for every registered wallet, and refresh whenever
+  // the registry refreshes (every 30s — see registry.ts).
+  await stream.reconcileWallets(registry.wallets());
+  logger.info({ registeredAgents: registry.size() }, 'subscribed to logs for registered wallets');
 
-  // Graceful shutdown handlers — detach + close stream + flush pino.
+  const reconcileTimer = setInterval(() => {
+    stream
+      .reconcileWallets(registry.wallets())
+      .catch((err) => logger.error({ err }, 'wallet reconcile failed'));
+  }, 30_000);
+
+  // Graceful shutdown handlers.
   const shutdown = (signal: string) => {
     logger.info({ signal }, 'shutting down');
+    clearInterval(reconcileTimer);
     registry.stop();
-    detach();
-    stream.end();
+    void stream.close();
     setTimeout(() => process.exit(0), 100);
   };
   process.on('SIGINT', () => shutdown('SIGINT'));

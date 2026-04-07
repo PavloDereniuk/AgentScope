@@ -61,12 +61,14 @@
   ✅ `pnpm --filter @agentscope/db test` зелений (7/7)
 
 ### Apps: ingestion POC
-- [ ] **1.8** `apps/ingestion`: tsx + pino + dotenv setup, `src/index.ts` з health log ⏱ 20m → 1.6
+- [x] **1.8** `apps/ingestion`: tsx + pino + dotenv setup, `src/index.ts` з health log ⏱ 20m → 1.6
   ✅ `pnpm --filter @agentscope/ingestion dev` стартує і логує "ingestion worker started"
-- [ ] **1.9** `apps/ingestion/src/grpc-client.ts` — підключення до Yellowstone gRPC, subscribe на slot updates ⏱ 60m → 1.8, 1.0b
-  ✅ Лог "received slot N" зʼявляється кожні ~400ms
-- [ ] **1.10** Subscribe на transactions для devnet (без фільтра поки) — лог signature + program_ids ⏱ 45m → 1.9
-  ✅ Лог `tx <sig> programs=[...]` тече у консоль
+- [x] **1.9** `apps/ingestion/src/grpc-client.ts` — підключення до Yellowstone gRPC, subscribe на slot updates ⏱ 60m → 1.8, 1.0b
+  ⚠️ Helius LaserStream (gRPC) — Pro план only. Код лишається у repo для post-MVP. **Заміна на 1.9b (WebSocket).**
+- [x] **1.9b** `apps/ingestion/src/ws-stream.ts` — WebSocket fallback через `@solana/web3.js` `onLogs` + `onSlotChange` ⏱ 45m
+  ✅ Працює на Helius free tier
+- [x] **1.10** Subscribe на transactions для devnet — лог signature + program_ids ⏱ 45m → 1.9
+  ✅ Лог `tx <sig> programs=[...]` тече у консоль (через ws-stream)
 - [x] **1.11** Insert raw tx у `agent_transactions` (client-side filter by wallet→agent map). 2.12 додасть server-side `accountInclude` фільтр у Yellowstone request для bandwidth saving. ⏱ 45m → 1.10, 1.6
   ✅ Code complete (db client + WalletRegistry + persistTx). Runtime `count(*)` росте — чекає DATABASE_URL + Helius creds
 

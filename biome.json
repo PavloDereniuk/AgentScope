@@ -13,6 +13,7 @@
       "**/node_modules/**",
       "**/coverage/**",
       "**/drizzle/**",
+      "**/scripts/**",
       "**/*.astro",
       "**/idl.json"
     ]

@@ -15,7 +15,12 @@ const envSchema = z.object({
 
   SOLANA_NETWORK: z.enum(['devnet', 'mainnet']).default('devnet'),
   HELIUS_API_KEY: z.string().min(1, 'HELIUS_API_KEY is required'),
-  YELLOWSTONE_GRPC_URL: z.string().url('YELLOWSTONE_GRPC_URL must be a URL'),
+  /** HTTP JSON-RPC URL (Helius free tier). Used for getTransaction hydrate calls. */
+  SOLANA_RPC_URL: z.string().url('SOLANA_RPC_URL must be a URL'),
+  /** Optional WS endpoint override; defaults to SOLANA_RPC_URL with http→ws. */
+  SOLANA_WS_URL: z.string().url().optional(),
+  // Yellowstone gRPC (LaserStream) — paid on Helius. Optional, unused in MVP.
+  YELLOWSTONE_GRPC_URL: z.string().url().optional(),
   YELLOWSTONE_GRPC_TOKEN: z.string().optional(),
 });
 
