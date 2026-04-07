@@ -93,8 +93,8 @@
   ✅ 9/9 тестів зелені (empty registry, token deltas, registered parser, failed tx)
 
 ### Fixtures (реальні tx з devnet)
-- [ ] **2.3** `packages/parser/tests/fixtures/`: 5 реальних Jupiter v6 swap tx (devnet, JSON-снапшоти) ⏱ 60m → 1.0b
-  ✅ 5 файлів `jupiter-swap-N.json` з повним response від `getTransaction`
+- [x] **2.3** `packages/parser/tests/fixtures/`: 5 реальних Jupiter v6 swap tx (mainnet, бо devnet pools без liquidity) ⏱ 60m → Helius creds
+  ✅ 5 файлів `jupiter-swap-N.json` (12-20KB кожен) з base64-encoded response від `getTransaction`, v0 + ALT lookups
 - [ ] **2.4** ‖ 5 реальних Kamino Lend tx: deposit, withdraw, borrow, repay, liquidate (devnet) ⏱ 60m → 1.0b
   ✅ 5 файлів `kamino-N.json`
 
