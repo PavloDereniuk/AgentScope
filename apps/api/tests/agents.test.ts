@@ -7,7 +7,7 @@
  * HTTP server is bound, no network touched.
  */
 
-import { agentTransactions, agents, alerts, users } from '@agentscope/db';
+import { agentTransactions, agents, alerts, reasoningLogs, users } from '@agentscope/db';
 import { eq } from 'drizzle-orm';
 import pino from 'pino';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -724,5 +724,171 @@ describe('PATCH /api/agents/:id', () => {
 
     const res = await patch(seeded.agent.id, { webhookUrl: 'not-a-url' });
     expect(res.status).toBe(422);
+  });
+});
+
+describe('DELETE /api/agents/:id', () => {
+  let ctx: TestApp;
+
+  beforeEach(async () => {
+    ctx = await setup();
+  });
+
+  afterEach(async () => {
+    await ctx.testDb.close();
+  });
+
+  async function createAgent(body: Record<string, unknown>) {
+    const res = await ctx.app.request('/api/agents', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: BEARER },
+      body: JSON.stringify(body),
+    });
+    if (res.status !== 201) throw new Error(`seed create failed: ${res.status}`);
+    return (await res.json()) as { agent: { id: string; name: string } };
+  }
+
+  function del(id: string, token = BEARER) {
+    return ctx.app.request(`/api/agents/${id}`, {
+      method: 'DELETE',
+      headers: { Authorization: token },
+    });
+  }
+
+  it('rejects unauthenticated requests with 401', async () => {
+    const res = await ctx.app.request('/api/agents/11111111-1111-1111-1111-111111111111', {
+      method: 'DELETE',
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 422 for a non-uuid id', async () => {
+    const res = await ctx.app.request('/api/agents/not-a-uuid', {
+      method: 'DELETE',
+      headers: { Authorization: BEARER },
+    });
+    expect(res.status).toBe(422);
+  });
+
+  it('returns 404 for an unknown but well-formed id', async () => {
+    const res = await del('11111111-1111-1111-1111-111111111111');
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 404 and leaves the row intact when another user owns the agent', async () => {
+    const seeded = await createAgent({
+      walletPubkey: 'So11111111111111111111111111111111111111112',
+      name: 'Alice bot',
+      framework: 'custom',
+      agentType: 'other',
+    });
+
+    const bobApp = buildApp({
+      db: ctx.testDb.db,
+      verifier: makeVerifier('did:privy:user-bob'),
+      sseBus: createSseBus(),
+      logger: silentLogger,
+    });
+
+    const res = await bobApp.request(`/api/agents/${seeded.agent.id}`, {
+      method: 'DELETE',
+      headers: { Authorization: BEARER },
+    });
+    expect(res.status).toBe(404);
+
+    const [row] = await ctx.testDb.db.select().from(agents).where(eq(agents.id, seeded.agent.id));
+    expect(row).toBeDefined();
+    expect(row?.name).toBe('Alice bot');
+  });
+
+  it('returns 204 with an empty body on successful delete', async () => {
+    const seeded = await createAgent({
+      walletPubkey: 'So11111111111111111111111111111111111111112',
+      name: 'Dying',
+      framework: 'custom',
+      agentType: 'other',
+    });
+
+    const res = await del(seeded.agent.id);
+    expect(res.status).toBe(204);
+    const text = await res.text();
+    expect(text).toBe('');
+
+    const rows = await ctx.testDb.db.select().from(agents).where(eq(agents.id, seeded.agent.id));
+    expect(rows).toHaveLength(0);
+  });
+
+  it('cascades to agent_transactions, reasoning_logs, and alerts', async () => {
+    const seeded = await createAgent({
+      walletPubkey: 'So11111111111111111111111111111111111111112',
+      name: 'Parent',
+      framework: 'custom',
+      agentType: 'other',
+    });
+
+    await ctx.testDb.db.insert(agentTransactions).values({
+      agentId: seeded.agent.id,
+      signature: 'sig-cascade-1',
+      slot: 100,
+      blockTime: '2026-04-08T12:00:00.000Z',
+      programId: '11111111111111111111111111111111',
+      success: true,
+    });
+    await ctx.testDb.db.insert(reasoningLogs).values({
+      agentId: seeded.agent.id,
+      traceId: '0123456789abcdef0123456789abcdef',
+      spanId: '0123456789abcdef',
+      spanName: 'decision',
+      startTime: '2026-04-08T12:00:00.000Z',
+      endTime: '2026-04-08T12:00:01.000Z',
+    });
+    await ctx.testDb.db.insert(alerts).values({
+      agentId: seeded.agent.id,
+      ruleName: 'slippage_spike',
+      severity: 'warning',
+      payload: { thresholdPct: 5, actualPct: 8 },
+    });
+
+    const res = await del(seeded.agent.id);
+    expect(res.status).toBe(204);
+
+    const txRows = await ctx.testDb.db
+      .select()
+      .from(agentTransactions)
+      .where(eq(agentTransactions.agentId, seeded.agent.id));
+    const reasonRows = await ctx.testDb.db
+      .select()
+      .from(reasoningLogs)
+      .where(eq(reasoningLogs.agentId, seeded.agent.id));
+    const alertRows = await ctx.testDb.db
+      .select()
+      .from(alerts)
+      .where(eq(alerts.agentId, seeded.agent.id));
+
+    expect(txRows).toHaveLength(0);
+    expect(reasonRows).toHaveLength(0);
+    expect(alertRows).toHaveLength(0);
+  });
+
+  it('does not touch other agents belonging to the same user', async () => {
+    const keeper = await createAgent({
+      walletPubkey: 'So11111111111111111111111111111111111111112',
+      name: 'Keeper',
+      framework: 'custom',
+      agentType: 'other',
+    });
+    const victim = await createAgent({
+      walletPubkey: 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
+      name: 'Victim',
+      framework: 'custom',
+      agentType: 'other',
+    });
+
+    const res = await del(victim.agent.id);
+    expect(res.status).toBe(204);
+
+    const survivors = await ctx.testDb.db.select().from(agents);
+    expect(survivors).toHaveLength(1);
+    expect(survivors[0]?.id).toBe(keeper.agent.id);
   });
 });

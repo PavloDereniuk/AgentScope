@@ -21,21 +21,21 @@
 ## Стан на день 2, сесія 2026-04-08
 
 ### Поточна задача
-**3.9** — `DELETE /api/agents/:id` — cascade delete. **Чекає старту**. FK ON DELETE CASCADE вже налаштовано у схемі (agent_transactions, reasoning_logs, alerts). Handler: ownership-scoped DELETE + 204, 404 інакше.
+**3.10** — `GET /api/agents/:id/transactions` — cursor pagination, limit ≤ 100. **Чекає старту**. Потребує зрозуміти формат cursor (opaque timestamp/id?) з PLAN §API.
 
-### Прогрес: 32 / 99 (≈32%)
+### Прогрес: 33 / 99 (≈33%)
 - ✅ **Епік 1 (Foundation): 13/13** — RUNTIME validated на справжньому Supabase + Helius
 - ✅ **Епік 2 (Parsers): 11/12** — 22 unit tests з реальними mainnet fixtures (Jupiter v6 + Kamino Lend). 2.12 = N/A для WS fallback.
-- ⏳ **Епік 3 (REST API): 8/12** — Hono skeleton + error + auth + SSE bus + POST/GET/GET:id/PATCH /api/agents (3.1-3.8 ✅)
+- ⏳ **Епік 3 (REST API): 9/12** — **Agents CRUD complete** (POST/GET/GET:id/PATCH/DELETE ✅). Transactions + alerts read — next.
 - 📦 Епіки 4-9: не починалися
 - ⏳ Mainnet runtime валідація persist'у jupiter/kamino — у Тиждень 5 (по плану SPEC §10)
 
 ### Наступні задачі (черга з TASKS.md)
-- **3.9** DELETE /api/agents/:id (cascade) ⏱ 20m
-- **3.10-3.11** Transactions read endpoints
-- **3.12** Alerts read endpoint
+- **3.10** GET /api/agents/:id/transactions (cursor pagination, limit ≤ 100) ⏱ 45m
+- **3.11** GET /api/transactions/:signature (з reasoning_logs join) ⏱ 30m
+- **3.12** GET /api/alerts (filter agent_id?, severity?, from/to) ⏱ 30m
 
-⚠️ **API test runtime = ~47s** (28 agents тестів × ~1.4s PGlite init). Post-MVP оптимізація: shared PGlite instance per-file + `TRUNCATE CASCADE` у `beforeEach` замість `createTestDatabase`. Потенційно ~5s замість 47s.
+⚠️ **API test runtime = ~45s** (35 agents тестів × ~1.3s PGlite init). Post-MVP оптимізація: shared PGlite instance per-file + `TRUNCATE CASCADE` у `beforeEach` замість `createTestDatabase`. Потенційно ~5s замість 45s.
 
 ### Що зробили у 3.1
 - `apps/api/package.json` — додано `hono@^4.6.14`, `@hono/node-server@^1.13.7`, `tsx@^4.19.2`; оновлено `dev`/`start` scripts.
@@ -195,6 +195,28 @@
 - **Immutable fields через zod .strip (default)** — не треба явно валідувати "нема framework/walletPubkey у body", бо `updateAgentInputSchema` не включає цих полів, і zod .strip (default) їх просто видаляє. Елегантно — single source of truth у shared.
 - **`webhookUrl: null` дозволено** — `z.string().url().nullable()` у shared schema. Клієнт може очистити webhook через явний null. Порожній string НЕ дозволений (треба null).
 - **`tags: [...body.tags]` spread** — body.tags типизовано як `readonly string[]` з zod schema, drizzle очікує mutable `string[]`. Spread робить shallow copy.
+
+### Що зробили у 3.9
+- `apps/api/src/routes/agents.ts` — доданий `DELETE /:id` handler: ownership-scoped `DELETE ... RETURNING id` → `c.body(null, 204)` або `HTTPException(404)`. Один і той же 404 семантика як у GET:id/PATCH (no existence oracle). Каскад на children вже є у schema.ts (`onDelete: 'cascade'` на `agentTransactions`, `reasoningLogs`, `alerts`).
+- `apps/api/tests/agents.test.ts` — нова describe `DELETE /api/agents/:id` з 7 тестами:
+  1. Без auth → 401
+  2. Non-uuid id → 422
+  3. Unknown uuid → 404
+  4. Чужий agent → 404 + **row intact у db** (Alice's row unchanged)
+  5. Successful delete → 204 з порожнім body, SELECT підтверджує row gone
+  6. **Cascade до children** — seed agent + tx + reasoning + alert → DELETE → всі 3 child таблиці empty по agent_id
+  7. Two agents for same user, DELETE one → other survives
+- Імпорт `reasoningLogs` додано до тестового файлу.
+- `pnpm lint && pnpm typecheck && pnpm test` — все зелене. **88 tests total** (+7). API test runtime ~45s (35 agents тестів × ~1.3s).
+
+### Ключові рішення 3.9
+- **FK `onDelete: 'cascade'`** (schema-level) — жодного ручного cleanup у handler'і. Drizzle schema + PG-native cascade → atomic deletion, неможливо забути child table. Якщо post-MVP додасться нова table з FK на agents — CASCADE має бути в декларації, тоді тест 6 все ще проходитиме без змін у route.
+- **`c.body(null, 204)`** замість `c.json(...)` — 204 No Content по RFC 7231 повинен мати порожнє тіло. Hono-style: `body(null, status)`. Тест 5 явно перевіряє що body порожній.
+- **`.returning({ id: agents.id })`** для детекції "чи видалено" — дешевше ніж окремий SELECT перед DELETE (race-free). Якщо `deleted.length === 0` → або не знайдено, або чуже, або взагалі нема → 404.
+- **Тест 7 (ізоляція між своїми агентами)** — паранойдальний, але дешевий: переконуємось що WHERE не пропускає зайві рядки. Добре як регрес-тест.
+
+## 🎉 Гейт Кінець Agents CRUD: ✅
+Agents resource повністю готовий (POST/GET/GET:id/PATCH/DELETE). Залишилось по Епіку 3: transactions read (3.10-3.11) + alerts read (3.12), і гейт Епіку 3 закритий.
 
 ---
 

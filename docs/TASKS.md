@@ -148,7 +148,7 @@
   ✅ Тест: створити агента + 1 tx → отримати з count=1
 - [x] **3.8** PATCH /api/agents/:id (часткове оновлення name/tags/webhook_url/alert_rules) ⏱ 30m → 3.7
   ✅ Тест: оновити name → перевірити у БД
-- [ ] **3.9** DELETE /api/agents/:id (cascade delete tx/reasoning/alerts) ⏱ 20m → 3.8
+- [x] **3.9** DELETE /api/agents/:id (cascade delete tx/reasoning/alerts) ⏱ 20m → 3.8
   ✅ Тест: створити агента → DELETE → 204 → SELECT повертає порожньо
 
 ### Transactions read
@@ -464,10 +464,10 @@ E8 → E9 (deploy потребує всього)
 
 ## Поточний стан
 
-**Завершено:** 32 / 99 задач (Епік 1 + Епік 2 + 3.1-3.8).
-**Поточна:** **3.9** (DELETE /api/agents/:id — cascade).
+**Завершено:** 33 / 99 задач (Епік 1 + Епік 2 + 3.1-3.9).
+**Поточна:** **3.10** (GET /api/agents/:id/transactions — cursor pagination).
 
 **Епік 1:** ✅ 13/13 RUNTIME validated на справжньому Supabase + Helius
 **Епік 2:** ✅ 11/12 (2.12 = N/A для WS fallback). 22 unit tests з реальними mainnet fixtures.
-**Епік 3 (REST API):** ⏳ 8/12 — Hono skeleton + error + auth + SSE bus + POST/GET/GET:id/PATCH /api/agents.
-**Тести:** 81/81 зелені (27 shared + 7 db PGlite + 22 parser + 47 api: 6 error + 6 auth + 7 sse-bus + 28 agents).
+**Епік 3 (REST API):** ⏳ 9/12 — **Agents CRUD complete** (POST/GET/GET:id/PATCH/DELETE). Transactions + alerts read — next.
+**Тести:** 88/88 зелені (27 shared + 7 db PGlite + 22 parser + 54 api: 6 error + 6 auth + 7 sse-bus + 35 agents).

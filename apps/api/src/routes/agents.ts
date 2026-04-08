@@ -209,5 +209,34 @@ export function createAgentsRouter(db: Database) {
     },
   );
 
+  // 3.9 — Delete. All children (agent_transactions, reasoning_logs,
+  // alerts) are FK-cascaded at the schema level — no manual cleanup
+  // needed. Ownership stays in the WHERE clause; a 404 response means
+  // "not yours or not there", no existence oracle.
+  router.delete(
+    '/:id',
+    zValidator('param', agentIdParamSchema, (result) => {
+      if (!result.success) {
+        throw new HTTPException(422, { message: 'invalid agent id (expected uuid)' });
+      }
+    }),
+    async (c) => {
+      const privyDid = c.get('userId');
+      const { id: agentId } = c.req.valid('param');
+
+      const user = await ensureUser(db, privyDid);
+
+      const deleted = await db
+        .delete(agents)
+        .where(and(eq(agents.id, agentId), eq(agents.userId, user.id)))
+        .returning({ id: agents.id });
+
+      if (deleted.length === 0) {
+        throw new HTTPException(404, { message: 'agent not found' });
+      }
+      return c.body(null, 204);
+    },
+  );
+
   return router;
 }
