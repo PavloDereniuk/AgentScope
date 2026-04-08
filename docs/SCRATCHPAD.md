@@ -21,17 +21,16 @@
 ## Стан на день 2, сесія 2026-04-08
 
 ### Поточна задача
-**3.7** — `GET /api/agents/:id` — single agent з `recent_tx_count` та `last_alert` join. **Чекає старту**. Потребує COUNT(*) по agent_transactions (останні N хв?) + SELECT ... ORDER BY triggered_at DESC LIMIT 1 з alerts.
+**3.8** — `PATCH /api/agents/:id` — partial update (name/tags/webhookUrl/alertRules). **Чекає старту**. Форма через `updateAgentInputSchema` з `@agentscope/shared` (вже існує як `.partial()`).
 
-### Прогрес: 30 / 99 (≈30%)
+### Прогрес: 31 / 99 (≈31%)
 - ✅ **Епік 1 (Foundation): 13/13** — RUNTIME validated на справжньому Supabase + Helius
 - ✅ **Епік 2 (Parsers): 11/12** — 22 unit tests з реальними mainnet fixtures (Jupiter v6 + Kamino Lend). 2.12 = N/A для WS fallback.
-- ⏳ **Епік 3 (REST API): 6/12** — Hono skeleton + error + auth + SSE bus + POST/GET /api/agents (3.1-3.6 ✅)
+- ⏳ **Епік 3 (REST API): 7/12** — Hono skeleton + error + auth + SSE bus + POST/GET/GET:id /api/agents (3.1-3.7 ✅)
 - 📦 Епіки 4-9: не починалися
 - ⏳ Mainnet runtime валідація persist'у jupiter/kamino — у Тиждень 5 (по плану SPEC §10)
 
 ### Наступні задачі (черга з TASKS.md)
-- **3.7** GET /api/agents/:id (with recent_tx_count, last_alert) ⏱ 30m
 - **3.8** PATCH /api/agents/:id (partial update) ⏱ 30m
 - **3.9** DELETE /api/agents/:id (cascade) ⏱ 20m
 - **3.10-3.11** Transactions read endpoints
@@ -137,6 +136,35 @@
 - **`orderBy(desc(agents.createdAt))`** — стабільний контракт "newest first". Клієнт може розраховувати, щоб мати predictable UI без додаткової сортировки.
 - **PGlite per-test cost** (~1.5s × 11) помічено. Post-MVP оптимізація: shared PGlite instance per file + `TRUNCATE CASCADE` між it'ами у `beforeEach`. Поки що 28s test run прийнятний, бо запускається рідко (pre-commit + CI).
 - **Cross-tenant тест без другого PGlite** — ключове усвідомлення: двоє різних verifiers → двоє різних `buildApp` instances поверх того самого `db`, і кожен бачить тільки свої рядки через query-level фільтр. Чисто, швидко, без double setup.
+
+### Що зробили у 3.7
+- `apps/api/src/routes/agents.ts` — доданий `GET /:id` handler:
+  - `zValidator('param', z.object({id: z.string().uuid()}))` → 422 якщо id не UUID
+  - `SELECT * FROM agents WHERE id = ? AND user_id = ?` → 404 якщо не знайдено (не 403, щоб не витік факт існування)
+  - `SELECT count(*) FROM agent_transactions WHERE agent_id = ? AND block_time >= now() - 24h` — віконний count
+  - `SELECT * FROM alerts WHERE agent_id = ? ORDER BY triggered_at DESC LIMIT 1`
+  - Response: `{agent, recentTxCount, lastAlert: lastAlert ?? null}`
+- `RECENT_TX_WINDOW_MS = 24h` константа, прокоментовано у коді ("standard dashboard default, короткий достатньо щоб stuck/idle агент був помітним").
+- Імпорти розширено: `agentTransactions, alerts, and, gte, sql, z`.
+- `apps/api/tests/agents.test.ts` — нова describe `GET /api/agents/:id` з 7 тестами:
+  1. Без auth → 401
+  2. Non-uuid id → 422
+  3. Unknown uuid → 404
+  4. **Чужий агент → 404** (не 403, existence oracle prevention)
+  5. Fresh agent → zero tx count + null lastAlert
+  6. 3 tx inside 24h + 1 tx 48h тому → count = 3 (віконний фільтр)
+  7. 2 seeded alerts → lastAlert = найновіший (gas_spike, critical)
+- Тест #6 явно вставляє рядки у `agent_transactions` з різними `block_time` відносно `Date.now()`. Partition 2026_04 покриває поточну дату (2026-04-08), PGlite з нього приймає вставку.
+- `pnpm lint && pnpm typecheck && pnpm test` — все зелене. 71 tests total (+7). API test runtime ~28s (18 agents тестів × ~1.4s PGlite init).
+
+### Ключові рішення 3.7
+- **404 замість 403 для чужого агента** — security best practice (existence oracle prevention). Route не розрізняє "not found" і "not yours", бо інакше атакувальник може probing'ом зібрати список чужих UUID'ів. Коментар у route пояснює.
+- **`zValidator('param', ...)`** для UUID валідації — без нього PG кидає `invalid input syntax for type uuid` → 500, що витікає implementation detail. Zod → 422 з нашим стандартним форматом.
+- **24h window hard-coded** — post-MVP може стати query param (`?window=1h|24h|7d`), але для MVP dashboard один default вистачає. PLAN не уточнює цього.
+- **`cast(count(*) as int)` у sql template** — PG `count(*)` повертає `bigint` → JSON серіалізує як string у JSON (node-postgres, postgres.js behaviour). `cast(... as int)` → `number` у JSON, що консистентно з frontend очікуваннями. 24h window навіть з багатьма агентами не перевищить 2^31.
+- **`lastAlert: lastAlert ?? null`** замість `undefined` — явний `null` у JSON зрозуміліший і зберігає присутність поля у response shape.
+- **Response camelCase** (`recentTxCount`, `lastAlert`) — консистентно з рештою endpoints, ігнорується snake_case у PLAN як historic doc convention.
+- **Тест з block_time у quantum partition 2026_04** — працює бо Date.now() у тесті = 2026-04-08 (current date для цього проекту). Якщо колись тести тікатимуть у май без оновлення партицій — треба або додати cron для partition rotation, або cast block_time на фіксовану дату.
 
 ---
 

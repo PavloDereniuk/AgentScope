@@ -7,7 +7,7 @@
  * HTTP server is bound, no network touched.
  */
 
-import { agents, users } from '@agentscope/db';
+import { agentTransactions, agents, alerts, users } from '@agentscope/db';
 import { eq } from 'drizzle-orm';
 import pino from 'pino';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -336,5 +336,187 @@ describe('GET /api/agents', () => {
     const aliceBody = (await aliceRes.json()) as { agents: Array<{ name: string }> };
     expect(aliceBody.agents).toHaveLength(1);
     expect(aliceBody.agents[0]?.name).toBe('Alice agent');
+  });
+});
+
+describe('GET /api/agents/:id', () => {
+  let ctx: TestApp;
+
+  beforeEach(async () => {
+    ctx = await setup();
+  });
+
+  afterEach(async () => {
+    await ctx.testDb.close();
+  });
+
+  async function createAgent(body: Record<string, unknown>) {
+    const res = await ctx.app.request('/api/agents', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: BEARER },
+      body: JSON.stringify(body),
+    });
+    if (res.status !== 201) throw new Error(`seed create failed: ${res.status}`);
+    return (await res.json()) as { agent: { id: string; name: string } };
+  }
+
+  it('rejects unauthenticated requests with 401', async () => {
+    const res = await ctx.app.request('/api/agents/11111111-1111-1111-1111-111111111111');
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 422 for a non-uuid id', async () => {
+    const res = await ctx.app.request('/api/agents/not-a-uuid', {
+      headers: { Authorization: BEARER },
+    });
+    expect(res.status).toBe(422);
+  });
+
+  it('returns 404 for an unknown but well-formed id', async () => {
+    const res = await ctx.app.request('/api/agents/11111111-1111-1111-1111-111111111111', {
+      headers: { Authorization: BEARER },
+    });
+    expect(res.status).toBe(404);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe('NOT_FOUND');
+  });
+
+  it('returns 404 (not 403) when another user owns the agent', async () => {
+    const seeded = await createAgent({
+      walletPubkey: 'So11111111111111111111111111111111111111112',
+      name: 'Alice agent',
+      framework: 'custom',
+      agentType: 'other',
+    });
+
+    const bobApp = buildApp({
+      db: ctx.testDb.db,
+      verifier: makeVerifier('did:privy:user-bob'),
+      sseBus: createSseBus(),
+      logger: silentLogger,
+    });
+
+    const res = await bobApp.request(`/api/agents/${seeded.agent.id}`, {
+      headers: { Authorization: BEARER },
+    });
+    // Deliberately 404, not 403 — we don't want to leak existence.
+    expect(res.status).toBe(404);
+  });
+
+  it('returns the agent with zero tx and null last_alert on a fresh create', async () => {
+    const seeded = await createAgent({
+      walletPubkey: 'So11111111111111111111111111111111111111112',
+      name: 'Lonely Bot',
+      framework: 'custom',
+      agentType: 'other',
+    });
+
+    const res = await ctx.app.request(`/api/agents/${seeded.agent.id}`, {
+      headers: { Authorization: BEARER },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      agent: { id: string; name: string };
+      recentTxCount: number;
+      lastAlert: unknown;
+    };
+    expect(body.agent.id).toBe(seeded.agent.id);
+    expect(body.agent.name).toBe('Lonely Bot');
+    expect(body.recentTxCount).toBe(0);
+    expect(body.lastAlert).toBeNull();
+  });
+
+  it('counts only transactions within the 24h window', async () => {
+    const seeded = await createAgent({
+      walletPubkey: 'So11111111111111111111111111111111111111112',
+      name: 'Busy Bot',
+      framework: 'custom',
+      agentType: 'other',
+    });
+
+    const now = new Date();
+    const insideWindow1 = new Date(now.getTime() - 1 * 60 * 60 * 1000).toISOString();
+    const insideWindow2 = new Date(now.getTime() - 5 * 60 * 60 * 1000).toISOString();
+    const insideWindow3 = new Date(now.getTime() - 23 * 60 * 60 * 1000).toISOString();
+    const outsideWindow = new Date(now.getTime() - 48 * 60 * 60 * 1000).toISOString();
+
+    // Use partition-safe block_time values: April 2026 is covered by
+    // agent_transactions_2026_04, and "now" per the test env is 2026-04-08.
+    await ctx.testDb.db.insert(agentTransactions).values([
+      {
+        agentId: seeded.agent.id,
+        signature: 'sig-recent-1',
+        slot: 100,
+        blockTime: insideWindow1,
+        programId: '11111111111111111111111111111111',
+        success: true,
+      },
+      {
+        agentId: seeded.agent.id,
+        signature: 'sig-recent-2',
+        slot: 101,
+        blockTime: insideWindow2,
+        programId: '11111111111111111111111111111111',
+        success: true,
+      },
+      {
+        agentId: seeded.agent.id,
+        signature: 'sig-recent-3',
+        slot: 102,
+        blockTime: insideWindow3,
+        programId: '11111111111111111111111111111111',
+        success: false,
+      },
+      {
+        agentId: seeded.agent.id,
+        signature: 'sig-old',
+        slot: 10,
+        blockTime: outsideWindow,
+        programId: '11111111111111111111111111111111',
+        success: true,
+      },
+    ]);
+
+    const res = await ctx.app.request(`/api/agents/${seeded.agent.id}`, {
+      headers: { Authorization: BEARER },
+    });
+    const body = (await res.json()) as { recentTxCount: number };
+    expect(body.recentTxCount).toBe(3);
+  });
+
+  it('returns the latest alert as last_alert', async () => {
+    const seeded = await createAgent({
+      walletPubkey: 'So11111111111111111111111111111111111111112',
+      name: 'Alerty Bot',
+      framework: 'custom',
+      agentType: 'other',
+    });
+
+    await ctx.testDb.db.insert(alerts).values([
+      {
+        agentId: seeded.agent.id,
+        ruleName: 'slippage_spike',
+        severity: 'warning',
+        payload: { thresholdPct: 5, actualPct: 8 },
+        triggeredAt: '2026-04-08T10:00:00.000Z',
+      },
+      {
+        agentId: seeded.agent.id,
+        ruleName: 'gas_spike',
+        severity: 'critical',
+        payload: { thresholdMult: 3, actualMult: 6 },
+        triggeredAt: '2026-04-08T12:00:00.000Z',
+      },
+    ]);
+
+    const res = await ctx.app.request(`/api/agents/${seeded.agent.id}`, {
+      headers: { Authorization: BEARER },
+    });
+    const body = (await res.json()) as {
+      lastAlert: { ruleName: string; severity: string } | null;
+    };
+    expect(body.lastAlert).not.toBeNull();
+    expect(body.lastAlert?.ruleName).toBe('gas_spike');
+    expect(body.lastAlert?.severity).toBe('critical');
   });
 });

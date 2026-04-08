@@ -144,7 +144,7 @@
   ✅ Інтеграційний тест: створити агента, перевірити що `user_id` з token
 - [x] **3.6** GET /api/agents (список усіх агентів юзера, ORDER BY created_at DESC) ⏱ 20m → 3.5
   ✅ Тест: 2 агента → endpoint повертає 2
-- [ ] **3.7** GET /api/agents/:id (з recent_tx_count та last_alert) ⏱ 30m → 3.6
+- [x] **3.7** GET /api/agents/:id (з recent_tx_count та last_alert) ⏱ 30m → 3.6
   ✅ Тест: створити агента + 1 tx → отримати з count=1
 - [ ] **3.8** PATCH /api/agents/:id (часткове оновлення name/tags/webhook_url/alert_rules) ⏱ 30m → 3.7
   ✅ Тест: оновити name → перевірити у БД
@@ -464,10 +464,10 @@ E8 → E9 (deploy потребує всього)
 
 ## Поточний стан
 
-**Завершено:** 30 / 99 задач (Епік 1 + Епік 2 + 3.1-3.6).
-**Поточна:** **3.7** (GET /api/agents/:id with recent_tx_count + last_alert).
+**Завершено:** 31 / 99 задач (Епік 1 + Епік 2 + 3.1-3.7).
+**Поточна:** **3.8** (PATCH /api/agents/:id — partial update).
 
 **Епік 1:** ✅ 13/13 RUNTIME validated на справжньому Supabase + Helius
 **Епік 2:** ✅ 11/12 (2.12 = N/A для WS fallback). 22 unit tests з реальними mainnet fixtures.
-**Епік 3 (REST API):** ⏳ 6/12 — Hono skeleton + error + auth + SSE bus + POST/GET /api/agents.
-**Тести:** 64/64 зелені (27 shared + 7 db PGlite + 22 parser + 30 api: 6 error + 6 auth + 7 sse-bus + 11 agents).
+**Епік 3 (REST API):** ⏳ 7/12 — Hono skeleton + error + auth + SSE bus + POST/GET/GET:id /api/agents.
+**Тести:** 71/71 зелені (27 shared + 7 db PGlite + 22 parser + 37 api: 6 error + 6 auth + 7 sse-bus + 18 agents).
