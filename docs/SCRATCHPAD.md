@@ -21,17 +21,24 @@
 ## Стан на день 2, сесія 2026-04-08
 
 ### Поточна задача
-**3.12** — `GET /api/alerts` — глобальний alerts feed з фільтрами (`agent_id?`, `severity?`, `from?`, `to?`). **Чекає старту**. Остання задача Епіку 3.
+**4.1** — `apps/api`: deps `@opentelemetry/proto-grpc`, типи OTLP. **Epic 3 closed, починаємо Epic 4 (Reasoning Collector)**.
 
-### Прогрес: 35 / 99 (≈35%)
+### Прогрес: 36 / 99 (≈36%)
 - ✅ **Епік 1 (Foundation): 13/13** — RUNTIME validated на справжньому Supabase + Helius
 - ✅ **Епік 2 (Parsers): 11/12** — 22 unit tests з реальними mainnet fixtures (Jupiter v6 + Kamino Lend). 2.12 = N/A для WS fallback.
-- ⏳ **Епік 3 (REST API): 11/12** — Agents CRUD + tx list + single-tx (3.1-3.11 ✅). Alerts (3.12) — остання.
-- 📦 Епіки 4-9: не починалися
+- ✅ **Епік 3 (REST API): 12/12 CLOSED** — Hono skeleton, error middleware, Privy auth, SSE bus, full agents CRUD, tx list (paginated), tx detail with reasoning join, alerts feed with filters. 88 api тестів.
+- 📦 **Епік 4 (Reasoning Collector):** наступний
+- 📦 Епіки 5-9: не починалися
 - ⏳ Mainnet runtime валідація persist'у jupiter/kamino — у Тиждень 5 (по плану SPEC §10)
 
 ### Наступні задачі (черга з TASKS.md)
-- **3.12** GET /api/alerts (filter agent_id?, severity?, from/to) ⏱ 30m → **Epic 3 gate**
+- **4.1** OTLP deps (@opentelemetry/proto-grpc, types) ⏱ 30m
+- **4.2** POST /v1/traces — OTLP/HTTP JSON receiver ⏱ 90m
+- **4.3** Auth для OTLP: span attribute `agent.token` → lookup у `agents.ingest_token` ⏱ 45m
+- **4.4** Persist: spans → `reasoning_logs` ⏱ 60m
+- **4.5** Кореляція з `solana.tx.signature` ⏱ 20m
+- **4.6** GET /api/agents/:id/reasoning ⏱ 30m
+- **4.7** Оновити GET /api/transactions/:signature з full span tree ⏱ 30m
 
 ⚠️ **API test runtime = ~65s** (44 agents тестів × ~1.3s PGlite init). Post-MVP оптимізація: shared PGlite instance per-file + `TRUNCATE CASCADE` у `beforeEach` замість `createTestDatabase`. Потенційно ~5s замість 65s.
 
@@ -287,6 +294,47 @@ Agents resource повністю готовий (POST/GET/GET:id/PATCH/DELETE). 
 - **`reasoningLogs: []` замість `null`** — stable response shape для frontend. Frontend може безпечно mapувати `logs.map(...)` без null guard.
 - **`ORDER BY start_time ASC`** — chronological, природний порядок для timeline display у dashboard.
 - **Mainnet-shape test signatures** (88 chars base58) замість fake `"sig-1"` — перевіряє, що `min(64).max(88)` в param schema приймає реальний формат. У agents.test.ts ми використовували короткі синтетичні signatures, бо там `signature` не валідується через zod (тільки як column у DB).
+
+### Що зробили у 3.12
+- `apps/api/src/routes/alerts.ts` — новий top-level router `createAlertsRouter(db)`:
+  - `GET /` з query params: `agentId?` (uuid), `severity?` (z.enum(ALERT_SEVERITIES) з shared), `from?`/`to?` (ISO datetime з offset)
+  - `.refine(from ≤ to)` валідація
+  - **INNER JOIN** `alerts ↔ agents` з `WHERE agents.user_id = ?` + opt filters
+  - `ORDER BY triggered_at DESC LIMIT 100` (MVP cap, no cursor)
+  - Response: `{alerts: AlertRow[]}` — `.map(r => r.alert)` щоб avoid nested shape
+- `apps/api/src/app.ts` — зареєстровано `createAlertsRouter` на `/api/alerts`
+- `apps/api/tests/alerts.test.ts` — новий файл з **11 integration тестами**:
+  1. No auth → 401
+  2. Invalid severity (`extreme`) → 422 (enum guard)
+  3. Non-uuid agentId → 422
+  4. `from > to` → 422 (refine guard)
+  5. Empty feed → `{alerts: []}`
+  6. **Cross-tenant** — Alice seed'ить alert, Bob через другий `buildApp`/verifier бачить `[]`
+  7. Global feed — 3 alerts across 2 agents, DESC by triggered_at
+  8. **`severity=critical` filter** — task spec: "filter by severity=critical → тільки critical"
+  9. `agentId` filter — narrow до одного агента
+  10. `from/to` window — 10 hourly alerts, 03:00–06:00 → 4
+  11. **Combined filters** (`agentId + severity`) — 3 alerts → 1 match
+- `pnpm lint && pnpm typecheck && pnpm test` — все зелене. **144 tests total** (+11).
+
+### Ключові рішення 3.12
+- **INNER JOIN ownership pattern** — consistent з 3.11 transactions (один query, ownership у SQL). Drizzle subquery approach через `inArray(db.select())` теж би працював, але JOIN читабельніший і PG planner однаково оптимізує.
+- **`.map(r => r.alert)`** — drizzle з `.select({alert: alerts})` повертає `{alert}` wrapper. Явне mapping перед response робить shape чистим для клієнта. Post-MVP може розглянути denormalized response з `agent.name` inline.
+- **MVP hard-cap 100, no cursor** — alerts є "recent activity feed", не архів. Якщо юзер має >100 active alerts — у нього більш серйозні проблеми, ніж пагінація. Cursor можна додати post-MVP за тим самим keyset patter'ном як у 3.10.
+- **`severity` з `ALERT_SEVERITIES` shared enum** — single source of truth. Якщо post-MVP додасться новий severity (`"emergency"`) — треба лише оновити константу у shared, route автоматично прийме.
+- **`from`/`to` на `triggered_at`**, не `created_at`/`delivered_at` — бо dashboard хоче знати коли rule спрацював, не коли notification був надісланий. delivery_at ще може бути null.
+- **Filters композабельні** — усі opt, applied в одному `and(...where)`. Default (no filters) = усі алерти юзера.
+
+## 🎉 ЕПІК 3 ЗАКРИТО ✅
+Повний REST API готовий:
+- Agents CRUD: POST/GET/GET:id/PATCH/DELETE
+- Transactions: list (keyset pagination), single (з reasoning join)
+- Alerts: feed з фільтрами
+- Foundation: Hono + error middleware + Privy auth + SSE bus + buildApp factory
+
+**88 api тестів** покривають всю surface. PGlite integration tests для owner-scoped queries, cross-tenant isolation, validation edge cases.
+
+Наступний епік — **Epic 4: Reasoning Collector** (OTLP receiver для AI agent reasoning spans). Задачі 4.1-4.7.
 
 ---
 

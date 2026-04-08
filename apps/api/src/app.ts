@@ -17,6 +17,7 @@ import { type Logger, logger as defaultLogger } from './logger';
 import { type ApiEnv, requireAuth } from './middleware/auth';
 import { registerErrorHandlers } from './middleware/error';
 import { createAgentsRouter } from './routes/agents';
+import { createAlertsRouter } from './routes/alerts';
 import { createTransactionsRouter } from './routes/transactions';
 
 export interface AppDeps {
@@ -42,6 +43,7 @@ export function buildApp(deps: AppDeps) {
   api.use('*', requireAuth(deps.verifier, log));
   api.route('/agents', createAgentsRouter(deps.db));
   api.route('/transactions', createTransactionsRouter(deps.db));
+  api.route('/alerts', createAlertsRouter(deps.db));
 
   app.route('/api', api);
 

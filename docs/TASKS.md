@@ -158,7 +158,7 @@
   ✅ Тест: tx без reasoning → reasoning_logs=[]
 
 ### Alerts read
-- [ ] **3.12** GET /api/alerts (filter agent_id?, severity?, from/to) ⏱ 30m → 3.11
+- [x] **3.12** GET /api/alerts (filter agent_id?, severity?, from/to) ⏱ 30m → 3.11
   ✅ Тест: filter by severity=critical → тільки critical
 
 **Гейт Кінець E3:** ✅ API з повним CRUD агентів, читання tx + alerts. Інтеграційні тести зелені.
@@ -464,10 +464,10 @@ E8 → E9 (deploy потребує всього)
 
 ## Поточний стан
 
-**Завершено:** 35 / 99 задач (Епік 1 + Епік 2 + 3.1-3.11).
-**Поточна:** **3.12** (GET /api/alerts з фільтрами).
+**Завершено:** 36 / 99 задач (Епік 1 + Епік 2 + Епік 3).
+**Поточна:** **4.1** (OTLP receiver deps — початок Епіку 4: Reasoning Collector).
 
 **Епік 1:** ✅ 13/13 RUNTIME validated на справжньому Supabase + Helius
 **Епік 2:** ✅ 11/12 (2.12 = N/A для WS fallback). 22 unit tests з реальними mainnet fixtures.
-**Епік 3 (REST API):** ⏳ 11/12 — Agents CRUD + transactions list + single-tx. Alerts read — last.
-**Тести:** 133/133 зелені (27 shared + 7 db PGlite + 22 parser + 77 api: 6 error + 6 auth + 7 sse-bus + 6 cursor + 44 agents + 8 transactions).
+**Епік 3 (REST API):** ✅ **12/12 CLOSED** — Hono + auth + SSE bus + full Agents CRUD + tx list/detail + alerts feed.
+**Тести:** 144/144 зелені (27 shared + 7 db PGlite + 22 parser + 88 api: 6 error + 6 auth + 7 sse-bus + 6 cursor + 44 agents + 8 transactions + 11 alerts).
