@@ -18,25 +18,31 @@
 
 ---
 
-## Стан на кінець сесії 2026-04-07
+## Стан на день 2, сесія 2026-04-08
 
 ### Поточна задача
-**3.1** — `apps/api`: Hono skeleton з `/health` endpoint. **Чекає старту**.
+**3.2** — `apps/api/src/middleware/error.ts` — глобальний error handler з форматом `{error:{code,message}}`. **Чекає старту**.
 
-### Прогрес: 24 / 99 (≈24%)
+### Прогрес: 25 / 99 (≈25%)
 - ✅ **Епік 1 (Foundation): 13/13** — RUNTIME validated на справжньому Supabase + Helius
 - ✅ **Епік 2 (Parsers): 11/12** — 22 unit tests з реальними mainnet fixtures (Jupiter v6 + Kamino Lend). 2.12 = N/A для WS fallback.
-- 📦 Епіки 3-9: не починалися
+- ⏳ **Епік 3 (REST API): 1/12** — Hono skeleton + `/health` online (3.1 ✅)
+- 📦 Епіки 4-9: не починалися
 - ⏳ Mainnet runtime валідація persist'у jupiter/kamino — у Тиждень 5 (по плану SPEC §10)
 
 ### Наступні задачі (черга з TASKS.md)
-- **3.1** Hono skeleton + `/health` ⏱ 30m
 - **3.2** Error middleware ⏱ 30m
 - **3.3** Privy JWT auth middleware ⏱ 60m → потребує `PRIVY_APP_SECRET` (вже в `.env`)
 - **3.4** In-memory SSE bus ⏱ 30m
 - **3.5-3.9** Agents CRUD endpoints (POST/GET/GET:id/PATCH/DELETE)
 - **3.10-3.11** Transactions read endpoints
 - **3.12** Alerts read endpoint
+
+### Що зробили у 3.1
+- `apps/api/package.json` — додано `hono@^4.6.14`, `@hono/node-server@^1.13.7`, `tsx@^4.19.2`; оновлено `dev`/`start` scripts (`tsx watch --env-file=../../.env`).
+- `apps/api/src/index.ts` — мінімальний Hono app з `GET /health → {ok:true}`, `serve()` на `PORT ?? 3000`, temporary `console.log` банер (з `biome-ignore lint/suspicious/noConsoleLog`; pino lендиться у 3.2 разом з error middleware).
+- Smoke test: сервер піднявся на 3000, `curl /health` → `200 {"ok":true}`.
+- `pnpm lint && pnpm typecheck && pnpm test` — все зелене (14/14 turbo tasks).
 
 ---
 

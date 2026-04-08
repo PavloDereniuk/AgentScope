@@ -130,7 +130,7 @@
 **Мета:** Hono API з Privy auth, CRUD агентів, читання tx/alerts.
 
 ### Hono skeleton
-- [ ] **3.1** `apps/api`: hono + @hono/node-server + tsx, `src/index.ts` з `/health` ⏱ 30m
+- [x] **3.1** `apps/api`: hono + @hono/node-server + tsx, `src/index.ts` з `/health` ⏱ 30m
   ✅ `curl localhost:3000/health` → 200 `{ok:true}`
 - [ ] **3.2** `src/middleware/error.ts` — глобальний error handler з error format `{error:{code,message}}` ⏱ 30m → 3.1
   ✅ Тест: викликати throw → respond 500 з валідним JSON
@@ -464,10 +464,10 @@ E8 → E9 (deploy потребує всього)
 
 ## Поточний стан
 
-**Завершено:** 24 / 99 задач (Епік 1 + Епік 2).
-**Поточна:** **3.1** (Hono API skeleton + `/health`).
+**Завершено:** 25 / 99 задач (Епік 1 + Епік 2 + 3.1).
+**Поточна:** **3.2** (error middleware).
 
 **Епік 1:** ✅ 13/13 RUNTIME validated на справжньому Supabase + Helius
 **Епік 2:** ✅ 11/12 (2.12 = N/A для WS fallback). 22 unit tests з реальними mainnet fixtures.
-**Епік 3 (REST API):** наступний.
+**Епік 3 (REST API):** ⏳ 1/12 — Hono skeleton з `/health` online.
 **Тести:** 34/34 зелені (27 shared + 7 db PGlite + 22 parser).
