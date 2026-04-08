@@ -21,17 +21,20 @@
 ## Стан на день 2, сесія 2026-04-08
 
 ### Поточна задача
-**3.5** — `apps/api/src/routes/agents.ts`: `POST /api/agents` (zod validation, insert у db, повертає agent). **Чекає старту**. Потребує виведення в `server.ts` (створення Privy verifier + sse bus singletons + підключення router з auth middleware).
+**3.6** — `GET /api/agents` — список усіх агентів юзера, `ORDER BY created_at DESC`. **Чекає старту**. Router та користувацьке provisioning вже готові — додається новий handler у існуючий `createAgentsRouter`.
 
-### Прогрес: 28 / 99 (≈28%)
+### Прогрес: 29 / 99 (≈29%)
 - ✅ **Епік 1 (Foundation): 13/13** — RUNTIME validated на справжньому Supabase + Helius
 - ✅ **Епік 2 (Parsers): 11/12** — 22 unit tests з реальними mainnet fixtures (Jupiter v6 + Kamino Lend). 2.12 = N/A для WS fallback.
-- ⏳ **Епік 3 (REST API): 4/12** — Hono skeleton + error middleware + Privy auth + SSE bus ready (3.1-3.4 ✅)
+- ⏳ **Епік 3 (REST API): 5/12** — Hono skeleton + error + auth + SSE bus + POST /api/agents (з integration tests через PGlite). (3.1-3.5 ✅)
 - 📦 Епіки 4-9: не починалися
 - ⏳ Mainnet runtime валідація persist'у jupiter/kamino — у Тиждень 5 (по плану SPEC §10)
 
 ### Наступні задачі (черга з TASKS.md)
-- **3.5-3.9** Agents CRUD endpoints (POST/GET/GET:id/PATCH/DELETE)
+- **3.6** GET /api/agents (list) ⏱ 20m
+- **3.7** GET /api/agents/:id (with recent_tx_count, last_alert) ⏱ 30m
+- **3.8** PATCH /api/agents/:id (partial update) ⏱ 30m
+- **3.9** DELETE /api/agents/:id (cascade) ⏱ 20m
 - **3.10-3.11** Transactions read endpoints
 - **3.12** Alerts read endpoint
 
@@ -83,6 +86,41 @@
 - **Publish синхронний** — EventEmitter.emit sync, handler'и теж sync (SSE writes async не чекає нічого корисного). Якщо handler чекає на щось async — це його проблема, bus не буде чекати.
 - **`logger?: Logger`** optional — тести без шуму можуть не передавати; production передає pino. Alternative був би no-op logger default, але optional чистіше.
 - **Post-MVP scalability explicit в коментарях** — swap `EventEmitter` на Redis pub/sub коли буде 2+ api instance, public interface лишається. Consumers mustn't import from `node:events` напряму.
+
+### Що зробили у 3.5 (велика задача — композиційний корінь)
+Додано купу foundation разом з POST /api/agents, бо без них integration test не злетів би:
+- **Нові deps у `apps/api`:** `@agentscope/db@workspace:^`, `@agentscope/shared@workspace:^`, `drizzle-orm@^0.36.4`, `zod@^3.23.8`, `@hono/zod-validator@^0.7.6`, dev: `@electric-sql/pglite@^0.2.13`.
+- `apps/api/src/config.ts` — zod-validated env loader (DATABASE_URL, PRIVY_APP_ID, PRIVY_APP_SECRET, PORT, NODE_ENV, LOG_LEVEL). Копія патерну з ingestion.
+- `apps/api/src/app.ts` — **`buildApp(deps)` factory**, композиційний корінь. Бере `{db, verifier, sseBus, logger?}`, монтує error handlers → `/health` → `/api/*` (з requireAuth) → `/api/agents` router. Усунено module-level state.
+- `apps/api/src/index.ts` — тепер просто `export { buildApp, type AppDeps }` + `ApiEnv`. Жодних side effects.
+- `apps/api/src/server.ts` — оновлено, калить `loadConfig()` → `createDb()` → `createPrivyVerifier()` → `createSseBus(logger)` → `buildApp({...})` → `serve()`. Це єдине місце де читаються env vars.
+- `apps/api/src/lib/users.ts` — `ensureUser(db, privyDid)`: `INSERT ... ON CONFLICT (privy_did) DO NOTHING RETURNING` + fallback SELECT. Ідемпотентний, race-safe.
+- `apps/api/src/routes/agents.ts` — `createAgentsRouter(db)` з `POST /`:
+  - Використовує `createAgentInputSchema` з `@agentscope/shared` (не дублюємо zod схему).
+  - Custom zValidator error hook → `HTTPException(422)` з конкатенованими issue paths.
+  - `userId` з `c.var` (Privy DID) → `ensureUser` → реальний `users.id` UUID для insert.
+  - `generateIngestToken()`: `tok_${randomBytes(24).toString('base64url')}` — 192 bits entropy, URL-safe.
+  - Insert через drizzle → `returning()` → `201 { agent }`.
+- `apps/api/tests/helpers/test-db.ts` — `createTestDatabase()` стартує PGlite, автоматично завантажує всі міграції з `packages/db/src/migrations/` (по патерну з `packages/db/tests/smoke.test.ts`), **кастить pglite drizzle → `Database` тип** (driver types відрізняються, runtime query-builder surface однакова, каст свідомий і локалізований у helper).
+- `apps/api/tests/agents.test.ts` — **6 integration тестів** через реальний PGlite + full buildApp pipeline:
+  1. Без auth → 401
+  2. З auth → 201, agent створений, **`user_id` з token** (верифіковано SELECT users WHERE privy_did → id, порівняння)
+  3. Invalid body → 422 з validation message
+  4. Invalid walletPubkey (non-base58) → 422
+  5. Два агенти → тільки 1 user row (`ensureUser` reuse)
+  6. Кожен agent має унікальний `ingestToken`
+- `apps/api/tests/error.test.ts` — рефакторено: замість `import { app as realApp }` тепер `makeRealApp()` яка викликає `buildApp({ stubDb, stubVerifier, silentLogger, sseBus })`. Ті 2 тести що використовували realApp (/health, 404) — тепер через stub-deps buildApp.
+- `pnpm lint && pnpm typecheck && pnpm test` — все зелене. **59 tests** total, 25 у api (додалось 6 agents integration), повна PGlite ініціалізація додає ~8s до api test run (кожен тест створює свою instance з міграціями).
+
+### Ключові рішення 3.5
+- **`buildApp(deps)` factory pattern** — композиційний корінь. Жодних module-level singletons ні для db, ні для Privy client, ні для sseBus. Тести можуть ганяти кілька різних конфігурацій паралельно, production має одну гілку wiring у `server.ts`. Це **найчистіший варіант DI без IoC container'а**.
+- **PGlite для integration тестів** (варіант 1 з пропозиції) — hermetic, offline, real PG16 semantics, **однакові міграції як у production**. Cost: ~1.2s/test. Альтернативи: мок-драйвер (крихко), testcontainers (потребує Docker, повільно). Для MVP PGlite — правильний вибір.
+- **Caст `drizzle(pg) as unknown as Database`** у test helper — свідоме порушення типів, бо pglite drizzle і postgres-js drizzle мають однаковий runtime surface, але різні TS брендові типи. Каст локалізований в одному файлі, коментарями задокументовано.
+- **`ensureUser` через upsert** — fallback SELECT для race safety. Перший запит від юзера створює row, паралельні запити не ламаються на конфлікті.
+- **`createAgentInputSchema` з shared**, не локальний — єдине джерело правди для форми input'у. Якщо frontend колись використовуватиме цю ж схему для валідації, не треба синхронізувати.
+- **`ingest_token` генерується сервером** — клієнт не може його вказати. 192 bits, base64url, `tok_` prefix для читабельності у логах. Post-MVP може треба буде реgенерувати за кнопкою — handler на PATCH розглянемо у 3.8.
+- **RLS обхід** — `api` підключається до DB з роллю що BYPASSRLS (так само як ingestion), і запити enforce'ять `WHERE user_id = :userId` на рівні handler'а. RLS policies лишаються як defense-in-depth. У PGlite тестах default role теж має superuser → RLS неефективний, що нам підходить.
+- **`HTTPException(422)` для zod fails** замість default `zValidator` відповіді — уніфікує формат з нашим error middleware. Issue paths конкатенуються у message через `;`.
 
 ---
 

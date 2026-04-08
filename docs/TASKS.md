@@ -140,7 +140,7 @@
   ✅ Unit-тест: subscribe → publish → receive
 
 ### Agents CRUD
-- [ ] **3.5** `routes/agents.ts`: POST /api/agents (zod validation, insert у db, повертає agent) ⏱ 60m → 3.3, 1.6
+- [x] **3.5** `routes/agents.ts`: POST /api/agents (zod validation, insert у db, повертає agent) ⏱ 60m → 3.3, 1.6
   ✅ Інтеграційний тест: створити агента, перевірити що `user_id` з token
 - [ ] **3.6** GET /api/agents (список усіх агентів юзера, ORDER BY created_at DESC) ⏱ 20m → 3.5
   ✅ Тест: 2 агента → endpoint повертає 2
@@ -464,10 +464,10 @@ E8 → E9 (deploy потребує всього)
 
 ## Поточний стан
 
-**Завершено:** 28 / 99 задач (Епік 1 + Епік 2 + 3.1-3.4).
-**Поточна:** **3.5** (POST /api/agents — створення агента).
+**Завершено:** 29 / 99 задач (Епік 1 + Епік 2 + 3.1-3.5).
+**Поточна:** **3.6** (GET /api/agents — list).
 
 **Епік 1:** ✅ 13/13 RUNTIME validated на справжньому Supabase + Helius
 **Епік 2:** ✅ 11/12 (2.12 = N/A для WS fallback). 22 unit tests з реальними mainnet fixtures.
-**Епік 3 (REST API):** ⏳ 4/12 — Hono skeleton + error middleware + Privy auth + SSE bus ready (3.5 = agents CRUD starts).
-**Тести:** 53/53 зелені (27 shared + 7 db PGlite + 22 parser + 19 api: 6 error + 6 auth + 7 sse-bus).
+**Епік 3 (REST API):** ⏳ 5/12 — Hono skeleton + error + auth + SSE bus + POST /api/agents with PGlite integration tests.
+**Тести:** 59/59 зелені (27 shared + 7 db PGlite + 22 parser + 25 api: 6 error + 6 auth + 7 sse-bus + 6 agents).
