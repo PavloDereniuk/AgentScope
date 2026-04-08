@@ -18,22 +18,36 @@
 
 ---
 
-## Стан на кінець дня 2 (2026-04-08)
+## Стан: Epic 4 почато (2026-04-08)
 
 ### Поточна задача
-**4.1** — `apps/api`: deps `@opentelemetry/proto-grpc`, типи OTLP. **Epic 3 closed, починаємо Epic 4 (Reasoning Collector)**.
+**4.2** — `apps/api/src/otlp/schema.ts` + `routes/otlp.ts`: zod схема + POST /v1/traces OTLP/HTTP JSON receiver.
 
-### Прогрес: 36 / 99 (≈36%)
+### Прогрес: 37 / 99 (≈37%)
 - ✅ **Епік 1 (Foundation): 13/13** — RUNTIME validated на справжньому Supabase + Helius
 - ✅ **Епік 2 (Parsers): 11/12** — Jupiter v6 + Kamino Lend на real mainnet fixtures (2.12 = N/A для WS fallback)
 - ✅ **Епік 3 (REST API): 12/12 CLOSED** — Hono + Privy auth + SSE bus + full CRUD + tx + alerts. **88 api тестів.**
-- 📦 **Епік 4 (Reasoning Collector):** наступний
+- 🚧 **Епік 4 (Reasoning Collector): 1/7** — 4.1 закрито як pivot (zod-first, no otel deps)
 - 📦 Епіки 5-9: не починалися
 - ⏳ Mainnet runtime валідація persist'у jupiter/kamino — у Тиждень 5 (по плану SPEC §10)
 
+### 4.1 — PIVOT (2026-04-08)
+Спочатку додав `@opentelemetry/otlp-transformer@0.214.0` + `@opentelemetry/api@1.9.1`. Під час перевірки імпортів виявив:
+- Package публічно експортує **тільки export-side** (SDK→collector): `JsonTraceSerializer`, `ProtobufTraceSerializer`, `IExportTraceServiceResponse`
+- Request types які нам реально потрібні (`IExportTraceServiceRequest`, `IResourceSpans`, `IScopeSpans`, `ISpan`, `ESpanKind`, `IKeyValue`, `IAnyValue`) існують тільки у `build/esm/trace/internal-types.d.ts`
+- Deep import в internal — ризиковано при minor bumps, не public API contract
+- `ESpanKind` runtime enum теж не експортується, тільки через internal path
+
+**Рішення:** revert deps, писати свої zod-схеми в 4.2.
+- OTLP/HTTP JSON це стабільний wire protocol (specs: https://opentelemetry.io/docs/specs/otlp/)
+- CLAUDE.md вимагає zod на всіх API boundaries → runtime validation потрібна в любому випадку
+- `z.infer<typeof otlpTraceRequestSchema>` дає TS типи — single source of truth
+- Ми receiver, не OTel client — сам OTel SDK нам не потрібен взагалі
+
+**`package.json` повернуто у попередній стан.**
+
 ### Наступні задачі (черга з TASKS.md)
-- **4.1** OTLP deps (`@opentelemetry/proto-grpc`, types) ⏱ 30m
-- **4.2** POST /v1/traces — OTLP/HTTP JSON receiver ⏱ 90m
+- **4.2** zod schema + POST /v1/traces — OTLP/HTTP JSON receiver ⏱ 120m (bloated з 4.1 scope)
 - **4.3** Auth для OTLP: span attribute `agent.token` → lookup у `agents.ingest_token` ⏱ 45m
 - **4.4** Persist: spans → `reasoning_logs` ⏱ 60m
 - **4.5** Кореляція з `solana.tx.signature` ⏱ 20m
@@ -41,6 +55,23 @@
 - **4.7** Оновити GET /api/transactions/:signature з full span tree ⏱ 30m
 
 **Epic 4 гейт:** OTel SDK → receiver → persist → correlate → query flow. Коли закриємо — Epic 5 (detector + alerter).
+
+### Планований shape OTLP schema (для 4.2)
+Мінімальний subset OTLP/HTTP JSON який нам треба парсити (per OTLP spec §JSON Protobuf Encoding):
+```
+ExportTraceServiceRequest { resourceSpans: ResourceSpans[] }
+ResourceSpans { resource?: { attributes: KeyValue[] }, scopeSpans: ScopeSpans[], schemaUrl? }
+ScopeSpans { scope?: { name, version? }, spans: Span[], schemaUrl? }
+Span {
+  traceId: hex32, spanId: hex16, parentSpanId?: hex16,
+  name, kind (0-5), startTimeUnixNano, endTimeUnixNano,
+  attributes: KeyValue[], status?: { code (0-2), message? },
+  events?: [], links?: []
+}
+KeyValue { key, value: AnyValue }
+AnyValue { stringValue? | intValue? | doubleValue? | boolValue? | arrayValue? | kvlistValue? }
+```
+traceId/spanId приходять як hex strings у JSON mode (не Uint8Array). Нано-timestamps як strings (bigint range).
 
 ---
 
