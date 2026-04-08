@@ -18,6 +18,7 @@ import { type ApiEnv, requireAuth } from './middleware/auth';
 import { registerErrorHandlers } from './middleware/error';
 import { createAgentsRouter } from './routes/agents';
 import { createAlertsRouter } from './routes/alerts';
+import { createOtlpRouter } from './routes/otlp';
 import { createTransactionsRouter } from './routes/transactions';
 
 export interface AppDeps {
@@ -35,6 +36,12 @@ export function buildApp(deps: AppDeps) {
 
   // Public: liveness check for Railway, uptime pings, etc.
   app.get('/health', (c) => c.json({ ok: true }));
+
+  // OTLP/HTTP ingest lives at /v1/traces — the canonical path every
+  // OpenTelemetry SDK exporter hits by default. Not mounted under
+  // /api because it does not use Privy JWT auth; task 4.3 will add
+  // agent-token auth (span attribute `agent.token` → `agents.ingest_token`).
+  app.route('/v1', createOtlpRouter({ logger: log }));
 
   // Every /api/* route is authenticated. The auth middleware populates
   // `c.var.userId` so downstream routes can resolve the real users.id

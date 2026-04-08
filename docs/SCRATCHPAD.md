@@ -18,16 +18,16 @@
 
 ---
 
-## Стан: Epic 4 почато (2026-04-08)
+## Стан: Epic 4 in progress (2026-04-08)
 
 ### Поточна задача
-**4.2** — `apps/api/src/otlp/schema.ts` + `routes/otlp.ts`: zod схема + POST /v1/traces OTLP/HTTP JSON receiver.
+**4.3** — OTLP auth: span attribute `agent.token` → lookup у `agents.ingest_token` → resolve `agent_id`. Без valid token → 401.
 
-### Прогрес: 37 / 99 (≈37%)
+### Прогрес: 38 / 99 (≈38%)
 - ✅ **Епік 1 (Foundation): 13/13** — RUNTIME validated на справжньому Supabase + Helius
 - ✅ **Епік 2 (Parsers): 11/12** — Jupiter v6 + Kamino Lend на real mainnet fixtures (2.12 = N/A для WS fallback)
 - ✅ **Епік 3 (REST API): 12/12 CLOSED** — Hono + Privy auth + SSE bus + full CRUD + tx + alerts. **88 api тестів.**
-- 🚧 **Епік 4 (Reasoning Collector): 1/7** — 4.1 закрито як pivot (zod-first, no otel deps)
+- 🚧 **Епік 4 (Reasoning Collector): 2/7** — 4.1 pivot (zod-first), 4.2 receiver + schema done (11 tests)
 - 📦 Епіки 5-9: не починалися
 - ⏳ Mainnet runtime валідація persist'у jupiter/kamino — у Тиждень 5 (по плану SPEC §10)
 
@@ -47,7 +47,6 @@
 **`package.json` повернуто у попередній стан.**
 
 ### Наступні задачі (черга з TASKS.md)
-- **4.2** zod schema + POST /v1/traces — OTLP/HTTP JSON receiver ⏱ 120m (bloated з 4.1 scope)
 - **4.3** Auth для OTLP: span attribute `agent.token` → lookup у `agents.ingest_token` ⏱ 45m
 - **4.4** Persist: spans → `reasoning_logs` ⏱ 60m
 - **4.5** Кореляція з `solana.tx.signature` ⏱ 20m
@@ -56,22 +55,33 @@
 
 **Epic 4 гейт:** OTel SDK → receiver → persist → correlate → query flow. Коли закриємо — Epic 5 (detector + alerter).
 
-### Планований shape OTLP schema (для 4.2)
-Мінімальний subset OTLP/HTTP JSON який нам треба парсити (per OTLP spec §JSON Protobuf Encoding):
+### 4.2 — ключові файли і рішення
+- **`apps/api/src/otlp/schema.ts`** — zod схеми для всіх OTLP типів (ResourceSpans → ScopeSpans → Span → Event/Link/Status/KeyValue → AnyValue). Всі об'єкти `.strict()` — невідомі поля ловляться як 422. `AnyValueInput` рекурсивний type декларований вручну з `| undefined` на optional fields (через `exactOptionalPropertyTypes` strict, zod `.optional()` інферить `T | undefined`). Експортує `ExportTraceServiceRequest`, `ResourceSpans`, `ScopeSpans`, `Span`, `KeyValue`, `AnyValue`, `SpanEvent`, `SpanLink`, `SpanStatus`, `Resource`, `InstrumentationScope` через `z.infer`. Single source of truth для runtime+types.
+- **`apps/api/src/routes/otlp.ts`** — `createOtlpRouter({logger})` factory. POST `/traces`, zValidator + custom 422 error handler як у решті routes. Експортує `countSpans()` helper. Повертає `{ partialSuccess: {} }` 200.
+- **`apps/api/src/app.ts`** — mounted на `/v1` не під `/api/*` (OTLP spec path + без Privy auth, 4.3 додасть agent-token)
+- **Types coercion:** `uint64Schema` приймає numeric string (primary) АБО JS number ≤ `Number.MAX_SAFE_INTEGER` (транслюється в string). Нано-timestamps >2^53 мають приходити як string.
+- **Hex validation:** traceId `/^[0-9a-f]{32}$/`, spanId `/^[0-9a-f]{16}$/` (strict lowercase per OTLP JSON spec)
+- **`kind`** = number 0..5 (SPAN_KIND enum), optional. `status.code` = 0..2, optional.
+
+### 4.2 — тести (11 нових, 99 total api)
 ```
-ExportTraceServiceRequest { resourceSpans: ResourceSpans[] }
-ResourceSpans { resource?: { attributes: KeyValue[] }, scopeSpans: ScopeSpans[], schemaUrl? }
-ScopeSpans { scope?: { name, version? }, spans: Span[], schemaUrl? }
-Span {
-  traceId: hex32, spanId: hex16, parentSpanId?: hex16,
-  name, kind (0-5), startTimeUnixNano, endTimeUnixNano,
-  attributes: KeyValue[], status?: { code (0-2), message? },
-  events?: [], links?: []
-}
-KeyValue { key, value: AnyValue }
-AnyValue { stringValue? | intValue? | doubleValue? | boolValue? | arrayValue? | kvlistValue? }
+tests/otlp-traces.test.ts (11):
+  accepts minimal single-span payload → 200 + partialSuccess
+  logs resource/scope/span counts (capturing pino Writable stream → records[])
+  empty body {} → 200
+  recursive AnyValue (kvlistValue wrapping arrayValue) → 200
+  startTimeUnixNano as JS number → 200 (coerces)
+  invalid traceId length → 422
+  non-hex spanId → 422
+  span kind out of range → 422
+  missing span name → 422
+  non-numeric startTimeUnixNano → 422
+  unknown field at span level (strict mode) → 422
 ```
-traceId/spanId приходять як hex strings у JSON mode (не Uint8Array). Нано-timestamps як strings (bigint range).
+OTLP route не торкає db, так що test setup дешевий (stub db + stub verifier, no PGlite) — вся suite виконалась ~1s. Вся api suite ~120s через PGlite у agents/transactions/alerts тестах.
+
+### Планований shape 4.3 (agent-token auth)
+Per TASKS: span attribute `agent.token` shukaєтsya у першому span першої ScopeSpans, його value вигребаєтsya як string (`stringValue`) → lookup `SELECT agent_id FROM agents WHERE ingest_token = ?`. Без token або non-existent → 401. Треба вирішити: де зберегти resolved `agent_id` щоб 4.4 міг його прочитати під час persist — через Hono context `c.set('agentId', ...)` у auth-як-middleware pattern, або повернути з parser функції.
 
 ---
 
