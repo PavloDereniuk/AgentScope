@@ -21,17 +21,16 @@
 ## Стан на день 2, сесія 2026-04-08
 
 ### Поточна задача
-**3.4** — `apps/api/src/lib/sse-bus.ts` — in-memory pub/sub (EventEmitter wrapper з типами). Unit-тест: subscribe → publish → receive. **Чекає старту**.
+**3.5** — `apps/api/src/routes/agents.ts`: `POST /api/agents` (zod validation, insert у db, повертає agent). **Чекає старту**. Потребує виведення в `server.ts` (створення Privy verifier + sse bus singletons + підключення router з auth middleware).
 
-### Прогрес: 27 / 99 (≈27%)
+### Прогрес: 28 / 99 (≈28%)
 - ✅ **Епік 1 (Foundation): 13/13** — RUNTIME validated на справжньому Supabase + Helius
 - ✅ **Епік 2 (Parsers): 11/12** — 22 unit tests з реальними mainnet fixtures (Jupiter v6 + Kamino Lend). 2.12 = N/A для WS fallback.
-- ⏳ **Епік 3 (REST API): 3/12** — Hono skeleton + error middleware + Privy auth middleware online (3.1-3.3 ✅)
+- ⏳ **Епік 3 (REST API): 4/12** — Hono skeleton + error middleware + Privy auth + SSE bus ready (3.1-3.4 ✅)
 - 📦 Епіки 4-9: не починалися
 - ⏳ Mainnet runtime валідація persist'у jupiter/kamino — у Тиждень 5 (по плану SPEC §10)
 
 ### Наступні задачі (черга з TASKS.md)
-- **3.4** In-memory SSE bus ⏱ 30m
 - **3.5-3.9** Agents CRUD endpoints (POST/GET/GET:id/PATCH/DELETE)
 - **3.10-3.11** Transactions read endpoints
 - **3.12** Alerts read endpoint
@@ -71,6 +70,19 @@
 - **Narrow `AuthVerifier` інтерфейс** — middleware залежить тільки від `{verify(token)}`, а не від всього `PrivyClient`. Якщо post-MVP захочемо підтримати альтернативних провайдерів (Clerk, Auth0) — міняти одну реалізацію, middleware без змін.
 - **Invalid token → `debug` log рівень, не `error`** — прострочені токени це routine (user reload, stale frontend), не ops-incident. Real errors (5xx з Privy API) підуть вище: через catch → HTTPException(401) → onError logs це як `warn` з `http exception`.
 - **Не зачіпав wiring у `index.ts`/`server.ts`** — middleware це бібліотека для 3.5+. Інакше треба було б піднімати Privy client у `index.ts` зі всіма side effects, чого ми свідомо уникаємо.
+
+### Що зробили у 3.4
+- `apps/api/src/lib/sse-bus.ts` — `createSseBus(logger?)` повертає `SseBus` інтерфейс з `subscribe(agentId, handler) → unsubscribe`, `publish(event)`, `subscriberCount(agentId)`. Внутрішньо — `node:events.EventEmitter` з per-agentId event names, `setMaxListeners(0)` щоб не було warn при багатьох SSE connection'ах.
+- Типи: `BusEvent` — discriminated union `tx.new` (signature, at) і `alert.new` (alertId, severity, at). Це мінімум для MVP; розширювати тут коли з'являться нові тригери.
+- Isolation: кожен handler обгорнутий у `try/catch`, crash одного не впливає на інших; логується опційно через переданий logger. Якщо logger не переданий — silent swallow.
+- `apps/api/tests/sse-bus.test.ts` — 7 тестів: delivery, agentId isolation, fan-out, unsubscribe, crash isolation with custom pino stream, publish-without-subscribers no-op, subscriberCount.
+- `pnpm lint && pnpm typecheck && pnpm test` — все зелене. 53 tests total (46 + 7 sse-bus).
+
+### Ключові рішення 3.4
+- **Per-agentId EventEmitter name** — природна ізоляція без додаткового Map<agentId, Set<handler>>, плюс O(1) dispatch. Недолік: agentId як довільний string — колізії з внутрішніми EventEmitter івентами неможливі (ми ніколи не emit'ить event name типу `newListener`), тому безпечно.
+- **Publish синхронний** — EventEmitter.emit sync, handler'и теж sync (SSE writes async не чекає нічого корисного). Якщо handler чекає на щось async — це його проблема, bus не буде чекати.
+- **`logger?: Logger`** optional — тести без шуму можуть не передавати; production передає pino. Alternative був би no-op logger default, але optional чистіше.
+- **Post-MVP scalability explicit в коментарях** — swap `EventEmitter` на Redis pub/sub коли буде 2+ api instance, public interface лишається. Consumers mustn't import from `node:events` напряму.
 
 ---
 

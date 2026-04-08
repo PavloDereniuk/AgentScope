@@ -136,7 +136,7 @@
   ✅ Тест: викликати throw → respond 500 з валідним JSON
 - [x] **3.3** `src/middleware/auth.ts` — Privy JWT validation, інжект `c.var.userId` ⏱ 60m → 1.0c
   ✅ Запит без token → 401, з валідним → next()
-- [ ] **3.4** `src/lib/sse-bus.ts` — in-memory pub/sub (EventEmitter wrapper з типами) ⏱ 30m
+- [x] **3.4** `src/lib/sse-bus.ts` — in-memory pub/sub (EventEmitter wrapper з типами) ⏱ 30m
   ✅ Unit-тест: subscribe → publish → receive
 
 ### Agents CRUD
@@ -464,10 +464,10 @@ E8 → E9 (deploy потребує всього)
 
 ## Поточний стан
 
-**Завершено:** 27 / 99 задач (Епік 1 + Епік 2 + 3.1-3.3).
-**Поточна:** **3.4** (in-memory SSE bus).
+**Завершено:** 28 / 99 задач (Епік 1 + Епік 2 + 3.1-3.4).
+**Поточна:** **3.5** (POST /api/agents — створення агента).
 
 **Епік 1:** ✅ 13/13 RUNTIME validated на справжньому Supabase + Helius
 **Епік 2:** ✅ 11/12 (2.12 = N/A для WS fallback). 22 unit tests з реальними mainnet fixtures.
-**Епік 3 (REST API):** ⏳ 3/12 — Hono skeleton + error middleware + Privy auth middleware online.
-**Тести:** 46/46 зелені (27 shared + 7 db PGlite + 22 parser + 12 api: 6 error + 6 auth).
+**Епік 3 (REST API):** ⏳ 4/12 — Hono skeleton + error middleware + Privy auth + SSE bus ready (3.5 = agents CRUD starts).
+**Тести:** 53/53 зелені (27 shared + 7 db PGlite + 22 parser + 19 api: 6 error + 6 auth + 7 sse-bus).
