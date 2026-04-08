@@ -132,7 +132,7 @@
 ### Hono skeleton
 - [x] **3.1** `apps/api`: hono + @hono/node-server + tsx, `src/index.ts` з `/health` ⏱ 30m
   ✅ `curl localhost:3000/health` → 200 `{ok:true}`
-- [ ] **3.2** `src/middleware/error.ts` — глобальний error handler з error format `{error:{code,message}}` ⏱ 30m → 3.1
+- [x] **3.2** `src/middleware/error.ts` — глобальний error handler з error format `{error:{code,message}}` ⏱ 30m → 3.1
   ✅ Тест: викликати throw → respond 500 з валідним JSON
 - [ ] **3.3** `src/middleware/auth.ts` — Privy JWT validation, інжект `c.var.userId` ⏱ 60m → 1.0c
   ✅ Запит без token → 401, з валідним → next()
@@ -464,10 +464,10 @@ E8 → E9 (deploy потребує всього)
 
 ## Поточний стан
 
-**Завершено:** 25 / 99 задач (Епік 1 + Епік 2 + 3.1).
-**Поточна:** **3.2** (error middleware).
+**Завершено:** 26 / 99 задач (Епік 1 + Епік 2 + 3.1-3.2).
+**Поточна:** **3.3** (Privy JWT auth middleware).
 
 **Епік 1:** ✅ 13/13 RUNTIME validated на справжньому Supabase + Helius
 **Епік 2:** ✅ 11/12 (2.12 = N/A для WS fallback). 22 unit tests з реальними mainnet fixtures.
-**Епік 3 (REST API):** ⏳ 1/12 — Hono skeleton з `/health` online.
-**Тести:** 34/34 зелені (27 shared + 7 db PGlite + 22 parser).
+**Епік 3 (REST API):** ⏳ 2/12 — Hono skeleton + error middleware + pino logger online.
+**Тести:** 40/40 зелені (27 shared + 7 db PGlite + 22 parser + 6 api error middleware).

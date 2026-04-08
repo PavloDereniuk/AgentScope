@@ -21,17 +21,16 @@
 ## Стан на день 2, сесія 2026-04-08
 
 ### Поточна задача
-**3.2** — `apps/api/src/middleware/error.ts` — глобальний error handler з форматом `{error:{code,message}}`. **Чекає старту**.
+**3.3** — `apps/api/src/middleware/auth.ts` — Privy JWT validation, інжект `c.var.userId`. Потребує `PRIVY_APP_SECRET` (вже у `.env`). **Чекає старту**.
 
-### Прогрес: 25 / 99 (≈25%)
+### Прогрес: 26 / 99 (≈26%)
 - ✅ **Епік 1 (Foundation): 13/13** — RUNTIME validated на справжньому Supabase + Helius
 - ✅ **Епік 2 (Parsers): 11/12** — 22 unit tests з реальними mainnet fixtures (Jupiter v6 + Kamino Lend). 2.12 = N/A для WS fallback.
-- ⏳ **Епік 3 (REST API): 1/12** — Hono skeleton + `/health` online (3.1 ✅)
+- ⏳ **Епік 3 (REST API): 2/12** — Hono skeleton + error middleware + pino logger online (3.1-3.2 ✅)
 - 📦 Епіки 4-9: не починалися
 - ⏳ Mainnet runtime валідація persist'у jupiter/kamino — у Тиждень 5 (по плану SPEC §10)
 
 ### Наступні задачі (черга з TASKS.md)
-- **3.2** Error middleware ⏱ 30m
 - **3.3** Privy JWT auth middleware ⏱ 60m → потребує `PRIVY_APP_SECRET` (вже в `.env`)
 - **3.4** In-memory SSE bus ⏱ 30m
 - **3.5-3.9** Agents CRUD endpoints (POST/GET/GET:id/PATCH/DELETE)
@@ -39,10 +38,26 @@
 - **3.12** Alerts read endpoint
 
 ### Що зробили у 3.1
-- `apps/api/package.json` — додано `hono@^4.6.14`, `@hono/node-server@^1.13.7`, `tsx@^4.19.2`; оновлено `dev`/`start` scripts (`tsx watch --env-file=../../.env`).
-- `apps/api/src/index.ts` — мінімальний Hono app з `GET /health → {ok:true}`, `serve()` на `PORT ?? 3000`, temporary `console.log` банер (з `biome-ignore lint/suspicious/noConsoleLog`; pino lендиться у 3.2 разом з error middleware).
+- `apps/api/package.json` — додано `hono@^4.6.14`, `@hono/node-server@^1.13.7`, `tsx@^4.19.2`; оновлено `dev`/`start` scripts.
+- `apps/api/src/index.ts` — мінімальний Hono app з `GET /health → {ok:true}`.
 - Smoke test: сервер піднявся на 3000, `curl /health` → `200 {"ok":true}`.
-- `pnpm lint && pnpm typecheck && pnpm test` — все зелене (14/14 turbo tasks).
+
+### Що зробили у 3.2
+- `apps/api/src/logger.ts` — pino + pino-pretty dev transport (name: `agentscope-api`), копія патерну з `apps/ingestion/src/logger.ts`.
+- `apps/api/src/middleware/error.ts` — `registerErrorHandlers(app, logger)` з `onError` + `notFound`:
+  - `HTTPException` → `{error:{code: statusToCode(status), message: err.message}}`, оригінальний статус збережено.
+  - Невідомий throw → 500 `{error:{code:'INTERNAL_ERROR',message:'Internal server error'}}`, повний stack logged, деталі не витікають клієнту.
+  - Unknown route → 404 `NOT_FOUND` з path+method у повідомленні.
+  - `statusToCode`: explicit map (400/401/403/404/409/422/429) + fallback `BAD_REQUEST` для решти 4xx, `INTERNAL_ERROR` для інших.
+- **Decision:** `src/index.ts` тепер експортує лише `app` (без side effects); `serve()` винесено у окремий `src/server.ts`. Це дозволяє тестам імпортувати `app.request(...)` без port bind. `dev`/`start` scripts → `src/server.ts`.
+- `apps/api/vitest.config.ts` + `apps/api/tests/error.test.ts` — 6 тестів: `/health` OK, throw→500 з guard на leak, 401/409 HTTPException з оригінальним message, 418 fallback до `BAD_REQUEST`, 404 NOT_FOUND. `silentLogger` у тестах щоб не засмічувати вивід.
+- Runtime smoke (production mode, `NODE_ENV=production pnpm exec tsx src/server.ts`): pino JSON log `agentscope-api listening`, `/health` → `200 {"ok":true}`, `/nope` → `404 {"error":{"code":"NOT_FOUND","message":"Route not found: GET /nope"}}`.
+- `pnpm lint && pnpm typecheck && pnpm test` — все зелене. 40 tests total (27 shared + 7 db + 22 parser + 6 api).
+
+### Ключові рішення 3.2
+- **Error format `{error:{code,message}}`** — стабільний public contract. HTTPException передає оригінальне повідомлення клієнту (бо це business error), unknown throw — генерик 500 (щоб не витекли внутрішні деталі). Всі 500 логуються з повним stack.
+- **index.ts без side effects** — тести ганяють `app.request()` без port bind. Bonus: якщо колись треба кілька entry points (api+worker в одному процесі), вже готово.
+- **`statusToCode` явний мап** — щоб code було predictable для клієнта (stable contract), не генерується з HTTP status text.
 
 ---
 
