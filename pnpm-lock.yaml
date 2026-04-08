@@ -26,19 +26,37 @@ importers:
 
   apps/api:
     dependencies:
+      '@agentscope/db':
+        specifier: workspace:^
+        version: link:../../packages/db
+      '@agentscope/shared':
+        specifier: workspace:^
+        version: link:../../packages/shared
       '@hono/node-server':
         specifier: ^1.13.7
         version: 1.19.13(hono@4.12.12)
+      '@hono/zod-validator':
+        specifier: ^0.7.6
+        version: 0.7.6(hono@4.12.12)(zod@3.25.76)
       '@privy-io/server-auth':
         specifier: ^1.32.5
         version: 1.32.5(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(viem@2.47.10(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@3.25.76))
+      drizzle-orm:
+        specifier: ^0.36.4
+        version: 0.36.4(@electric-sql/pglite@0.2.17)(@types/pg@8.20.0)(postgres@3.4.9)
       hono:
         specifier: ^4.6.14
         version: 4.12.12
       pino:
         specifier: ^9.5.0
         version: 9.14.0
+      zod:
+        specifier: ^3.23.8
+        version: 3.25.76
     devDependencies:
+      '@electric-sql/pglite':
+        specifier: ^0.2.13
+        version: 0.2.17
       pino-pretty:
         specifier: ^11.3.0
         version: 11.3.0
@@ -805,6 +823,12 @@ packages:
     engines: {node: '>=18.14.1'}
     peerDependencies:
       hono: ^4
+
+  '@hono/zod-validator@0.7.6':
+    resolution: {integrity: sha512-Io1B6d011Gj1KknV4rXYz4le5+5EubcWEU/speUjuw9XMMIaP3n78yXLhjd2A3PXaXaUwEAluOiAyLqhBEJgsw==}
+    peerDependencies:
+      hono: '>=3.9.0'
+      zod: ^3.25.0 || ^4.0.0
 
   '@hpke/chacha20poly1305@1.8.0':
     resolution: {integrity: sha512-FcBfAQ+Y99vMNJP2yrZ9wpL8V0GOwp1+zMyzvc6alasrBygfFjFm1yeUtyADJCu/27C3Lm5mJzx6u7pwg+cX5w==}
@@ -2373,6 +2397,11 @@ snapshots:
   '@hono/node-server@1.19.13(hono@4.12.12)':
     dependencies:
       hono: 4.12.12
+
+  '@hono/zod-validator@0.7.6(hono@4.12.12)(zod@3.25.76)':
+    dependencies:
+      hono: 4.12.12
+      zod: 3.25.76
 
   '@hpke/chacha20poly1305@1.8.0':
     dependencies:
