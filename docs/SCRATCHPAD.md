@@ -21,17 +21,16 @@
 ## Стан на день 2, сесія 2026-04-08
 
 ### Поточна задача
-**3.3** — `apps/api/src/middleware/auth.ts` — Privy JWT validation, інжект `c.var.userId`. Потребує `PRIVY_APP_SECRET` (вже у `.env`). **Чекає старту**.
+**3.4** — `apps/api/src/lib/sse-bus.ts` — in-memory pub/sub (EventEmitter wrapper з типами). Unit-тест: subscribe → publish → receive. **Чекає старту**.
 
-### Прогрес: 26 / 99 (≈26%)
+### Прогрес: 27 / 99 (≈27%)
 - ✅ **Епік 1 (Foundation): 13/13** — RUNTIME validated на справжньому Supabase + Helius
 - ✅ **Епік 2 (Parsers): 11/12** — 22 unit tests з реальними mainnet fixtures (Jupiter v6 + Kamino Lend). 2.12 = N/A для WS fallback.
-- ⏳ **Епік 3 (REST API): 2/12** — Hono skeleton + error middleware + pino logger online (3.1-3.2 ✅)
+- ⏳ **Епік 3 (REST API): 3/12** — Hono skeleton + error middleware + Privy auth middleware online (3.1-3.3 ✅)
 - 📦 Епіки 4-9: не починалися
 - ⏳ Mainnet runtime валідація persist'у jupiter/kamino — у Тиждень 5 (по плану SPEC §10)
 
 ### Наступні задачі (черга з TASKS.md)
-- **3.3** Privy JWT auth middleware ⏱ 60m → потребує `PRIVY_APP_SECRET` (вже в `.env`)
 - **3.4** In-memory SSE bus ⏱ 30m
 - **3.5-3.9** Agents CRUD endpoints (POST/GET/GET:id/PATCH/DELETE)
 - **3.10-3.11** Transactions read endpoints
@@ -58,6 +57,20 @@
 - **Error format `{error:{code,message}}`** — стабільний public contract. HTTPException передає оригінальне повідомлення клієнту (бо це business error), unknown throw — генерик 500 (щоб не витекли внутрішні деталі). Всі 500 логуються з повним stack.
 - **index.ts без side effects** — тести ганяють `app.request()` без port bind. Bonus: якщо колись треба кілька entry points (api+worker в одному процесі), вже готово.
 - **`statusToCode` явний мап** — щоб code було predictable для клієнта (stable contract), не генерується з HTTP status text.
+
+### Що зробили у 3.3
+- `@privy-io/server-auth@^1.32.5` додано як dependency у `apps/api`.
+- `apps/api/src/lib/auth-verifier.ts` — narrow interface `AuthVerifier { verify(token): Promise<{userId}> }` + factory `createPrivyVerifier(appId, appSecret)` яка обгортає `PrivyClient.verifyAuthToken`. DI дозволяє тестам ганяти fake verifier без мережі/Privy.
+- `apps/api/src/middleware/auth.ts` — `requireAuth(verifier, logger)` factory: читає `Authorization: Bearer <token>` header (case-insensitive regex `/^Bearer\s+(\S+)\s*$/i`), викликає verifier, `c.set('userId', ...)`, будь-яка помилка → `HTTPException(401)` зі стабільним повідомленням. Експортує `ApiEnv` тип для типизованих `c.get('userId')`.
+- `apps/api/tests/auth.test.ts` — 6 тестів з fake verifier: no header, malformed scheme, verifier reject, valid → 200+userId, case-insensitive bearer, leak-guard на verifier error.
+- `pnpm lint && pnpm typecheck && pnpm test` — все зелене. 46 tests total (40 + 6 auth).
+- `server.ts` **поки не чіпав** — auth middleware ще не wired в жоден route, це буде у 3.5 (agents CRUD: там повернемо `buildApp(deps)` factory або створимо singleton у server.ts).
+
+### Ключові рішення 3.3
+- **Factory pattern `requireAuth(verifier, logger)`** замість module-level singleton Privy client. Мотивація: тести не потребують env vars / мережі / реального JWT; верифікатор — звичайна DI залежність.
+- **Narrow `AuthVerifier` інтерфейс** — middleware залежить тільки від `{verify(token)}`, а не від всього `PrivyClient`. Якщо post-MVP захочемо підтримати альтернативних провайдерів (Clerk, Auth0) — міняти одну реалізацію, middleware без змін.
+- **Invalid token → `debug` log рівень, не `error`** — прострочені токени це routine (user reload, stale frontend), не ops-incident. Real errors (5xx з Privy API) підуть вище: через catch → HTTPException(401) → onError logs це як `warn` з `http exception`.
+- **Не зачіпав wiring у `index.ts`/`server.ts`** — middleware це бібліотека для 3.5+. Інакше треба було б піднімати Privy client у `index.ts` зі всіма side effects, чого ми свідомо уникаємо.
 
 ---
 
