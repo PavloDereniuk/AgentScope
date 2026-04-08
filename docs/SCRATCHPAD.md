@@ -21,20 +21,21 @@
 ## Стан на день 2, сесія 2026-04-08
 
 ### Поточна задача
-**3.8** — `PATCH /api/agents/:id` — partial update (name/tags/webhookUrl/alertRules). **Чекає старту**. Форма через `updateAgentInputSchema` з `@agentscope/shared` (вже існує як `.partial()`).
+**3.9** — `DELETE /api/agents/:id` — cascade delete. **Чекає старту**. FK ON DELETE CASCADE вже налаштовано у схемі (agent_transactions, reasoning_logs, alerts). Handler: ownership-scoped DELETE + 204, 404 інакше.
 
-### Прогрес: 31 / 99 (≈31%)
+### Прогрес: 32 / 99 (≈32%)
 - ✅ **Епік 1 (Foundation): 13/13** — RUNTIME validated на справжньому Supabase + Helius
 - ✅ **Епік 2 (Parsers): 11/12** — 22 unit tests з реальними mainnet fixtures (Jupiter v6 + Kamino Lend). 2.12 = N/A для WS fallback.
-- ⏳ **Епік 3 (REST API): 7/12** — Hono skeleton + error + auth + SSE bus + POST/GET/GET:id /api/agents (3.1-3.7 ✅)
+- ⏳ **Епік 3 (REST API): 8/12** — Hono skeleton + error + auth + SSE bus + POST/GET/GET:id/PATCH /api/agents (3.1-3.8 ✅)
 - 📦 Епіки 4-9: не починалися
 - ⏳ Mainnet runtime валідація persist'у jupiter/kamino — у Тиждень 5 (по плану SPEC §10)
 
 ### Наступні задачі (черга з TASKS.md)
-- **3.8** PATCH /api/agents/:id (partial update) ⏱ 30m
 - **3.9** DELETE /api/agents/:id (cascade) ⏱ 20m
 - **3.10-3.11** Transactions read endpoints
 - **3.12** Alerts read endpoint
+
+⚠️ **API test runtime = ~47s** (28 agents тестів × ~1.4s PGlite init). Post-MVP оптимізація: shared PGlite instance per-file + `TRUNCATE CASCADE` у `beforeEach` замість `createTestDatabase`. Потенційно ~5s замість 47s.
 
 ### Що зробили у 3.1
 - `apps/api/package.json` — додано `hono@^4.6.14`, `@hono/node-server@^1.13.7`, `tsx@^4.19.2`; оновлено `dev`/`start` scripts.
@@ -165,6 +166,35 @@
 - **`lastAlert: lastAlert ?? null`** замість `undefined` — явний `null` у JSON зрозуміліший і зберігає присутність поля у response shape.
 - **Response camelCase** (`recentTxCount`, `lastAlert`) — консистентно з рештою endpoints, ігнорується snake_case у PLAN як historic doc convention.
 - **Тест з block_time у quantum partition 2026_04** — працює бо Date.now() у тесті = 2026-04-08 (current date для цього проекту). Якщо колись тести тікатимуть у май без оновлення партицій — треба або додати cron для partition rotation, або cast block_time на фіксовану дату.
+
+### Що зробили у 3.8
+- `apps/api/src/routes/agents.ts` — доданий `PATCH /:id` handler:
+  - `zValidator('param', uuid)` → 422 для non-uuid
+  - `zValidator('json', updateAgentInputSchema)` (з `@agentscope/shared`, вже існує як `.partial()`)
+  - Build SET clause тільки з полів що були у request body (не з відсутніх) — через серію `if (body.name !== undefined)` guard'ів
+  - **Empty body → no-op**: фетчимо поточний row і повертаємо без UPDATE
+  - Ownership-scoped `UPDATE WHERE id = ? AND user_id = ?` → `.returning()` → 404 якщо нічого
+  - Імпорт `updateAgentInputSchema` додано у рядку 18
+- `apps/api/tests/agents.test.ts` — нова describe `PATCH /api/agents/:id` з 10 тестами:
+  1. Без auth → 401
+  2. Non-uuid id → 422
+  3. Unknown uuid → 404
+  4. **Чужий агент → 404 + db unchanged** (existence oracle + row untouched у бд)
+  5. Update single field (name) → tags untouched, db row updated
+  6. Update multiple fields (tags, webhookUrl, alertRules) → all persisted
+  7. `webhookUrl: null` очищує існуючий URL (перевіряємо що nullable працює)
+  8. **Immutable fields silently stripped** — спроба змінити `framework`, `walletPubkey`, `ingestToken` → всі незмінні, тільки `name` оновлено (zod .strip behaviour)
+  9. **Empty body `{}` → 200 + current row** (idempotent no-op)
+  10. Invalid webhookUrl (not URL) → 422
+- `pnpm lint && pnpm typecheck && pnpm test` — все зелене. **81 tests total** (+10). API test runtime ~47s (28 agents тестів × ~1.4s).
+
+### Ключові рішення 3.8
+- **Explicit `if (body.xxx !== undefined)` замість spread** — не міг використати `{...body}` бо треба було перетворити `readonly tags` на mutable array (`[...body.tags]`). А ще треба було явно розрізняти "field absent" від "field present with undefined value" — explicit guards роблять намір прозорим.
+- **Empty body → no-op, не 422** — приймаємо, щоб клієнт міг slapl'ити PATCH з "unchanged" formState і не отримав помилку. Симетрично з REST конвенціями (idempotent). Альтернатива — 400/422, але тоді клієнт має deduplicat'ити на своєму боці.
+- **Skip UPDATE якщо patch = {}** — не викликаю `db.update().set({})`, бо це би кинуло drizzle error "no values". Замість того — SELECT current і return.
+- **Immutable fields через zod .strip (default)** — не треба явно валідувати "нема framework/walletPubkey у body", бо `updateAgentInputSchema` не включає цих полів, і zod .strip (default) їх просто видаляє. Елегантно — single source of truth у shared.
+- **`webhookUrl: null` дозволено** — `z.string().url().nullable()` у shared schema. Клієнт може очистити webhook через явний null. Порожній string НЕ дозволений (треба null).
+- **`tags: [...body.tags]` spread** — body.tags типизовано як `readonly string[]` з zod schema, drizzle очікує mutable `string[]`. Spread робить shallow copy.
 
 ---
 

@@ -15,7 +15,7 @@
 
 import { randomBytes } from 'node:crypto';
 import { type Database, agentTransactions, agents, alerts } from '@agentscope/db';
-import { createAgentInputSchema } from '@agentscope/shared';
+import { createAgentInputSchema, updateAgentInputSchema } from '@agentscope/shared';
 import { zValidator } from '@hono/zod-validator';
 import { and, desc, eq, gte, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
@@ -144,6 +144,68 @@ export function createAgentsRouter(db: Database) {
         recentTxCount,
         lastAlert: lastAlert ?? null,
       });
+    },
+  );
+
+  // 3.8 — Partial update. Only name/tags/webhookUrl/alertRules are
+  // mutable; framework, walletPubkey, ingestToken and lifecycle fields
+  // are intentionally omitted from the input schema, so zod strips any
+  // such keys before the UPDATE ever runs. An empty body is accepted
+  // and returns the current row unchanged (idempotent / no-op).
+  router.patch(
+    '/:id',
+    zValidator('param', agentIdParamSchema, (result) => {
+      if (!result.success) {
+        throw new HTTPException(422, { message: 'invalid agent id (expected uuid)' });
+      }
+    }),
+    zValidator('json', updateAgentInputSchema, (result) => {
+      if (!result.success) {
+        const message = result.error.issues
+          .map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`)
+          .join('; ');
+        throw new HTTPException(422, { message });
+      }
+    }),
+    async (c) => {
+      const privyDid = c.get('userId');
+      const { id: agentId } = c.req.valid('param');
+      const body = c.req.valid('json');
+
+      const user = await ensureUser(db, privyDid);
+
+      // Build a SET clause only from keys that were actually present
+      // in the request. Unset keys are left untouched — this is what
+      // makes PATCH genuinely partial.
+      const patch: Record<string, unknown> = {};
+      if (body.name !== undefined) patch.name = body.name;
+      if (body.tags !== undefined) patch.tags = [...body.tags];
+      if (body.webhookUrl !== undefined) patch.webhookUrl = body.webhookUrl;
+      if (body.alertRules !== undefined) patch.alertRules = body.alertRules;
+
+      // Empty body → no-op. Fetch and return current state so clients
+      // get a consistent `{agent}` response regardless of payload.
+      if (Object.keys(patch).length === 0) {
+        const [current] = await db
+          .select()
+          .from(agents)
+          .where(and(eq(agents.id, agentId), eq(agents.userId, user.id)))
+          .limit(1);
+        if (!current) {
+          throw new HTTPException(404, { message: 'agent not found' });
+        }
+        return c.json({ agent: current });
+      }
+
+      const [updated] = await db
+        .update(agents)
+        .set(patch)
+        .where(and(eq(agents.id, agentId), eq(agents.userId, user.id)))
+        .returning();
+      if (!updated) {
+        throw new HTTPException(404, { message: 'agent not found' });
+      }
+      return c.json({ agent: updated });
     },
   );
 

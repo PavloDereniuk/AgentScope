@@ -520,3 +520,209 @@ describe('GET /api/agents/:id', () => {
     expect(body.lastAlert?.severity).toBe('critical');
   });
 });
+
+describe('PATCH /api/agents/:id', () => {
+  let ctx: TestApp;
+
+  beforeEach(async () => {
+    ctx = await setup();
+  });
+
+  afterEach(async () => {
+    await ctx.testDb.close();
+  });
+
+  async function createAgent(body: Record<string, unknown>) {
+    const res = await ctx.app.request('/api/agents', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: BEARER },
+      body: JSON.stringify(body),
+    });
+    if (res.status !== 201) throw new Error(`seed create failed: ${res.status}`);
+    return (await res.json()) as {
+      agent: {
+        id: string;
+        name: string;
+        framework: string;
+        walletPubkey: string;
+        ingestToken: string;
+      };
+    };
+  }
+
+  function patch(id: string, body: unknown, token = BEARER) {
+    return ctx.app.request(`/api/agents/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: token },
+      body: JSON.stringify(body),
+    });
+  }
+
+  it('rejects unauthenticated requests with 401', async () => {
+    const res = await ctx.app.request('/api/agents/11111111-1111-1111-1111-111111111111', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'New' }),
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 422 for a non-uuid id', async () => {
+    const res = await ctx.app.request('/api/agents/not-a-uuid', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: BEARER },
+      body: JSON.stringify({ name: 'New' }),
+    });
+    expect(res.status).toBe(422);
+  });
+
+  it('returns 404 for an unknown but well-formed id', async () => {
+    const res = await patch('11111111-1111-1111-1111-111111111111', { name: 'New' });
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 404 when another user owns the agent (no existence oracle)', async () => {
+    const seeded = await createAgent({
+      walletPubkey: 'So11111111111111111111111111111111111111112',
+      name: 'Alice bot',
+      framework: 'custom',
+      agentType: 'other',
+    });
+
+    const bobApp = buildApp({
+      db: ctx.testDb.db,
+      verifier: makeVerifier('did:privy:user-bob'),
+      sseBus: createSseBus(),
+      logger: silentLogger,
+    });
+
+    const res = await bobApp.request(`/api/agents/${seeded.agent.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: BEARER },
+      body: JSON.stringify({ name: 'Hijacked' }),
+    });
+    expect(res.status).toBe(404);
+
+    // Alice's row is unchanged.
+    const [row] = await ctx.testDb.db.select().from(agents).where(eq(agents.id, seeded.agent.id));
+    expect(row?.name).toBe('Alice bot');
+  });
+
+  it('updates a single mutable field (name) and persists to the db', async () => {
+    const seeded = await createAgent({
+      walletPubkey: 'So11111111111111111111111111111111111111112',
+      name: 'Old name',
+      framework: 'custom',
+      agentType: 'other',
+      tags: ['keep'],
+    });
+
+    const res = await patch(seeded.agent.id, { name: 'New name' });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      agent: { id: string; name: string; tags: string[] };
+    };
+    expect(body.agent.name).toBe('New name');
+    // Untouched fields survive.
+    expect(body.agent.tags).toEqual(['keep']);
+
+    const [row] = await ctx.testDb.db.select().from(agents).where(eq(agents.id, seeded.agent.id));
+    expect(row?.name).toBe('New name');
+    expect(row?.tags).toEqual(['keep']);
+  });
+
+  it('updates tags, webhookUrl, and alertRules together', async () => {
+    const seeded = await createAgent({
+      walletPubkey: 'So11111111111111111111111111111111111111112',
+      name: 'Multi',
+      framework: 'custom',
+      agentType: 'other',
+    });
+
+    const res = await patch(seeded.agent.id, {
+      tags: ['prod', 'hot'],
+      webhookUrl: 'https://example.com/hook',
+      alertRules: { slippagePctThreshold: 3.5, drawdownPctThreshold: 10 },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      agent: {
+        tags: string[];
+        webhookUrl: string | null;
+        alertRules: Record<string, unknown>;
+      };
+    };
+    expect(body.agent.tags).toEqual(['prod', 'hot']);
+    expect(body.agent.webhookUrl).toBe('https://example.com/hook');
+    expect(body.agent.alertRules).toEqual({
+      slippagePctThreshold: 3.5,
+      drawdownPctThreshold: 10,
+    });
+  });
+
+  it('allows webhookUrl to be cleared with null', async () => {
+    const seeded = await createAgent({
+      walletPubkey: 'So11111111111111111111111111111111111111112',
+      name: 'ClearHook',
+      framework: 'custom',
+      agentType: 'other',
+      webhookUrl: 'https://example.com/existing',
+    });
+
+    const res = await patch(seeded.agent.id, { webhookUrl: null });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { agent: { webhookUrl: string | null } };
+    expect(body.agent.webhookUrl).toBeNull();
+  });
+
+  it('silently strips immutable fields (framework, walletPubkey, ingestToken)', async () => {
+    const seeded = await createAgent({
+      walletPubkey: 'So11111111111111111111111111111111111111112',
+      name: 'Immutable',
+      framework: 'custom',
+      agentType: 'other',
+    });
+
+    const res = await patch(seeded.agent.id, {
+      name: 'Renamed',
+      framework: 'elizaos',
+      walletPubkey: 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
+      ingestToken: 'tok_hijack',
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      agent: { framework: string; walletPubkey: string; ingestToken: string; name: string };
+    };
+    expect(body.agent.name).toBe('Renamed');
+    expect(body.agent.framework).toBe('custom');
+    expect(body.agent.walletPubkey).toBe(seeded.agent.walletPubkey);
+    expect(body.agent.ingestToken).toBe(seeded.agent.ingestToken);
+  });
+
+  it('accepts an empty body as a no-op and returns the current agent', async () => {
+    const seeded = await createAgent({
+      walletPubkey: 'So11111111111111111111111111111111111111112',
+      name: 'Idempotent',
+      framework: 'custom',
+      agentType: 'other',
+    });
+
+    const res = await patch(seeded.agent.id, {});
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { agent: { id: string; name: string } };
+    expect(body.agent.id).toBe(seeded.agent.id);
+    expect(body.agent.name).toBe('Idempotent');
+  });
+
+  it('rejects invalid webhookUrl with 422', async () => {
+    const seeded = await createAgent({
+      walletPubkey: 'So11111111111111111111111111111111111111112',
+      name: 'BadHook',
+      framework: 'custom',
+      agentType: 'other',
+    });
+
+    const res = await patch(seeded.agent.id, { webhookUrl: 'not-a-url' });
+    expect(res.status).toBe(422);
+  });
+});
