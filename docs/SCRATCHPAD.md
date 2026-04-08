@@ -18,10 +18,12 @@
 
 ---
 
-## Стан: Epic 4 in progress (2026-04-08)
+## Стан: Epic 4 in progress — END OF DAY 3 (2026-04-09)
 
-### Поточна задача
+### Поточна задача (resume tomorrow)
 **4.4** — Persist spans → `reasoning_logs` (trace_id, span_id, parent_span_id, start/end, attributes). Handler тепер має resolved `{agentId, userId}` з 4.3 — треба мапити кожен Span з body у row і batch insert'ити.
+
+**Перший крок завтра:** прочитати `packages/db/src/schema.ts` секцію `reasoningLogs` (точні column types: чи `trace_id` це text/uuid/bytea, чи `start_time` це timestamptz і як з нано-точністю, чи `attributes` це jsonb, чи є FK cascade на agents). Після цього можна планувати mapping Span → row.
 
 ### Прогрес: 39 / 99 (≈39%)
 - ✅ **Епік 1 (Foundation): 13/13** — RUNTIME validated на справжньому Supabase + Helius
@@ -84,7 +86,7 @@ tests/otlp-traces.test.ts (11):
   non-numeric startTimeUnixNano → 422
   unknown field at span level (strict mode) → 422
 ```
-OTLP route не торкає db, так що test setup дешевий (stub db + stub verifier, no PGlite) — вся suite виконалась ~1s. Вся api suite ~120s через PGlite у agents/transactions/alerts тестах.
+**Оновлено у 4.3:** OTLP тести тепер на shared PGlite (seeded user+agent у beforeAll, afterAll close). Full api suite ~78-87s.
 
 ### Планований shape 4.4 (persist spans → reasoning_logs)
 Handler тепер має resolved `{agentId, userId}` з auth step. Для кожного `Span` у вкладених `resourceSpans[*].scopeSpans[*].spans[*]` треба збудувати `reasoning_logs` row:
@@ -116,7 +118,12 @@ Handler тепер має resolved `{agentId, userId}` з auth step. Для ко
 
 ## ✅ NO uncommitted work — clean checkpoint
 
-`git status` clean на момент завершення дня 2. Git log показує фактичний прогрес — не дублюю тут snapshot'ом, використовуй `git log --oneline -20`.
+`git status` clean на момент завершення дня 3. Останні комміти:
+- `7a395c7` feat(api): OTLP agent-token auth via resource attribute (4.3)
+- `f7af2f1` feat(api): OTLP/HTTP JSON traces receiver with zod schema (4.2)
+- `95fbccd` docs(4.1): pivot to zod-first OTLP receiver — no otel deps
+
+Git log показує фактичний прогрес — використовуй `git log --oneline -20`.
 
 ---
 
@@ -165,13 +172,13 @@ Handler тепер має resolved `{agentId, userId}` з auth step. Для ко
 
 ---
 
-## Тести: 144/144 зелені
+## Тести: 159/159 зелені
 
 ```
 @agentscope/shared       27 tests (zod schemas + type alignment)
 @agentscope/db            7 tests (PGlite migrations + CRUD + cascade + unique)
 @agentscope/parser       22 tests (9 dispatcher + 6 jupiter + 7 kamino з real mainnet fixtures)
-@agentscope/api          88 tests:
+@agentscope/api         103 tests:
                           6 error middleware
                           6 auth middleware
                           7 sse bus
@@ -179,9 +186,10 @@ Handler тепер має resolved `{agentId, userId}` з auth step. Для ко
                          44 agents CRUD + tx list (POST×6, GET×5, GET:id×7, PATCH×10, DELETE×7, tx list×9)
                           8 transactions (/api/transactions/:sig)
                          11 alerts (/api/alerts з фільтрами)
+                         15 otlp traces (11 schema/happy/validation + 4 agent.token auth)
 ```
 
-**API test runtime ~65s** через PGlite init per-test (~1.3s × 50 PGlite-based тестів). Post-MVP оптимізація: shared PGlite instance per-file + `TRUNCATE CASCADE` у `beforeEach` замість `createTestDatabase`. Потенційно ~5s замість 65s. Task додано у TODOs нижче.
+**API test runtime ~78-87s**. OTLP suite використовує shared PGlite (beforeAll seed, afterAll close) — ~3s. Agents/transactions/alerts suites все ще створюють нову PGlite per-test (~1.3s/test) — можна теж мігрувати на shared pattern post-MVP, див. TODO #9.
 
 Перевірка: `pnpm test` (turbo cached, ~5s якщо без змін; ~70s якщо api перегонявся).
 
@@ -318,4 +326,5 @@ curl http://localhost:3000/health      # → {"ok":true}
 1. Читаю SCRATCHPAD (цей файл)
 2. Перевіряю `git status --short` + `git log --oneline -20`
 3. Запускаю `pnpm test` для перевірки що нічого не зламалось overnight
-4. Кажу: «Все clean, Epic 3 закрито (36/99). Наступна — **4.1 OTLP deps**. Стартую?»
+4. Читаю `packages/db/src/schema.ts` (reasoning_logs секція) — передумова для 4.4
+5. Кажу: «Все clean, Epic 4: 3/7 (39/99 total). Наступна — **4.4 persist spans → reasoning_logs**. Перед кодом покажу mapping Span→row на основі schema. Стартую?»
