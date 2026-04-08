@@ -21,21 +21,22 @@
 ## Стан на день 2, сесія 2026-04-08
 
 ### Поточна задача
-**3.10** — `GET /api/agents/:id/transactions` — cursor pagination, limit ≤ 100. **Чекає старту**. Потребує зрозуміти формат cursor (opaque timestamp/id?) з PLAN §API.
+**3.11** — `GET /api/transactions/:signature` з reasoning_logs join. **Чекає старту**. Новий top-level route (не agent-scoped) → треба новий router файл `src/routes/transactions.ts` і підключити у `app.ts`.
 
-### Прогрес: 33 / 99 (≈33%)
+### Прогрес: 34 / 99 (≈34%)
 - ✅ **Епік 1 (Foundation): 13/13** — RUNTIME validated на справжньому Supabase + Helius
 - ✅ **Епік 2 (Parsers): 11/12** — 22 unit tests з реальними mainnet fixtures (Jupiter v6 + Kamino Lend). 2.12 = N/A для WS fallback.
-- ⏳ **Епік 3 (REST API): 9/12** — **Agents CRUD complete** (POST/GET/GET:id/PATCH/DELETE ✅). Transactions + alerts read — next.
+- ⏳ **Епік 3 (REST API): 10/12** — Agents CRUD complete + transactions list (3.1-3.10 ✅). Single-tx (3.11) + alerts (3.12) — next.
 - 📦 Епіки 4-9: не починалися
 - ⏳ Mainnet runtime валідація persist'у jupiter/kamino — у Тиждень 5 (по плану SPEC §10)
 
 ### Наступні задачі (черга з TASKS.md)
-- **3.10** GET /api/agents/:id/transactions (cursor pagination, limit ≤ 100) ⏱ 45m
 - **3.11** GET /api/transactions/:signature (з reasoning_logs join) ⏱ 30m
 - **3.12** GET /api/alerts (filter agent_id?, severity?, from/to) ⏱ 30m
 
-⚠️ **API test runtime = ~45s** (35 agents тестів × ~1.3s PGlite init). Post-MVP оптимізація: shared PGlite instance per-file + `TRUNCATE CASCADE` у `beforeEach` замість `createTestDatabase`. Потенційно ~5s замість 45s.
+⚠️ **API test runtime = ~65s** (44 agents тестів × ~1.3s PGlite init). Post-MVP оптимізація: shared PGlite instance per-file + `TRUNCATE CASCADE` у `beforeEach` замість `createTestDatabase`. Потенційно ~5s замість 65s.
+
+ℹ️ **Виправлення лічильника тестів** — попередній баланс (88 у 3.9) був неправильний, я пропустив parser'и у підрахунку api. Фактично після 3.9 було 110 тестів. Починаючи з 3.10 показую коректний total.
 
 ### Що зробили у 3.1
 - `apps/api/package.json` — додано `hono@^4.6.14`, `@hono/node-server@^1.13.7`, `tsx@^4.19.2`; оновлено `dev`/`start` scripts.
@@ -217,6 +218,46 @@
 
 ## 🎉 Гейт Кінець Agents CRUD: ✅
 Agents resource повністю готовий (POST/GET/GET:id/PATCH/DELETE). Залишилось по Епіку 3: transactions read (3.10-3.11) + alerts read (3.12), і гейт Епіку 3 закритий.
+
+### Що зробили у 3.10
+- `apps/api/src/lib/cursor.ts` — opaque cursor helpers:
+  - `encodeTxCursor(blockTime: string, id: number) → string` (base64url JSON)
+  - `decodeTxCursor(cursor: string) → TxCursor | null` з повним валідаційним guard (non-base64 → null, non-json → null, wrong shape → null, non-finite number → null)
+  - Доки detailed comment: keyset vs offset pagination, stability під concurrent writes, constant-cost seek.
+- `apps/api/tests/cursor.test.ts` — **6 unit тестів** для cursor: round-trip, url-safe charset, garbage input, non-json, missing fields, non-number `i`.
+- `apps/api/src/routes/agents.ts`:
+  - `MAX_TX_PAGE_LIMIT = 100` + `DEFAULT_TX_PAGE_LIMIT = 50`
+  - `txListQuerySchema` з zod: `cursor?`, `limit` (coerce, default 50, max 100), `from?`/`to?` (datetime з offset), `.refine(from ≤ to)`
+  - `GET /:id/transactions` handler:
+    1. Param + query validation → 422
+    2. Ownership check через SELECT agents WHERE id AND user_id → 404
+    3. Build WHERE: `eq(agent_id)` + optional `gte(blockTime, from)` + optional `lte(blockTime, to)` + optional cursor condition
+    4. **Cursor condition:** `or(lt(blockTime, t), and(eq(blockTime, t), lt(id, i)))` — expanded з tuple comparison для drizzle readability
+    5. ORDER BY `blockTime DESC, id DESC` (stable tie-breaker)
+    6. `LIMIT limit+1` як "has more" sentinel, trim, compute next cursor з last kept row
+  - Response: `{transactions: Row[], nextCursor: string | null}`
+- `apps/api/tests/agents.test.ts` — нова describe `GET /api/agents/:id/transactions` з **9 тестами**:
+  1. No auth → 401
+  2. Non-uuid id → 422
+  3. Limit > 100 → 422
+  4. Malformed cursor → 422
+  5. Чужий agent → 404
+  6. Empty tx → `{transactions:[], nextCursor: null}`
+  7. 5 tx → DESC ordering, `nextCursor: null`
+  8. **150 tx з limit=100**: page 1 = 100 rows + valid cursor, page 2 = 50 rows + null cursor (суворі assertions на signatures через reversed expected order)
+  9. From/to window filter: 10 hourly tx, window 03:00–06:00 → 4 tx
+- `pnpm lint && pnpm typecheck && pnpm test` — все зелене. **125 tests total** (+15 на 3.10: 6 cursor + 9 transactions list).
+
+### Ключові рішення 3.10
+- **Keyset pagination (block_time, id) замість OFFSET** — stable під concurrent writes (новий tx що landuiться не зміщує page 2), constant cost (O(log n) seek через composite index `tx_agent_time_idx (agent_id, block_time)`), не треба міняти при rotating partition'ах.
+- **Opaque base64url cursor** — клієнт не знає структуру, жодних client-side hacks типу "а давайте додамо ще фільтр до cursor". Якщо колись треба буде змінити cursor shape — invalidate старі через magic byte/version prefix, public API не ламається.
+- **Decode failure → 422 не 400** — щоб уніфікувати з іншими schema validation errors. 400 використовуємо для runtime errors (missing fields у internal state), 422 для user-provided data shape issues.
+- **`limit + 1` fetch як "has more" sentinel** — одна query, не треба `COUNT(*)` або окремий pre-check. Тривіальне overhead (+1 row) замість додаткового round-trip.
+- **Tuple comparison expanded у `or/and/eq/lt`** — drizzle не має native row constructor comparison без raw SQL. Expansion більш verbose, але: (a) читабельна, (b) type-checked, (c) дозволяє зберегти parameterization.
+- **`from`/`to` як ISO string з offset (Z або +NN:NN)** — через `.datetime({offset: true})` у zod. API користувачі не повинні здогадуватись чи фактично offset required.
+- **Cursor encoded position, не filter state** — cursor зберігає тільки `(t, i)`. Time window filters (from/to) клієнт пересилає на кожен запит. Простіше, менше шансів на bug коли filters "прилипають" до старого cursor.
+- **Default limit 50** (не 100) — типова dashboard table fits 50 rows, менший JSON payload, швидше rendering. Якщо клієнту треба max — явно вказує `?limit=100`.
+- **Окремий `cursor.test.ts`** замість inline unit-тестів у agents.test.ts — helper'и як окремий юніт, не потребує PGlite, швидко (6 ms замість 1.3s). Integration тести залишаються для full-pipeline coverage.
 
 ---
 

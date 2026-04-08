@@ -152,7 +152,7 @@
   ✅ Тест: створити агента → DELETE → 204 → SELECT повертає порожньо
 
 ### Transactions read
-- [ ] **3.10** GET /api/agents/:id/transactions (cursor pagination, limit≤100) ⏱ 45m → 3.9
+- [x] **3.10** GET /api/agents/:id/transactions (cursor pagination, limit≤100) ⏱ 45m → 3.9
   ✅ Тест: 150 tx → 2 сторінки по 100, наступний cursor валідний
 - [ ] **3.11** GET /api/transactions/:signature (з reasoning_logs join) ⏱ 30m → 3.10
   ✅ Тест: tx без reasoning → reasoning_logs=[]
@@ -464,10 +464,10 @@ E8 → E9 (deploy потребує всього)
 
 ## Поточний стан
 
-**Завершено:** 33 / 99 задач (Епік 1 + Епік 2 + 3.1-3.9).
-**Поточна:** **3.10** (GET /api/agents/:id/transactions — cursor pagination).
+**Завершено:** 34 / 99 задач (Епік 1 + Епік 2 + 3.1-3.10).
+**Поточна:** **3.11** (GET /api/transactions/:signature з reasoning_logs).
 
 **Епік 1:** ✅ 13/13 RUNTIME validated на справжньому Supabase + Helius
 **Епік 2:** ✅ 11/12 (2.12 = N/A для WS fallback). 22 unit tests з реальними mainnet fixtures.
-**Епік 3 (REST API):** ⏳ 9/12 — **Agents CRUD complete** (POST/GET/GET:id/PATCH/DELETE). Transactions + alerts read — next.
-**Тести:** 88/88 зелені (27 shared + 7 db PGlite + 22 parser + 54 api: 6 error + 6 auth + 7 sse-bus + 35 agents).
+**Епік 3 (REST API):** ⏳ 10/12 — Agents CRUD + transactions list (keyset pagination). Single-tx + alerts read — next.
+**Тести:** 125/125 зелені (27 shared + 7 db PGlite + 22 parser + 69 api: 6 error + 6 auth + 7 sse-bus + 6 cursor + 44 agents).

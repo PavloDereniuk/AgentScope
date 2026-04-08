@@ -892,3 +892,188 @@ describe('DELETE /api/agents/:id', () => {
     expect(survivors[0]?.id).toBe(keeper.agent.id);
   });
 });
+
+describe('GET /api/agents/:id/transactions', () => {
+  let ctx: TestApp;
+
+  beforeEach(async () => {
+    ctx = await setup();
+  });
+
+  afterEach(async () => {
+    await ctx.testDb.close();
+  });
+
+  async function createAgent() {
+    const res = await ctx.app.request('/api/agents', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: BEARER },
+      body: JSON.stringify({
+        walletPubkey: 'So11111111111111111111111111111111111111112',
+        name: 'Paginated Bot',
+        framework: 'custom',
+        agentType: 'other',
+      }),
+    });
+    if (res.status !== 201) throw new Error(`seed create failed: ${res.status}`);
+    return (await res.json()) as { agent: { id: string } };
+  }
+
+  /**
+   * Seed `count` transactions for an agent, each with a distinct
+   * block_time one second apart, starting from `startIso` and moving
+   * forward. Returns the signatures in insertion (chronological)
+   * order so tests can assert the DESC response order.
+   */
+  async function seedTransactions(agentId: string, count: number, startIso: string) {
+    const start = Date.parse(startIso);
+    const rows = Array.from({ length: count }, (_, idx) => ({
+      agentId,
+      signature: `sig-${String(idx).padStart(4, '0')}`,
+      slot: 1000 + idx,
+      blockTime: new Date(start + idx * 1000).toISOString(),
+      programId: '11111111111111111111111111111111',
+      success: true,
+    }));
+    await ctx.testDb.db.insert(agentTransactions).values(rows);
+    return rows.map((r) => r.signature);
+  }
+
+  function listTransactions(
+    agentId: string,
+    query: Record<string, string | number | undefined> = {},
+  ) {
+    const params = new URLSearchParams();
+    for (const [k, v] of Object.entries(query)) {
+      if (v !== undefined) params.set(k, String(v));
+    }
+    const qs = params.toString();
+    const path = `/api/agents/${agentId}/transactions${qs ? `?${qs}` : ''}`;
+    return ctx.app.request(path, { headers: { Authorization: BEARER } });
+  }
+
+  it('rejects unauthenticated requests with 401', async () => {
+    const seeded = await createAgent();
+    const res = await ctx.app.request(`/api/agents/${seeded.agent.id}/transactions`);
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 422 for a non-uuid agent id', async () => {
+    const res = await ctx.app.request('/api/agents/not-a-uuid/transactions', {
+      headers: { Authorization: BEARER },
+    });
+    expect(res.status).toBe(422);
+  });
+
+  it('returns 422 for a limit above the cap', async () => {
+    const seeded = await createAgent();
+    const res = await listTransactions(seeded.agent.id, { limit: 101 });
+    expect(res.status).toBe(422);
+  });
+
+  it('returns 422 for a malformed cursor', async () => {
+    const seeded = await createAgent();
+    const res = await listTransactions(seeded.agent.id, { cursor: '!!!not-a-cursor!!!' });
+    expect(res.status).toBe(422);
+  });
+
+  it('returns 404 when the agent belongs to another user', async () => {
+    const seeded = await createAgent();
+
+    const bobApp = buildApp({
+      db: ctx.testDb.db,
+      verifier: makeVerifier('did:privy:user-bob'),
+      sseBus: createSseBus(),
+      logger: silentLogger,
+    });
+    const res = await bobApp.request(`/api/agents/${seeded.agent.id}/transactions`, {
+      headers: { Authorization: BEARER },
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it('returns an empty list and null cursor for an agent with no transactions', async () => {
+    const seeded = await createAgent();
+    const res = await listTransactions(seeded.agent.id);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { transactions: unknown[]; nextCursor: string | null };
+    expect(body.transactions).toEqual([]);
+    expect(body.nextCursor).toBeNull();
+  });
+
+  it('orders transactions newest first (DESC by block_time)', async () => {
+    const seeded = await createAgent();
+    const sigs = await seedTransactions(seeded.agent.id, 5, '2026-04-07T12:00:00.000Z');
+
+    const res = await listTransactions(seeded.agent.id);
+    const body = (await res.json()) as {
+      transactions: Array<{ signature: string }>;
+      nextCursor: string | null;
+    };
+    expect(body.transactions).toHaveLength(5);
+    // Seeded in chronological order; response should be reversed.
+    const expected = [...sigs].reverse();
+    expect(body.transactions.map((t) => t.signature)).toEqual(expected);
+    expect(body.nextCursor).toBeNull();
+  });
+
+  it('paginates 150 rows across 2 pages of limit=100 with a valid cursor', async () => {
+    const seeded = await createAgent();
+    const sigs = await seedTransactions(seeded.agent.id, 150, '2026-04-07T00:00:00.000Z');
+    const expected = [...sigs].reverse(); // DESC order
+
+    const page1Res = await listTransactions(seeded.agent.id, { limit: 100 });
+    expect(page1Res.status).toBe(200);
+    const page1 = (await page1Res.json()) as {
+      transactions: Array<{ signature: string }>;
+      nextCursor: string | null;
+    };
+    expect(page1.transactions).toHaveLength(100);
+    expect(page1.transactions.map((t) => t.signature)).toEqual(expected.slice(0, 100));
+    expect(page1.nextCursor).not.toBeNull();
+    expect(typeof page1.nextCursor).toBe('string');
+
+    const page2Res = await listTransactions(seeded.agent.id, {
+      limit: 100,
+      cursor: page1.nextCursor ?? '',
+    });
+    expect(page2Res.status).toBe(200);
+    const page2 = (await page2Res.json()) as {
+      transactions: Array<{ signature: string }>;
+      nextCursor: string | null;
+    };
+    expect(page2.transactions).toHaveLength(50);
+    expect(page2.transactions.map((t) => t.signature)).toEqual(expected.slice(100));
+    expect(page2.nextCursor).toBeNull();
+  });
+
+  it('filters by from/to time window', async () => {
+    const seeded = await createAgent();
+    // 10 tx spaced 1 hour apart starting 2026-04-08T00:00:00Z.
+    const start = Date.parse('2026-04-08T00:00:00.000Z');
+    const rows = Array.from({ length: 10 }, (_, i) => ({
+      agentId: seeded.agent.id,
+      signature: `sig-hr-${i}`,
+      slot: 2000 + i,
+      blockTime: new Date(start + i * 60 * 60 * 1000).toISOString(),
+      programId: '11111111111111111111111111111111',
+      success: true,
+    }));
+    await ctx.testDb.db.insert(agentTransactions).values(rows);
+
+    // Request a window covering hours 3..6 inclusive → 4 rows.
+    const res = await listTransactions(seeded.agent.id, {
+      from: '2026-04-08T03:00:00.000Z',
+      to: '2026-04-08T06:00:00.000Z',
+    });
+    const body = (await res.json()) as {
+      transactions: Array<{ signature: string }>;
+    };
+    expect(body.transactions.map((t) => t.signature).sort()).toEqual([
+      'sig-hr-3',
+      'sig-hr-4',
+      'sig-hr-5',
+      'sig-hr-6',
+    ]);
+  });
+});

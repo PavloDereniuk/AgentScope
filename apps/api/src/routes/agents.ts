@@ -17,10 +17,11 @@ import { randomBytes } from 'node:crypto';
 import { type Database, agentTransactions, agents, alerts } from '@agentscope/db';
 import { createAgentInputSchema, updateAgentInputSchema } from '@agentscope/shared';
 import { zValidator } from '@hono/zod-validator';
-import { and, desc, eq, gte, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, lt, lte, or, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
+import { decodeTxCursor, encodeTxCursor } from '../lib/cursor';
 import { ensureUser } from '../lib/users';
 import type { ApiEnv } from '../middleware/auth';
 
@@ -42,6 +43,22 @@ function generateIngestToken(): string {
 const RECENT_TX_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 const agentIdParamSchema = z.object({ id: z.string().uuid() });
+
+/** Max page size for the transactions list endpoint (task 3.10). */
+const MAX_TX_PAGE_LIMIT = 100;
+const DEFAULT_TX_PAGE_LIMIT = 50;
+
+const txListQuerySchema = z
+  .object({
+    cursor: z.string().min(1).optional(),
+    limit: z.coerce.number().int().min(1).max(MAX_TX_PAGE_LIMIT).default(DEFAULT_TX_PAGE_LIMIT),
+    from: z.string().datetime({ offset: true }).optional(),
+    to: z.string().datetime({ offset: true }).optional(),
+  })
+  .refine((q) => !q.from || !q.to || q.from <= q.to, {
+    message: 'from must be <= to',
+    path: ['from'],
+  });
 
 export function createAgentsRouter(db: Database) {
   const router = new Hono<ApiEnv>();
@@ -206,6 +223,84 @@ export function createAgentsRouter(db: Database) {
         throw new HTTPException(404, { message: 'agent not found' });
       }
       return c.json({ agent: updated });
+    },
+  );
+
+  // 3.10 — Paginated transactions for an agent. Keyset pagination
+  // ordered newest-first by (block_time, id). The cursor is an opaque
+  // base64url blob produced by encodeTxCursor; clients treat it as
+  // atomic and just pass it back unchanged.
+  router.get(
+    '/:id/transactions',
+    zValidator('param', agentIdParamSchema, (result) => {
+      if (!result.success) {
+        throw new HTTPException(422, { message: 'invalid agent id (expected uuid)' });
+      }
+    }),
+    zValidator('query', txListQuerySchema, (result) => {
+      if (!result.success) {
+        const message = result.error.issues
+          .map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`)
+          .join('; ');
+        throw new HTTPException(422, { message });
+      }
+    }),
+    async (c) => {
+      const privyDid = c.get('userId');
+      const { id: agentId } = c.req.valid('param');
+      const { cursor, limit, from, to } = c.req.valid('query');
+
+      const user = await ensureUser(db, privyDid);
+
+      // Ownership check — a missing or foreign agent returns 404
+      // without leaking existence, same as GET/PATCH/DELETE :id.
+      const [owned] = await db
+        .select({ id: agents.id })
+        .from(agents)
+        .where(and(eq(agents.id, agentId), eq(agents.userId, user.id)))
+        .limit(1);
+      if (!owned) {
+        throw new HTTPException(404, { message: 'agent not found' });
+      }
+
+      // Build the seek condition. Time filters (from/to) apply on
+      // every request; the cursor (if present) carves out the "strictly
+      // earlier than last seen" half of the result set.
+      const where = [eq(agentTransactions.agentId, agentId)];
+      if (from) where.push(gte(agentTransactions.blockTime, from));
+      if (to) where.push(lte(agentTransactions.blockTime, to));
+
+      if (cursor) {
+        const decoded = decodeTxCursor(cursor);
+        if (!decoded) {
+          throw new HTTPException(422, { message: 'invalid cursor' });
+        }
+        // (block_time, id) < (cursor.t, cursor.i), expanded to two
+        // drizzle conditions for readability. Tuple comparison would
+        // also work but requires raw sql template.
+        where.push(
+          or(
+            lt(agentTransactions.blockTime, decoded.t),
+            and(eq(agentTransactions.blockTime, decoded.t), lt(agentTransactions.id, decoded.i)),
+          ) as ReturnType<typeof lt>,
+        );
+      }
+
+      // Fetch one extra row as a "has more" sentinel; trim before
+      // returning and reuse the trimmed row's keys for the next cursor.
+      const rows = await db
+        .select()
+        .from(agentTransactions)
+        .where(and(...where))
+        .orderBy(desc(agentTransactions.blockTime), desc(agentTransactions.id))
+        .limit(limit + 1);
+
+      const hasMore = rows.length > limit;
+      const items = hasMore ? rows.slice(0, limit) : rows;
+      const last = items[items.length - 1];
+      const nextCursor = hasMore && last ? encodeTxCursor(last.blockTime, last.id) : null;
+
+      return c.json({ transactions: items, nextCursor });
     },
   );
 
