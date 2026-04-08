@@ -174,8 +174,8 @@
   ✅ Зафіксовано рішення, package.json чистий
 - [x] **4.2** `apps/api/src/otlp/schema.ts` + `routes/otlp.ts`: zod schema для ResourceSpans/ScopeSpans/Span/KeyValue/AnyValue + POST /v1/traces приймає OTLP/HTTP JSON, парсить spans ⏱ 120m → 4.1
   ✅ 11 нових тестів (happy path + log assertions + 6 validation failures + strict mode). Route mounted at /v1/traces без auth (4.3 додасть agent-token)
-- [ ] **4.3** Auth для OTLP: span attribute `agent.token`, lookup у `agents.ingest_token` → отримати `agent_id`. Без token → 401 ⏱ 45m → 4.2, 3.5
-  ✅ Тест: invalid token → 401; valid → 200
+- [x] **4.3** Auth для OTLP: resource attribute `agent.token` (не span — per OTel idiom це Resource-level identity), lookup у `agents.ingest_token` → отримати `agent_id` + `user_id`. Missing/empty/unknown → 401 ⏱ 45m → 4.2, 3.5
+  ✅ 4 нові тести: missing attrs → 401, empty token → 401, unknown token → 401, valid → 200 + logged agentId/userId; також перевірка що schema validation йде перед auth (422 < 401 pre-empts DB round-trip)
 - [ ] **4.4** Persist: spans → `reasoning_logs` (trace_id, span_id, parent_span_id, start/end, attributes) ⏱ 60m → 4.3
   ✅ Тест: отримати 3-span trace → 3 рядки у БД
 - [ ] **4.5** Кореляція: якщо span має attribute `solana.tx.signature` → зберегти у `reasoning_logs.tx_signature` ⏱ 20m → 4.4
@@ -464,8 +464,8 @@ E8 → E9 (deploy потребує всього)
 
 ## Поточний стан
 
-**Завершено:** 38 / 99 задач (Епік 1 + Епік 2 + Епік 3 + 4.1 + 4.2).
-**Поточна:** **4.3** (OTLP auth via span attribute `agent.token` → `agents.ingest_token`).
+**Завершено:** 39 / 99 задач (Епік 1 + Епік 2 + Епік 3 + 4.1 + 4.2 + 4.3).
+**Поточна:** **4.4** (persist spans → reasoning_logs).
 
 **Епік 1:** ✅ 13/13 RUNTIME validated на справжньому Supabase + Helius
 **Епік 2:** ✅ 11/12 (2.12 = N/A для WS fallback). 22 unit tests з реальними mainnet fixtures.

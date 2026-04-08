@@ -1,24 +1,31 @@
 /**
- * Integration tests for POST /v1/traces (task 4.2).
+ * Integration tests for POST /v1/traces (tasks 4.2 + 4.3).
  *
  * Exercises the OTLP/HTTP JSON receiver end-to-end through the full
- * `buildApp()` pipeline. Stubs db/verifier because this route never
- * touches either (auth lands in 4.3, persistence in 4.4) — keeping
- * the tests cheap (no PGlite spin-up).
+ * `buildApp()` pipeline. 4.2 landed with a stub db; 4.3 introduces
+ * agent-token auth, so the tests now run against a real PGlite with
+ * a seeded agent whose `ingest_token` we embed in every valid payload.
  *
- * A capturing pino stream records log entries so we can assert that
- * the receiver logs the inbound span counts, which is the acceptance
- * check on the task.
+ * A single PGlite + app instance is reused across the describe block
+ * (`beforeAll` / `afterAll`) because every assertion is read-only at
+ * the DB layer in 4.3 — nothing mutates state. This keeps the OTLP
+ * suite fast (~3s for 14 tests) without sacrificing isolation.
+ *
+ * A capturing pino Writable stream records log entries so we can
+ * assert on the receiver's structured output — both the inbound
+ * span counts (4.2 acceptance) and the resolved agent id (4.3
+ * acceptance).
  */
 
 import { Writable } from 'node:stream';
-import type { Database } from '@agentscope/db';
+import { agents, users } from '@agentscope/db';
 import pino from 'pino';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/index';
 import type { AuthVerifier } from '../src/lib/auth-verifier';
 import { createSseBus } from '../src/lib/sse-bus';
 import type { Logger } from '../src/logger';
+import { type TestDatabase, createTestDatabase } from './helpers/test-db';
 
 /** Fake Privy verifier — never called by /v1/traces, but buildApp wants one. */
 const stubVerifier: AuthVerifier = {
@@ -44,24 +51,59 @@ function makeCapturingLogger(): { logger: Logger; records: Array<Record<string, 
   return { logger, records };
 }
 
-interface TestApp {
+interface TestCtx {
   app: ReturnType<typeof buildApp>;
+  testDb: TestDatabase;
   records: Array<Record<string, unknown>>;
+  /** Valid `ingest_token` for the seeded agent — pre-registered in the DB. */
+  validToken: string;
+  /** Resolved agent.id for the seeded agent, for log assertions. */
+  agentId: string;
+  /** Resolved user.id (owner of the seeded agent). */
+  userId: string;
 }
 
-function setup(): TestApp {
+/**
+ * Bootstraps a PGlite + real buildApp, then seeds a single user +
+ * agent directly via drizzle (bypassing the authenticated HTTP API,
+ * which would require Privy stub plumbing we don't need here).
+ */
+async function setup(): Promise<TestCtx> {
+  const testDb = await createTestDatabase();
   const { logger, records } = makeCapturingLogger();
   const app = buildApp({
-    db: {} as unknown as Database,
+    db: testDb.db,
     verifier: stubVerifier,
     sseBus: createSseBus(),
     logger,
   });
-  return { app, records };
+
+  const validToken = 'tok_otlp_receiver_test_token_abc123';
+
+  const [user] = await testDb.db
+    .insert(users)
+    .values({ privyDid: 'did:privy:otlp-receiver-test' })
+    .returning();
+  if (!user) throw new Error('failed to seed user');
+
+  const [agent] = await testDb.db
+    .insert(agents)
+    .values({
+      userId: user.id,
+      walletPubkey: '11111111111111111111111111111111',
+      name: 'OTLP Receiver Test Agent',
+      framework: 'custom',
+      agentType: 'other',
+      ingestToken: validToken,
+    })
+    .returning();
+  if (!agent) throw new Error('failed to seed agent');
+
+  return { app, testDb, records, validToken, agentId: agent.id, userId: user.id };
 }
 
 /** Post an OTLP/HTTP JSON body and return the Response. */
-async function postTraces(app: TestApp['app'], body: unknown): Promise<Response> {
+async function postTraces(app: TestCtx['app'], body: unknown): Promise<Response> {
   return app.request('/v1/traces', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -74,8 +116,14 @@ const spanId = (seed: string) => seed.padEnd(16, '0').slice(0, 16);
 /** Hex-string trace id helper — 32 lowercase hex chars (16 bytes). */
 const traceId = (seed: string) => seed.padEnd(32, '0').slice(0, 32);
 
-/** Build a minimal valid single-span payload, overridable per test. */
+/**
+ * Build a minimal valid single-span payload carrying the given
+ * `agent.token` on the first ResourceSpans' resource attributes.
+ * Every field is overridable so individual tests can flip one thing
+ * at a time to probe validation / auth boundaries.
+ */
 function onePayload(
+  token: string,
   overrides: {
     traceId?: string;
     spanId?: string;
@@ -88,6 +136,9 @@ function onePayload(
   return {
     resourceSpans: [
       {
+        resource: {
+          attributes: [{ key: 'agent.token', value: { stringValue: token } }],
+        },
         scopeSpans: [
           {
             spans: [
@@ -108,14 +159,25 @@ function onePayload(
 }
 
 describe('POST /v1/traces', () => {
-  let ctx: TestApp;
+  let ctx: TestCtx;
 
-  beforeEach(() => {
-    ctx = setup();
+  beforeAll(async () => {
+    ctx = await setup();
   });
 
+  afterAll(async () => {
+    await ctx.testDb.close();
+  });
+
+  beforeEach(() => {
+    // Drain captured logs so each test sees only its own output.
+    ctx.records.length = 0;
+  });
+
+  // ── 4.2 — schema validation + happy path ────────────────────────────
+
   it('accepts a minimal single-span payload and returns partialSuccess', async () => {
-    const res = await postTraces(ctx.app, onePayload());
+    const res = await postTraces(ctx.app, onePayload(ctx.validToken));
 
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toMatch(/application\/json/);
@@ -126,6 +188,9 @@ describe('POST /v1/traces', () => {
     const payload = {
       resourceSpans: [
         {
+          resource: {
+            attributes: [{ key: 'agent.token', value: { stringValue: ctx.validToken } }],
+          },
           scopeSpans: [
             {
               spans: [
@@ -159,6 +224,8 @@ describe('POST /v1/traces', () => {
           ],
         },
         {
+          // A second ResourceSpans entry — the auth scan only looks
+          // at the first, so leaving out a token here is fine.
           scopeSpans: [
             {
               spans: [
@@ -188,19 +255,13 @@ describe('POST /v1/traces', () => {
     });
   });
 
-  it('accepts a completely empty body {} as a valid no-op', async () => {
-    const res = await postTraces(ctx.app, {});
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ partialSuccess: {} });
-
-    const summary = ctx.records.find((r) => r.msg === 'otlp traces received');
-    expect(summary).toMatchObject({ resourceSpansCount: 0, scopeSpansCount: 0, spanCount: 0 });
-  });
-
   it('accepts recursive AnyValue attributes (kvlist containing array)', async () => {
     const payload = {
       resourceSpans: [
         {
+          resource: {
+            attributes: [{ key: 'agent.token', value: { stringValue: ctx.validToken } }],
+          },
           scopeSpans: [
             {
               spans: [
@@ -249,13 +310,16 @@ describe('POST /v1/traces', () => {
   it('accepts startTimeUnixNano as a plain JS number (coerces to string)', async () => {
     const res = await postTraces(
       ctx.app,
-      onePayload({ startTimeUnixNano: 1_712_577_600_000, endTimeUnixNano: 1_712_577_601_000 }),
+      onePayload(ctx.validToken, {
+        startTimeUnixNano: 1_712_577_600_000,
+        endTimeUnixNano: 1_712_577_601_000,
+      }),
     );
     expect(res.status).toBe(200);
   });
 
   it('returns 422 when traceId is not 32 hex chars', async () => {
-    const res = await postTraces(ctx.app, onePayload({ traceId: 'tooshort' }));
+    const res = await postTraces(ctx.app, onePayload(ctx.validToken, { traceId: 'tooshort' }));
     expect(res.status).toBe(422);
     const body = (await res.json()) as { error: { code: string; message: string } };
     expect(body.error.code).toBe('UNPROCESSABLE_ENTITY');
@@ -263,25 +327,29 @@ describe('POST /v1/traces', () => {
   });
 
   it('returns 422 when spanId contains non-hex characters', async () => {
-    const res = await postTraces(ctx.app, onePayload({ spanId: 'ZZZZZZZZZZZZZZZZ' }));
+    const res = await postTraces(
+      ctx.app,
+      onePayload(ctx.validToken, { spanId: 'ZZZZZZZZZZZZZZZZ' }),
+    );
     expect(res.status).toBe(422);
     const body = (await res.json()) as { error: { code: string; message: string } };
     expect(body.error.message).toContain('spanId');
   });
 
   it('returns 422 when span.kind is out of 0..5 range', async () => {
-    const res = await postTraces(ctx.app, onePayload({ kind: 9 }));
+    const res = await postTraces(ctx.app, onePayload(ctx.validToken, { kind: 9 }));
     expect(res.status).toBe(422);
     const body = (await res.json()) as { error: { code: string; message: string } };
     expect(body.error.message).toContain('kind');
   });
 
   it('returns 422 when span.name is missing', async () => {
-    // Build the payload directly so we can omit `name` without tripping
-    // the helper's type or noUncheckedIndexedAccess.
     const payload = {
       resourceSpans: [
         {
+          resource: {
+            attributes: [{ key: 'agent.token', value: { stringValue: ctx.validToken } }],
+          },
           scopeSpans: [
             {
               spans: [
@@ -305,7 +373,10 @@ describe('POST /v1/traces', () => {
   });
 
   it('returns 422 when startTimeUnixNano is a non-numeric string', async () => {
-    const res = await postTraces(ctx.app, onePayload({ startTimeUnixNano: 'not-a-number' }));
+    const res = await postTraces(
+      ctx.app,
+      onePayload(ctx.validToken, { startTimeUnixNano: 'not-a-number' }),
+    );
     expect(res.status).toBe(422);
     const body = (await res.json()) as { error: { code: string; message: string } };
     expect(body.error.message).toContain('startTimeUnixNano');
@@ -315,6 +386,9 @@ describe('POST /v1/traces', () => {
     const payload = {
       resourceSpans: [
         {
+          resource: {
+            attributes: [{ key: 'agent.token', value: { stringValue: ctx.validToken } }],
+          },
           scopeSpans: [
             {
               spans: [
@@ -334,6 +408,72 @@ describe('POST /v1/traces', () => {
     };
 
     const res = await postTraces(ctx.app, payload);
+    expect(res.status).toBe(422);
+  });
+
+  // ── 4.3 — agent.token auth ──────────────────────────────────────────
+
+  it('returns 401 when the resource carries no attributes at all', async () => {
+    const payload = {
+      resourceSpans: [
+        {
+          scopeSpans: [
+            {
+              spans: [
+                {
+                  traceId: traceId('a1b2c3d4e5f6'),
+                  spanId: spanId('deadbeef'),
+                  name: 'agent.decide',
+                  startTimeUnixNano: '1',
+                  endTimeUnixNano: '2',
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    const res = await postTraces(ctx.app, payload);
+    expect(res.status).toBe(401);
+    const body = (await res.json()) as { error: { code: string; message: string } };
+    expect(body.error.code).toBe('UNAUTHORIZED');
+    expect(body.error.message).toContain('agent.token');
+  });
+
+  it('returns 401 when agent.token is an empty string', async () => {
+    const res = await postTraces(ctx.app, onePayload(''));
+    expect(res.status).toBe(401);
+    const body = (await res.json()) as { error: { code: string; message: string } };
+    expect(body.error.code).toBe('UNAUTHORIZED');
+  });
+
+  it('returns 401 when agent.token does not match any agent', async () => {
+    const res = await postTraces(ctx.app, onePayload('tok_nobody_owns_this_one'));
+    expect(res.status).toBe(401);
+    const body = (await res.json()) as { error: { code: string; message: string } };
+    expect(body.error.code).toBe('UNAUTHORIZED');
+    expect(body.error.message).toContain('invalid');
+  });
+
+  it('logs the resolved agentId and userId on a successful call', async () => {
+    const res = await postTraces(ctx.app, onePayload(ctx.validToken));
+    expect(res.status).toBe(200);
+
+    const summary = ctx.records.find((r) => r.msg === 'otlp traces received');
+    expect(summary).toBeDefined();
+    expect(summary).toMatchObject({
+      agentId: ctx.agentId,
+      userId: ctx.userId,
+    });
+  });
+
+  it('returns 422 (not 401) for a malformed body even when a valid token could be extracted later', async () => {
+    // Schema validation runs first, so a short traceId fails before
+    // auth ever gets to look at the resource attributes. This matters
+    // because auth is the more expensive check (DB round-trip) and
+    // we don't want malformed payloads hitting the DB.
+    const res = await postTraces(ctx.app, onePayload(ctx.validToken, { traceId: 'short' }));
     expect(res.status).toBe(422);
   });
 });

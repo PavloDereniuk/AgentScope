@@ -21,13 +21,13 @@
 ## Стан: Epic 4 in progress (2026-04-08)
 
 ### Поточна задача
-**4.3** — OTLP auth: span attribute `agent.token` → lookup у `agents.ingest_token` → resolve `agent_id`. Без valid token → 401.
+**4.4** — Persist spans → `reasoning_logs` (trace_id, span_id, parent_span_id, start/end, attributes). Handler тепер має resolved `{agentId, userId}` з 4.3 — треба мапити кожен Span з body у row і batch insert'ити.
 
-### Прогрес: 38 / 99 (≈38%)
+### Прогрес: 39 / 99 (≈39%)
 - ✅ **Епік 1 (Foundation): 13/13** — RUNTIME validated на справжньому Supabase + Helius
 - ✅ **Епік 2 (Parsers): 11/12** — Jupiter v6 + Kamino Lend на real mainnet fixtures (2.12 = N/A для WS fallback)
 - ✅ **Епік 3 (REST API): 12/12 CLOSED** — Hono + Privy auth + SSE bus + full CRUD + tx + alerts. **88 api тестів.**
-- 🚧 **Епік 4 (Reasoning Collector): 2/7** — 4.1 pivot (zod-first), 4.2 receiver + schema done (11 tests)
+- 🚧 **Епік 4 (Reasoning Collector): 3/7** — 4.1 pivot (zod-first), 4.2 receiver+schema (11 tests), 4.3 agent.token auth (4 tests)
 - 📦 Епіки 5-9: не починалися
 - ⏳ Mainnet runtime валідація persist'у jupiter/kamino — у Тиждень 5 (по плану SPEC §10)
 
@@ -47,13 +47,19 @@
 **`package.json` повернуто у попередній стан.**
 
 ### Наступні задачі (черга з TASKS.md)
-- **4.3** Auth для OTLP: span attribute `agent.token` → lookup у `agents.ingest_token` ⏱ 45m
 - **4.4** Persist: spans → `reasoning_logs` ⏱ 60m
 - **4.5** Кореляція з `solana.tx.signature` ⏱ 20m
 - **4.6** GET /api/agents/:id/reasoning ⏱ 30m
 - **4.7** Оновити GET /api/transactions/:signature з full span tree ⏱ 30m
 
 **Epic 4 гейт:** OTel SDK → receiver → persist → correlate → query flow. Коли закриємо — Epic 5 (detector + alerter).
+
+### 4.3 — ключові файли і рішення
+- **`apps/api/src/otlp/auth.ts`** — `extractAgentToken(body)` + `resolveAgentByToken(db, token)`. Token живе у **resource attribute `agent.token`** на першому `ResourceSpans` (не на span — per OTel idiom, identity belongs to Resource). Дивимось тільки першого ResourceSpans — один агент/процес/Resource. Lookup через unique index `agents_ingest_token_unique`.
+- **Route flow:** schema validation → extract token → `resolveAgentByToken` → inject resolved `{agentId, userId}` у log record. Schema validation перед auth — malformed payloads не б'ють DB.
+- **401 collapse:** missing attrs = empty string = unknown token → all → `401 UNAUTHORIZED` (no existence oracle, can't distinguish "no such agent" від "no token sent")
+- **Чому не HTTP Authorization header?** OTel SDK ідіома — identity на Resource, не на exporter transport. Якщо процес pivots до іншого агента, він змінює Resource, не plumbing.
+- **Тестовий pattern:** shared PGlite across describe block (`beforeAll`/`afterAll`) бо всі тести read-only на DB layer у 4.3. Raw drizzle insert для seed'у (bypass Privy stub). 4.4 може або лишити shared PGlite (додати per-test cleanup) або перейти на `beforeEach` isolation.
 
 ### 4.2 — ключові файли і рішення
 - **`apps/api/src/otlp/schema.ts`** — zod схеми для всіх OTLP типів (ResourceSpans → ScopeSpans → Span → Event/Link/Status/KeyValue → AnyValue). Всі об'єкти `.strict()` — невідомі поля ловляться як 422. `AnyValueInput` рекурсивний type декларований вручну з `| undefined` на optional fields (через `exactOptionalPropertyTypes` strict, zod `.optional()` інферить `T | undefined`). Експортує `ExportTraceServiceRequest`, `ResourceSpans`, `ScopeSpans`, `Span`, `KeyValue`, `AnyValue`, `SpanEvent`, `SpanLink`, `SpanStatus`, `Resource`, `InstrumentationScope` через `z.infer`. Single source of truth для runtime+types.
@@ -80,8 +86,31 @@ tests/otlp-traces.test.ts (11):
 ```
 OTLP route не торкає db, так що test setup дешевий (stub db + stub verifier, no PGlite) — вся suite виконалась ~1s. Вся api suite ~120s через PGlite у agents/transactions/alerts тестах.
 
-### Планований shape 4.3 (agent-token auth)
-Per TASKS: span attribute `agent.token` shukaєтsya у першому span першої ScopeSpans, його value вигребаєтsya як string (`stringValue`) → lookup `SELECT agent_id FROM agents WHERE ingest_token = ?`. Без token або non-existent → 401. Треба вирішити: де зберегти resolved `agent_id` щоб 4.4 міг його прочитати під час persist — через Hono context `c.set('agentId', ...)` у auth-як-middleware pattern, або повернути з parser функції.
+### Планований shape 4.4 (persist spans → reasoning_logs)
+Handler тепер має resolved `{agentId, userId}` з auth step. Для кожного `Span` у вкладених `resourceSpans[*].scopeSpans[*].spans[*]` треба збудувати `reasoning_logs` row:
+```
+{
+  agent_id,                           // from auth
+  trace_id,                           // hex32 → bytea? or text? Перевірити schema.
+  span_id,                            // hex16
+  parent_span_id?,                    // hex16 | null
+  name,
+  kind,                               // enum int → map to text?
+  start_time,                         // from startTimeUnixNano (string nanos)
+  end_time,                           // from endTimeUnixNano
+  status_code?,
+  status_message?,
+  attributes: jsonb,                  // flattened KeyValue[] → plain object
+  scope_name?, scope_version?,        // from scopeSpans.scope
+  tx_signature: null                  // filled у 4.5 якщо є solana.tx.signature attr
+}
+```
+Треба:
+1. Прочитати `packages/db/src/schema.ts` секцію `reasoning_logs` — знати точні types/constraints
+2. Helper `flattenAttributes(kvs: KeyValue[]): Record<string, unknown>` — розгорнути AnyValue у plain JSON
+3. Nano-timestamp → timestamptz: поділити на 1_000_000 для ms, `new Date(ms)` (можлива втрата precision за нано; для MVP ОК)
+4. Batch insert всіх spans за один query (`db.insert(reasoningLogs).values([...])`)
+5. Тести: 3-span trace → 3 rows, cascade cleanup через agent, nested AnyValue у attributes зберігається
 
 ---
 

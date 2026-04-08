@@ -39,9 +39,10 @@ export function buildApp(deps: AppDeps) {
 
   // OTLP/HTTP ingest lives at /v1/traces — the canonical path every
   // OpenTelemetry SDK exporter hits by default. Not mounted under
-  // /api because it does not use Privy JWT auth; task 4.3 will add
-  // agent-token auth (span attribute `agent.token` → `agents.ingest_token`).
-  app.route('/v1', createOtlpRouter({ logger: log }));
+  // /api because it uses its own agent-token auth (task 4.3):
+  // the agent's OTel Resource must carry an `agent.token` attribute
+  // whose value matches `agents.ingest_token`.
+  app.route('/v1', createOtlpRouter({ logger: log, db: deps.db }));
 
   // Every /api/* route is authenticated. The auth middleware populates
   // `c.var.userId` so downstream routes can resolve the real users.id
