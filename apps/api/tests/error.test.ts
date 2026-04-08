@@ -2,24 +2,51 @@
  * Unit tests for the global error middleware (task 3.2).
  *
  * Covers:
- *   - `/health` still works with middleware wired in
+ *   - `/health` still works inside the full `buildApp()` pipeline
  *   - Unhandled throw → 500 with { error: { code: 'INTERNAL_ERROR', … } }
  *   - HTTPException → maps status to code + preserves message
  *   - Unknown route → 404 from notFound handler
  *   - Error details never leak from unhandled throws
  */
 
+import type { Database } from '@agentscope/db';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import pino from 'pino';
 import { describe, expect, it } from 'vitest';
-import { app as realApp } from '../src/index';
+import { buildApp } from '../src/index';
+import type { AuthVerifier } from '../src/lib/auth-verifier';
+import { createSseBus } from '../src/lib/sse-bus';
 import { registerErrorHandlers } from '../src/middleware/error';
 
 // Silent logger so test output stays clean.
 const silentLogger = pino({ level: 'silent' });
 
-function makeTestApp() {
+/**
+ * Build a real app via `buildApp()` using stub dependencies. The /health
+ * and notFound tests only hit routes that never reach db/verifier, so
+ * cheap stubs are safe here — full integration lives in agents.test.ts.
+ */
+function makeRealApp() {
+  const stubDb = {} as unknown as Database;
+  const stubVerifier: AuthVerifier = {
+    async verify() {
+      return { userId: 'stub' };
+    },
+  };
+  return buildApp({
+    db: stubDb,
+    verifier: stubVerifier,
+    sseBus: createSseBus(),
+    logger: silentLogger,
+  });
+}
+
+/**
+ * Standalone app with just the error handlers + a handful of routes
+ * that throw in different ways. Used for the throw/HTTPException cases.
+ */
+function makeThrowingApp() {
   const app = new Hono();
   registerErrorHandlers(app, silentLogger);
   app.get('/boom', () => {
@@ -40,13 +67,14 @@ function makeTestApp() {
 
 describe('error middleware', () => {
   it('/health returns {ok:true} with handlers attached', async () => {
-    const res = await realApp.request('/health');
+    const app = makeRealApp();
+    const res = await app.request('/health');
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true });
   });
 
   it('unhandled throw returns 500 with generic INTERNAL_ERROR shape', async () => {
-    const app = makeTestApp();
+    const app = makeThrowingApp();
     const res = await app.request('/boom');
     expect(res.status).toBe(500);
     const body = await res.json();
@@ -58,7 +86,7 @@ describe('error middleware', () => {
   });
 
   it('HTTPException 401 → UNAUTHORIZED with original message', async () => {
-    const app = makeTestApp();
+    const app = makeThrowingApp();
     const res = await app.request('/unauthorized');
     expect(res.status).toBe(401);
     expect(await res.json()).toEqual({
@@ -67,7 +95,7 @@ describe('error middleware', () => {
   });
 
   it('HTTPException 409 → CONFLICT with original message', async () => {
-    const app = makeTestApp();
+    const app = makeThrowingApp();
     const res = await app.request('/conflict');
     expect(res.status).toBe(409);
     expect(await res.json()).toEqual({
@@ -76,7 +104,7 @@ describe('error middleware', () => {
   });
 
   it('HTTPException with unmapped 4xx falls back to BAD_REQUEST code', async () => {
-    const app = makeTestApp();
+    const app = makeThrowingApp();
     const res = await app.request('/teapot');
     expect(res.status).toBe(418);
     expect(await res.json()).toEqual({
@@ -85,7 +113,8 @@ describe('error middleware', () => {
   });
 
   it('unknown route returns 404 NOT_FOUND shape', async () => {
-    const res = await realApp.request('/does-not-exist');
+    const app = makeRealApp();
+    const res = await app.request('/does-not-exist');
     expect(res.status).toBe(404);
     const body = (await res.json()) as { error: { code: string; message: string } };
     expect(body.error.code).toBe('NOT_FOUND');

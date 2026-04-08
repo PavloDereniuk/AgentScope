@@ -1,26 +1,13 @@
 /**
- * AgentScope API — Hono app definition.
+ * AgentScope API public entry.
  *
- * Responsibilities (built up across tasks 3.1 → 5.x):
- *   3.1 — Hono skeleton with /health
- *   3.2 — global error middleware + pino logger
- *   3.3 — Privy JWT auth middleware
- *   3.4 — in-memory SSE bus
- *   3.5 → 3.9 — agents CRUD routes
- *   3.10 → 3.12 — transactions + alerts read routes
- *   4.x — OTLP receiver for reasoning logs
+ * Task 3.1 started with a standalone `app`; task 3.5 replaced it with a
+ * `buildApp(deps)` factory so tests can wire in a PGlite database and a
+ * fake Privy verifier instead of touching real infrastructure. This
+ * module now just re-exports the factory and shared types.
  *
- * This module exports the configured `app` with no side effects, so tests
- * can import and drive it via `app.request(...)`. The server lifecycle
- * lives in ./server.ts.
+ * Lifecycle (port bind, env loading) lives in `./server.ts`.
  */
 
-import { Hono } from 'hono';
-import { logger } from './logger';
-import { registerErrorHandlers } from './middleware/error';
-
-export const app = new Hono();
-
-registerErrorHandlers(app, logger);
-
-app.get('/health', (c) => c.json({ ok: true }));
+export { buildApp, type AppDeps } from './app';
+export type { ApiEnv, ApiVariables } from './middleware/auth';
