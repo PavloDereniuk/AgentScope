@@ -21,18 +21,17 @@
 ## Стан на день 2, сесія 2026-04-08
 
 ### Поточна задача
-**3.11** — `GET /api/transactions/:signature` з reasoning_logs join. **Чекає старту**. Новий top-level route (не agent-scoped) → треба новий router файл `src/routes/transactions.ts` і підключити у `app.ts`.
+**3.12** — `GET /api/alerts` — глобальний alerts feed з фільтрами (`agent_id?`, `severity?`, `from?`, `to?`). **Чекає старту**. Остання задача Епіку 3.
 
-### Прогрес: 34 / 99 (≈34%)
+### Прогрес: 35 / 99 (≈35%)
 - ✅ **Епік 1 (Foundation): 13/13** — RUNTIME validated на справжньому Supabase + Helius
 - ✅ **Епік 2 (Parsers): 11/12** — 22 unit tests з реальними mainnet fixtures (Jupiter v6 + Kamino Lend). 2.12 = N/A для WS fallback.
-- ⏳ **Епік 3 (REST API): 10/12** — Agents CRUD complete + transactions list (3.1-3.10 ✅). Single-tx (3.11) + alerts (3.12) — next.
+- ⏳ **Епік 3 (REST API): 11/12** — Agents CRUD + tx list + single-tx (3.1-3.11 ✅). Alerts (3.12) — остання.
 - 📦 Епіки 4-9: не починалися
 - ⏳ Mainnet runtime валідація persist'у jupiter/kamino — у Тиждень 5 (по плану SPEC §10)
 
 ### Наступні задачі (черга з TASKS.md)
-- **3.11** GET /api/transactions/:signature (з reasoning_logs join) ⏱ 30m
-- **3.12** GET /api/alerts (filter agent_id?, severity?, from/to) ⏱ 30m
+- **3.12** GET /api/alerts (filter agent_id?, severity?, from/to) ⏱ 30m → **Epic 3 gate**
 
 ⚠️ **API test runtime = ~65s** (44 agents тестів × ~1.3s PGlite init). Post-MVP оптимізація: shared PGlite instance per-file + `TRUNCATE CASCADE` у `beforeEach` замість `createTestDatabase`. Потенційно ~5s замість 65s.
 
@@ -258,6 +257,36 @@ Agents resource повністю готовий (POST/GET/GET:id/PATCH/DELETE). 
 - **Cursor encoded position, не filter state** — cursor зберігає тільки `(t, i)`. Time window filters (from/to) клієнт пересилає на кожен запит. Простіше, менше шансів на bug коли filters "прилипають" до старого cursor.
 - **Default limit 50** (не 100) — типова dashboard table fits 50 rows, менший JSON payload, швидше rendering. Якщо клієнту треба max — явно вказує `?limit=100`.
 - **Окремий `cursor.test.ts`** замість inline unit-тестів у agents.test.ts — helper'и як окремий юніт, не потребує PGlite, швидко (6 ms замість 1.3s). Integration тести залишаються для full-pipeline coverage.
+
+### Що зробили у 3.11
+- `apps/api/src/routes/transactions.ts` — новий top-level router `createTransactionsRouter(db)`:
+  - `GET /:signature` з local `signatureParamSchema` (min 64, max 88, base58 regex)
+  - **Ownership через INNER JOIN** `agent_transactions` ↔ `agents` з `WHERE agents.user_id = user.id` — один query, а не окремий SELECT + перевірка
+  - SELECT `reasoning_logs` WHERE `tx_signature = :sig` ORDER BY `start_time ASC` (chronological для timeline)
+  - Response: `{transaction, reasoningLogs}` — масив завжди є, може бути `[]` але ніколи не `null`
+  - 404 на not-found або foreign agent (same no-existence-oracle policy)
+  - Doc comment про partition pruning: `tx_signature` lookup не pruneable (не partition key), але `tx_signature_idx` propagate'ється до всіх child partitions → fast index lookup across all partitions. Acceptable для MVP volumes.
+- `apps/api/src/app.ts` — зареєстровано `createTransactionsRouter(deps.db)` на `/api/transactions`. Routes обидва сидять під `requireAuth` middleware.
+- `apps/api/tests/transactions.test.ts` — новий файл з **8 integration тестами**:
+  1. No auth → 401
+  2. Non-base58 signature → 422
+  3. Too short signature → 422
+  4. Unknown signature → 404
+  5. **Чужий tx → 404 + row intact** (seeded Alice, Bob робить request через різний verifier → 404, а потім SELECT показує що row ще там)
+  6. Existing tx без reasoning → `{transaction, reasoningLogs: []}` (empty array, НЕ null)
+  7. **Correlated reasoning logs ordered ASC** — 3 correlated spans (insert'ені out of order) + 1 uncorrelated → response має тільки 3 у правильному хронологічному порядку
+  8. Distinguish by signature — seed 2 tx, fetch по обидвох окремо, verify signature/blockTime розрізняються
+- Використовую реальні mainnet-shape signatures (~88 base58 chars) як test constants.
+- `pnpm lint && pnpm typecheck && pnpm test` — все зелене. **133 tests total** (+8).
+
+### Ключові рішення 3.11
+- **INNER JOIN для ownership** — замість двох queries (`SELECT tx → SELECT agent → verify owner`) один JOIN. Менше round-trips, менше шансів на race, ownership enforced у SQL planner.
+- **Окремий `src/routes/transactions.ts` файл** — PLAN §API має обидва `/api/agents/:id/transactions` (agent-scoped, у `agents.ts`) і `/api/transactions/:signature` (top-level). Логічно розділено по prefix. Коли додасться `/api/transactions/:signature/refresh` чи щось — сидітиме у тому самому файлі.
+- **Local `signatureParamSchema`** замість `solanaSignatureSchema` з `@agentscope/shared` — бо `shared` версія має `.transform` до `SolanaSignature` branded type, а нам треба простий string для drizzle WHERE. Копія regex (~5 ліній) дешевша за caст через `as string` в route.
+- **Партиційне зауваження у doc comment** — явно розумію що `WHERE signature = ?` не робить partition pruning, і чому це ок для MVP (index propagates до всіх child partitions → fast lookup across all). Якщо post-MVP volume зросте → додати materialized view `signature → block_time` для pruning.
+- **`reasoningLogs: []` замість `null`** — stable response shape для frontend. Frontend може безпечно mapувати `logs.map(...)` без null guard.
+- **`ORDER BY start_time ASC`** — chronological, природний порядок для timeline display у dashboard.
+- **Mainnet-shape test signatures** (88 chars base58) замість fake `"sig-1"` — перевіряє, що `min(64).max(88)` в param schema приймає реальний формат. У agents.test.ts ми використовували короткі синтетичні signatures, бо там `signature` не валідується через zod (тільки як column у DB).
 
 ---
 

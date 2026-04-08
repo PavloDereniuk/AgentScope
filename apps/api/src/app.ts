@@ -17,6 +17,7 @@ import { type Logger, logger as defaultLogger } from './logger';
 import { type ApiEnv, requireAuth } from './middleware/auth';
 import { registerErrorHandlers } from './middleware/error';
 import { createAgentsRouter } from './routes/agents';
+import { createTransactionsRouter } from './routes/transactions';
 
 export interface AppDeps {
   db: Database;
@@ -40,6 +41,7 @@ export function buildApp(deps: AppDeps) {
   const api = new Hono<ApiEnv>();
   api.use('*', requireAuth(deps.verifier, log));
   api.route('/agents', createAgentsRouter(deps.db));
+  api.route('/transactions', createTransactionsRouter(deps.db));
 
   app.route('/api', api);
 
