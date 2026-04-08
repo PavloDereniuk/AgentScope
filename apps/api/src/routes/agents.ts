@@ -17,6 +17,7 @@ import { randomBytes } from 'node:crypto';
 import { type Database, agents } from '@agentscope/db';
 import { createAgentInputSchema } from '@agentscope/shared';
 import { zValidator } from '@hono/zod-validator';
+import { desc, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { ensureUser } from '../lib/users';
@@ -71,6 +72,20 @@ export function createAgentsRouter(db: Database) {
       return c.json({ agent }, 201);
     },
   );
+
+  // 3.6 — List all agents owned by the authenticated user, newest first.
+  router.get('/', async (c) => {
+    const privyDid = c.get('userId');
+    const user = await ensureUser(db, privyDid);
+
+    const rows = await db
+      .select()
+      .from(agents)
+      .where(eq(agents.userId, user.id))
+      .orderBy(desc(agents.createdAt));
+
+    return c.json({ agents: rows });
+  });
 
   return router;
 }

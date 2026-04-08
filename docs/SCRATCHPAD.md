@@ -21,17 +21,16 @@
 ## Стан на день 2, сесія 2026-04-08
 
 ### Поточна задача
-**3.6** — `GET /api/agents` — список усіх агентів юзера, `ORDER BY created_at DESC`. **Чекає старту**. Router та користувацьке provisioning вже готові — додається новий handler у існуючий `createAgentsRouter`.
+**3.7** — `GET /api/agents/:id` — single agent з `recent_tx_count` та `last_alert` join. **Чекає старту**. Потребує COUNT(*) по agent_transactions (останні N хв?) + SELECT ... ORDER BY triggered_at DESC LIMIT 1 з alerts.
 
-### Прогрес: 29 / 99 (≈29%)
+### Прогрес: 30 / 99 (≈30%)
 - ✅ **Епік 1 (Foundation): 13/13** — RUNTIME validated на справжньому Supabase + Helius
 - ✅ **Епік 2 (Parsers): 11/12** — 22 unit tests з реальними mainnet fixtures (Jupiter v6 + Kamino Lend). 2.12 = N/A для WS fallback.
-- ⏳ **Епік 3 (REST API): 5/12** — Hono skeleton + error + auth + SSE bus + POST /api/agents (з integration tests через PGlite). (3.1-3.5 ✅)
+- ⏳ **Епік 3 (REST API): 6/12** — Hono skeleton + error + auth + SSE bus + POST/GET /api/agents (3.1-3.6 ✅)
 - 📦 Епіки 4-9: не починалися
 - ⏳ Mainnet runtime валідація persist'у jupiter/kamino — у Тиждень 5 (по плану SPEC §10)
 
 ### Наступні задачі (черга з TASKS.md)
-- **3.6** GET /api/agents (list) ⏱ 20m
 - **3.7** GET /api/agents/:id (with recent_tx_count, last_alert) ⏱ 30m
 - **3.8** PATCH /api/agents/:id (partial update) ⏱ 30m
 - **3.9** DELETE /api/agents/:id (cascade) ⏱ 20m
@@ -121,6 +120,23 @@
 - **`ingest_token` генерується сервером** — клієнт не може його вказати. 192 bits, base64url, `tok_` prefix для читабельності у логах. Post-MVP може треба буде реgенерувати за кнопкою — handler на PATCH розглянемо у 3.8.
 - **RLS обхід** — `api` підключається до DB з роллю що BYPASSRLS (так само як ingestion), і запити enforce'ять `WHERE user_id = :userId` на рівні handler'а. RLS policies лишаються як defense-in-depth. У PGlite тестах default role теж має superuser → RLS неефективний, що нам підходить.
 - **`HTTPException(422)` для zod fails** замість default `zValidator` відповіді — уніфікує формат з нашим error middleware. Issue paths конкатенуються у message через `;`.
+
+### Що зробили у 3.6
+- `apps/api/src/routes/agents.ts` — доданий `GET /` handler: `ensureUser → SELECT * FROM agents WHERE user_id = ? ORDER BY created_at DESC` через `drizzle-orm` `desc()`. Імпортовано `desc, eq` з `drizzle-orm`.
+- `apps/api/tests/agents.test.ts` — нова describe `GET /api/agents` з 5 тестами:
+  1. Без auth → 401
+  2. Порожній список (нема агентів) → 200 `{agents: []}`
+  3. 2 seeded агенти → response містить 2
+  4. Ordering: newest first (створено 2 з setTimeout паузою 10ms для розділення `created_at`)
+  5. **Cross-tenant isolation**: Alice seed → Bob через другий `buildApp` з іншим verifier → Bob бачить `[]`, Alice все ще бачить свій.
+- Тест #5 важливий — явно перевіряє, що `WHERE user_id = :userId` у запиті ізолює tenants. Build'имо другий app instance з тим самим db але іншим verifier'ом — демонструє multi-user поведінку без необхідності два окремих PGlite.
+- `pnpm lint && pnpm typecheck && pnpm test` — все зелене. 64 tests total. API test runtime зросло з ~10s до ~28s через PGlite init на кожен тест × 11 agents тестів.
+
+### Ключові рішення 3.6
+- **Query-level enforcement `WHERE user_id = :userId`** — основна ізоляція tenants, не покладаємось на RLS (бо api + PGlite role = superuser/BYPASSRLS). Доповнення до `ensureUser`: кожен запит знаходить реальний users.id через DID.
+- **`orderBy(desc(agents.createdAt))`** — стабільний контракт "newest first". Клієнт може розраховувати, щоб мати predictable UI без додаткової сортировки.
+- **PGlite per-test cost** (~1.5s × 11) помічено. Post-MVP оптимізація: shared PGlite instance per file + `TRUNCATE CASCADE` між it'ами у `beforeEach`. Поки що 28s test run прийнятний, бо запускається рідко (pre-commit + CI).
+- **Cross-tenant тест без другого PGlite** — ключове усвідомлення: двоє різних verifiers → двоє різних `buildApp` instances поверх того самого `db`, і кожен бачить тільки свої рядки через query-level фільтр. Чисто, швидко, без double setup.
 
 ---
 

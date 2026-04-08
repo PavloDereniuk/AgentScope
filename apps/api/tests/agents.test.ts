@@ -220,3 +220,121 @@ describe('POST /api/agents', () => {
     expect(b1.agent.ingestToken).not.toBe(b2.agent.ingestToken);
   });
 });
+
+describe('GET /api/agents', () => {
+  let ctx: TestApp;
+
+  beforeEach(async () => {
+    ctx = await setup();
+  });
+
+  afterEach(async () => {
+    await ctx.testDb.close();
+  });
+
+  async function createAgent(body: Record<string, unknown>, token = BEARER) {
+    const res = await ctx.app.request('/api/agents', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: token },
+      body: JSON.stringify(body),
+    });
+    if (res.status !== 201) throw new Error(`seed create failed: ${res.status}`);
+    return (await res.json()) as { agent: { id: string; name: string } };
+  }
+
+  it('rejects unauthenticated requests with 401', async () => {
+    const res = await ctx.app.request('/api/agents');
+    expect(res.status).toBe(401);
+  });
+
+  it('returns an empty array when the user has no agents', async () => {
+    const res = await ctx.app.request('/api/agents', {
+      headers: { Authorization: BEARER },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { agents: unknown[] };
+    expect(body.agents).toEqual([]);
+  });
+
+  it('returns all agents for the authenticated user', async () => {
+    await createAgent({
+      walletPubkey: 'So11111111111111111111111111111111111111112',
+      name: 'First',
+      framework: 'elizaos',
+      agentType: 'trader',
+    });
+    await createAgent({
+      walletPubkey: 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
+      name: 'Second',
+      framework: 'agent-kit',
+      agentType: 'yield',
+    });
+
+    const res = await ctx.app.request('/api/agents', {
+      headers: { Authorization: BEARER },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { agents: Array<{ name: string }> };
+    expect(body.agents).toHaveLength(2);
+    const names = body.agents.map((a) => a.name).sort();
+    expect(names).toEqual(['First', 'Second']);
+  });
+
+  it('orders agents by created_at descending (newest first)', async () => {
+    const first = await createAgent({
+      walletPubkey: 'So11111111111111111111111111111111111111112',
+      name: 'Oldest',
+      framework: 'custom',
+      agentType: 'other',
+    });
+    // Ensure a distinct created_at — PGlite timestamp resolution is ms.
+    await new Promise((r) => setTimeout(r, 10));
+    const second = await createAgent({
+      walletPubkey: 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
+      name: 'Newest',
+      framework: 'custom',
+      agentType: 'other',
+    });
+
+    const res = await ctx.app.request('/api/agents', {
+      headers: { Authorization: BEARER },
+    });
+    const body = (await res.json()) as { agents: Array<{ id: string; name: string }> };
+    expect(body.agents[0]?.id).toBe(second.agent.id);
+    expect(body.agents[1]?.id).toBe(first.agent.id);
+  });
+
+  it('scopes results to the authenticated user (no cross-tenant leak)', async () => {
+    // Seed one agent as user A.
+    await createAgent({
+      walletPubkey: 'So11111111111111111111111111111111111111112',
+      name: 'Alice agent',
+      framework: 'custom',
+      agentType: 'other',
+    });
+
+    // Build a fresh app in the same db, but with a verifier that
+    // returns a different DID.
+    const bobApp = buildApp({
+      db: ctx.testDb.db,
+      verifier: makeVerifier('did:privy:user-bob'),
+      sseBus: createSseBus(),
+      logger: silentLogger,
+    });
+
+    const bobRes = await bobApp.request('/api/agents', {
+      headers: { Authorization: BEARER },
+    });
+    expect(bobRes.status).toBe(200);
+    const bobBody = (await bobRes.json()) as { agents: unknown[] };
+    expect(bobBody.agents).toEqual([]);
+
+    // Alice can still see her own row.
+    const aliceRes = await ctx.app.request('/api/agents', {
+      headers: { Authorization: BEARER },
+    });
+    const aliceBody = (await aliceRes.json()) as { agents: Array<{ name: string }> };
+    expect(aliceBody.agents).toHaveLength(1);
+    expect(aliceBody.agents[0]?.name).toBe('Alice agent');
+  });
+});
