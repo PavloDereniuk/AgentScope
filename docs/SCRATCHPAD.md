@@ -18,18 +18,19 @@
 
 ---
 
-## Стан: Epics 1-5 CLOSED — END OF DAY 4 (2026-04-09)
+## Стан: Epic 6 IN PROGRESS — DAY 5 (2026-04-09)
 
 ### Поточна задача
-**Epic 6** — Dashboard (React + Vite + Tailwind + shadcn/ui + Privy + react-query).
+**6.9** — Add Agent dialog (POST /api/agents → invalidate query).
 
-### Прогрес: 57 / 99 (≈58%)
+### Прогрес: 65 / 99 (≈66%)
 - ✅ **Епік 1 (Foundation): 13/13** — RUNTIME validated на справжньому Supabase + Helius
 - ✅ **Епік 2 (Parsers): 11/12** — Jupiter v6 + Kamino Lend на real mainnet fixtures (2.12 = N/A для WS fallback)
 - ✅ **Епік 3 (REST API): 12/12 CLOSED** — Hono + Privy auth + SSE bus + full CRUD + tx + alerts. **88 api тестів.**
 - ✅ **Епік 4 (Reasoning Collector): 7/7 CLOSED** — OTLP/HTTP receiver, zod schema, agent-token auth, span persist, tx correlation, reasoning+transaction read endpoints. **31 tests.**
 - ✅ **Епік 5 (Detector+Alerter): 14/14 CLOSED** — evaluator, 5 rules, detector-runner, cron, alerter+Telegram delivery. **42 tests.**
-- 📦 Епіки 6-9: не починалися
+- ⏳ **Епік 6 (Dashboard): 8/20** — 6.1-6.8 done (Vite, Tailwind, shadcn, API client, Privy auth, routing, agent list). Next: 6.9 Add Agent dialog.
+- 📦 Епіки 7-9: не починалися
 - ⏳ Mainnet runtime валідація persist'у jupiter/kamino — у Тиждень 5 (по плану SPEC §10)
 
 ### 4.1 — PIVOT (2026-04-08)
@@ -48,18 +49,23 @@
 **`package.json` повернуто у попередній стан.**
 
 ### Наступні задачі (черга з TASKS.md)
-**Epic 6: Dashboard** (20 задач, Week 4 по плану). React SPA:
-- **6.1-6.3** Vite + Tailwind + shadcn/ui setup
-- **6.4** api-client.ts — fetch wrapper з Privy token
-- **6.5-6.6** Privy auth + ProtectedRoute
-- **6.7** App.tsx routing + layout
-- **6.8-6.9** Agent list + Add Agent dialog
+**Epic 6: Dashboard** — залишок (12 задач):
+- **6.9** Add Agent dialog → POST /api/agents → invalidate query
 - **6.10-6.13** Agent detail: stats cards, tx timeline, reasoning tree, PnL chart
 - **6.14-6.17** SSE live updates (API endpoint + ingestion publish + dashboard hook)
 - **6.18-6.19** Alerts feed + Settings page
 - **6.20** Loading states + error boundaries
 
-**Перший крок:** перевірити чи `apps/dashboard` вже існує і що там (скелет з Week 1?). Потім 6.1 — Vite setup.
+### Epic 6 — ключові файли і рішення (6.1-6.8)
+- **`apps/dashboard/`** — Vite 5 + React 18 SPA, port 5173
+- **`src/lib/api-client.ts`** — typed fetch wrapper, auto-injects Privy accessToken via `getAccessToken()`. `apiClient.get<T>(path)`, `apiClient.post<T>(path, body)`
+- **`src/lib/privy.tsx`** — PrivyProvider config + `useAuth()` hook (login/logout/user/isAuthenticated/isReady)
+- **`src/components/ProtectedRoute.tsx`** — redirects to Privy login if not authenticated
+- **`src/App.tsx`** — Layout з sidebar (Bot/Bell/Settings icons), routes: `/agents`, `/agents/:id`, `/alerts`, `/settings`
+- **`src/routes/agents.tsx`** — AgentsPage з react-query fetch, client-side search, status badges (live/stale/failed), empty state з Bot icon
+- **`src/main.tsx`** — QueryClientProvider (staleTime 30s, retry 1) wrapping BrowserRouter + PrivyProvider
+- **lucide-react** for icons, shadcn/ui components (Button, Card, Badge, Input, Dialog, Toast)
+- **`@tanstack/react-query`** for server state management
 
 **API endpoints вже готові (Epic 3+4):**
 - `GET/POST /api/agents` — list + create

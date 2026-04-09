@@ -239,25 +239,25 @@
 **Мета:** React SPA з Privy auth, agent list, drill-down, real-time tx + alerts.
 
 ### Vite setup
-- [ ] **6.1** `apps/dashboard`: vite + react 18 + react-dom + react-router-dom + типи ⏱ 30m
+- [x] **6.1** `apps/dashboard`: vite + react 18 + react-dom + react-router-dom + типи ⏱ 30m
   ✅ `pnpm --filter @agentscope/dashboard dev` → blank page на :5173
-- [ ] **6.2** Tailwind 3.4 + базовий `index.css` + Inter font ⏱ 20m → 6.1
+- [x] **6.2** Tailwind 3.4 + базовий `index.css` + Inter font ⏱ 20m → 6.1
   ✅ Tailwind classes працюють
-- [ ] **6.3** shadcn/ui CLI init, додати компоненти: Button, Card, Badge, Table, Dialog, Input, Toast ⏱ 30m → 6.2
+- [x] **6.3** shadcn/ui CLI init, додати компоненти: Button, Card, Badge, Table, Dialog, Input, Toast ⏱ 30m → 6.2
   ✅ Імпорти з `@/components/ui/*` працюють
-- [ ] **6.4** `src/lib/api-client.ts` — fetch wrapper з Privy token у header, типізований ⏱ 45m → 6.1
+- [x] **6.4** `src/lib/api-client.ts` — fetch wrapper з Privy token у header, типізований ⏱ 45m → 6.1
   ✅ Unit: mock fetch → `apiClient.get('/agents')` повертає типізований response
 
 ### Auth
-- [ ] **6.5** `src/lib/privy.tsx` — PrivyProvider з config, hook `useAuth()` ⏱ 30m → 1.0c, 6.3
+- [x] **6.5** `src/lib/privy.tsx` — PrivyProvider з config, hook `useAuth()` ⏱ 30m → 1.0c, 6.3
   ✅ Login через Privy → token доступний
-- [ ] **6.6** ProtectedRoute wrapper, redirect на login якщо немає token ⏱ 20m → 6.5
+- [x] **6.6** ProtectedRoute wrapper, redirect на login якщо немає token ⏱ 20m → 6.5
   ✅ /agents без login → redirect
 
 ### Routes & layout
-- [ ] **6.7** `App.tsx`: react-router з routes (/, /agents, /agents/:id, /alerts, /settings), Layout sidebar ⏱ 45m → 6.6
+- [x] **6.7** `App.tsx`: react-router з routes (/, /agents, /agents/:id, /alerts, /settings), Layout sidebar ⏱ 45m → 6.6
   ✅ Навігація між сторінками працює
-- [ ] **6.8** `routes/agents.tsx` — список агентів через react-query, status badge, search ⏱ 60m → 6.7, 3.6
+- [x] **6.8** `routes/agents.tsx` — список агентів через react-query, status badge, search ⏱ 60m → 6.7, 3.6
   ✅ Список рендериться з реальних даних
 - [ ] **6.9** «Add Agent» dialog → POST /api/agents → invalidate query ⏱ 45m → 6.8, 3.5
   ✅ Створення агента у UI → з'являється у списку
@@ -464,8 +464,8 @@ E8 → E9 (deploy потребує всього)
 
 ## Поточний стан
 
-**Завершено:** 57 / 99 задач (Епік 1-5).
-**Поточна:** **Epic 6** (Dashboard).
+**Завершено:** 65 / 99 задач (Епіки 1-5 closed, Epic 6: 6.1-6.8 done).
+**Поточна:** **6.9** — Add Agent dialog.
 
 **Епік 1:** ✅ 13/13 RUNTIME validated на справжньому Supabase + Helius
 **Епік 2:** ✅ 11/12 (2.12 = N/A для WS fallback). 22 unit tests з реальними mainnet fixtures.
