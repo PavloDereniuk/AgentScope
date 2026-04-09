@@ -14,10 +14,10 @@
  */
 
 import { randomBytes } from 'node:crypto';
-import { type Database, agentTransactions, agents, alerts } from '@agentscope/db';
+import { type Database, agentTransactions, agents, alerts, reasoningLogs } from '@agentscope/db';
 import { createAgentInputSchema, updateAgentInputSchema } from '@agentscope/shared';
 import { zValidator } from '@hono/zod-validator';
-import { and, desc, eq, gte, lt, lte, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, lt, lte, or, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
@@ -301,6 +301,62 @@ export function createAgentsRouter(db: Database) {
       const nextCursor = hasMore && last ? encodeTxCursor(last.blockTime, last.id) : null;
 
       return c.json({ transactions: items, nextCursor });
+    },
+  );
+
+  // 4.6 — Reasoning logs for an agent. Optional trace_id filter narrows
+  // to a single trace; otherwise returns the most recent spans up to a
+  // hard cap of 100 (no cursor for MVP, same rationale as alerts).
+  const reasoningQuerySchema = z.object({
+    traceId: z
+      .string()
+      .regex(/^[0-9a-f]{32}$/, 'traceId must be 32 lowercase hex characters')
+      .optional(),
+    limit: z.coerce.number().int().min(1).max(100).default(50).optional(),
+  });
+
+  router.get(
+    '/:id/reasoning',
+    zValidator('param', agentIdParamSchema, (result) => {
+      if (!result.success) {
+        throw new HTTPException(422, { message: 'invalid agent id (expected uuid)' });
+      }
+    }),
+    zValidator('query', reasoningQuerySchema, (result) => {
+      if (!result.success) {
+        const message = result.error.issues
+          .map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`)
+          .join('; ');
+        throw new HTTPException(422, { message });
+      }
+    }),
+    async (c) => {
+      const privyDid = c.get('userId');
+      const { id: agentId } = c.req.valid('param');
+      const { traceId, limit } = c.req.valid('query');
+
+      const user = await ensureUser(db, privyDid);
+
+      const [owned] = await db
+        .select({ id: agents.id })
+        .from(agents)
+        .where(and(eq(agents.id, agentId), eq(agents.userId, user.id)))
+        .limit(1);
+      if (!owned) {
+        throw new HTTPException(404, { message: 'agent not found' });
+      }
+
+      const where = [eq(reasoningLogs.agentId, agentId)];
+      if (traceId) where.push(eq(reasoningLogs.traceId, traceId));
+
+      const logs = await db
+        .select()
+        .from(reasoningLogs)
+        .where(and(...where))
+        .orderBy(asc(reasoningLogs.startTime))
+        .limit(limit ?? 50);
+
+      return c.json({ reasoningLogs: logs });
     },
   );
 
