@@ -18,7 +18,8 @@
  */
 
 import { Writable } from 'node:stream';
-import { agents, users } from '@agentscope/db';
+import { agents, reasoningLogs, users } from '@agentscope/db';
+import { eq } from 'drizzle-orm';
 import pino from 'pino';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/index';
@@ -169,9 +170,11 @@ describe('POST /v1/traces', () => {
     await ctx.testDb.close();
   });
 
-  beforeEach(() => {
+  beforeEach(async () => {
     // Drain captured logs so each test sees only its own output.
     ctx.records.length = 0;
+    // Clean up persisted spans from prior tests (4.4 writes rows).
+    await ctx.testDb.db.delete(reasoningLogs);
   });
 
   // ── 4.2 — schema validation + happy path ────────────────────────────
@@ -475,5 +478,259 @@ describe('POST /v1/traces', () => {
     // we don't want malformed payloads hitting the DB.
     const res = await postTraces(ctx.app, onePayload(ctx.validToken, { traceId: 'short' }));
     expect(res.status).toBe(422);
+  });
+
+  // ── 4.4 — span persistence ──────────────────────────────────────────
+
+  it('persists a 3-span trace as 3 rows in reasoning_logs', async () => {
+    const tid = traceId('aabbccddee');
+    const payload = {
+      resourceSpans: [
+        {
+          resource: {
+            attributes: [{ key: 'agent.token', value: { stringValue: ctx.validToken } }],
+          },
+          scopeSpans: [
+            {
+              spans: [
+                {
+                  traceId: tid,
+                  spanId: spanId('1111111111111111'),
+                  name: 'span-a',
+                  startTimeUnixNano: '1712577600000000000',
+                  endTimeUnixNano: '1712577601000000000',
+                },
+                {
+                  traceId: tid,
+                  spanId: spanId('2222222222222222'),
+                  parentSpanId: spanId('1111111111111111'),
+                  name: 'span-b',
+                  startTimeUnixNano: '1712577600500000000',
+                  endTimeUnixNano: '1712577600800000000',
+                },
+              ],
+            },
+            {
+              spans: [
+                {
+                  traceId: tid,
+                  spanId: spanId('3333333333333333'),
+                  name: 'span-c',
+                  startTimeUnixNano: '1712577601000000000',
+                  endTimeUnixNano: '1712577602000000000',
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    const res = await postTraces(ctx.app, payload);
+    expect(res.status).toBe(200);
+
+    const rows = await ctx.testDb.db
+      .select()
+      .from(reasoningLogs)
+      .where(eq(reasoningLogs.agentId, ctx.agentId));
+
+    expect(rows).toHaveLength(3);
+    const names = rows.map((r) => r.spanName).sort();
+    expect(names).toEqual(['span-a', 'span-b', 'span-c']);
+  });
+
+  it('stores parentSpanId when present, null when absent', async () => {
+    const tid = traceId('ab0c0d0e0f111122');
+    const parentSid = spanId('aaaaaaaaaaaaaaaa');
+    const childSid = spanId('bbbbbbbbbbbbbbbb');
+    const payload = {
+      resourceSpans: [
+        {
+          resource: {
+            attributes: [{ key: 'agent.token', value: { stringValue: ctx.validToken } }],
+          },
+          scopeSpans: [
+            {
+              spans: [
+                {
+                  traceId: tid,
+                  spanId: parentSid,
+                  name: 'parent',
+                  startTimeUnixNano: '1000000000',
+                  endTimeUnixNano: '2000000000',
+                },
+                {
+                  traceId: tid,
+                  spanId: childSid,
+                  parentSpanId: parentSid,
+                  name: 'child',
+                  startTimeUnixNano: '1000000000',
+                  endTimeUnixNano: '2000000000',
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    await postTraces(ctx.app, payload);
+    const rows = await ctx.testDb.db
+      .select()
+      .from(reasoningLogs)
+      .where(eq(reasoningLogs.traceId, tid));
+
+    const parent = rows.find((r) => r.spanName === 'parent');
+    const child = rows.find((r) => r.spanName === 'child');
+    expect(parent?.parentSpanId).toBeNull();
+    expect(child?.parentSpanId).toBe(parentSid);
+  });
+
+  it('flattens nested AnyValue attributes into jsonb', async () => {
+    const tid = traceId('f1a3e50000000000');
+    const payload = {
+      resourceSpans: [
+        {
+          resource: {
+            attributes: [{ key: 'agent.token', value: { stringValue: ctx.validToken } }],
+          },
+          scopeSpans: [
+            {
+              spans: [
+                {
+                  traceId: tid,
+                  spanId: spanId('cccccccccccccccc'),
+                  name: 'attr-test',
+                  startTimeUnixNano: '1000000000',
+                  endTimeUnixNano: '2000000000',
+                  attributes: [
+                    { key: 'simple', value: { stringValue: 'hello' } },
+                    { key: 'count', value: { intValue: '42' } },
+                    {
+                      key: 'nested',
+                      value: {
+                        kvlistValue: {
+                          values: [
+                            { key: 'a', value: { boolValue: true } },
+                            {
+                              key: 'arr',
+                              value: {
+                                arrayValue: {
+                                  values: [{ doubleValue: 1.5 }, { stringValue: 'x' }],
+                                },
+                              },
+                            },
+                          ],
+                        },
+                      },
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    await postTraces(ctx.app, payload);
+    const [row] = await ctx.testDb.db
+      .select()
+      .from(reasoningLogs)
+      .where(eq(reasoningLogs.traceId, tid));
+
+    const attrs = row?.attributes as Record<string, unknown>;
+    expect(attrs.simple).toBe('hello');
+    expect(attrs.count).toBe('42');
+    expect(attrs.nested).toEqual({ a: true, arr: [1.5, 'x'] });
+  });
+
+  it('stores otel.kind and otel.status_code in attributes jsonb', async () => {
+    const tid = traceId('0e1a2b3c4d5e6f00');
+    const payload = {
+      resourceSpans: [
+        {
+          resource: {
+            attributes: [{ key: 'agent.token', value: { stringValue: ctx.validToken } }],
+          },
+          scopeSpans: [
+            {
+              spans: [
+                {
+                  traceId: tid,
+                  spanId: spanId('dddddddddddddddd'),
+                  name: 'otel-meta',
+                  kind: 2,
+                  startTimeUnixNano: '1000000000',
+                  endTimeUnixNano: '2000000000',
+                  status: { code: 2, message: 'something broke' },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    await postTraces(ctx.app, payload);
+    const [row] = await ctx.testDb.db
+      .select()
+      .from(reasoningLogs)
+      .where(eq(reasoningLogs.traceId, tid));
+
+    const attrs = row?.attributes as Record<string, unknown>;
+    expect(attrs['otel.kind']).toBe(2);
+    expect(attrs['otel.status_code']).toBe(2);
+    expect(attrs['otel.status_message']).toBe('something broke');
+  });
+
+  it('converts nanosecond timestamps to correct ISO-8601 strings', async () => {
+    // 1712577600000000000 ns = 1712577600000 ms = 2024-04-08T12:00:00.000Z
+    const tid = traceId('1a2b3c4d5e6f7a8b');
+    const payload = onePayload(ctx.validToken, {
+      traceId: tid,
+      spanId: spanId('eeeeeeeeeeeeeeee'),
+      startTimeUnixNano: '1712577600000000000',
+      endTimeUnixNano: '1712577601500000000',
+    });
+
+    await postTraces(ctx.app, payload);
+    const [row] = await ctx.testDb.db
+      .select()
+      .from(reasoningLogs)
+      .where(eq(reasoningLogs.traceId, tid));
+
+    // PGlite returns timestamptz in PG native format, not ISO-8601.
+    // Compare as Date objects to avoid format sensitivity.
+    expect(row).toBeDefined();
+    expect(new Date(row?.startTime ?? '').getTime()).toBe(1712577600000);
+    expect(new Date(row?.endTime ?? '').getTime()).toBe(1712577601500);
+  });
+
+  it('skips duplicate spans on retry without error (idempotent)', async () => {
+    const payload = onePayload(ctx.validToken, {
+      traceId: traceId('d0de000000000000'),
+      spanId: spanId('ffffffffffffffff'),
+    });
+
+    const res1 = await postTraces(ctx.app, payload);
+    expect(res1.status).toBe(200);
+
+    const res2 = await postTraces(ctx.app, payload);
+    expect(res2.status).toBe(200);
+
+    const rows = await ctx.testDb.db
+      .select()
+      .from(reasoningLogs)
+      .where(eq(reasoningLogs.traceId, traceId('d0de000000000000')));
+    expect(rows).toHaveLength(1);
+  });
+
+  it('logs the persisted count in the summary record', async () => {
+    const res = await postTraces(ctx.app, onePayload(ctx.validToken));
+    expect(res.status).toBe(200);
+
+    const summary = ctx.records.find((r) => r.msg === 'otlp traces received');
+    expect(summary).toMatchObject({ persisted: expect.any(Number) });
   });
 });

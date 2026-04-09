@@ -16,10 +16,9 @@
  * for the extractor + resolver and the rationale for using a
  * resource attribute over an HTTP header.
  *
- * Scope of this task: validate the body, authenticate the agent,
- * count the inbound spans, log a structured summary, and return
- * the OTLP success envelope. Persistence (4.4) and tx correlation
- * (4.5) are deliberately out of scope.
+ * Flow: validate body → authenticate agent → persist spans (4.4) →
+ * log a structured summary → return OTLP success envelope. Tx
+ * correlation (4.5) is out of scope for now.
  *
  * Response shape: `{ partialSuccess: {} }` tells the exporter that
  * every span was accepted (empty partial success). This matches
@@ -33,6 +32,7 @@ import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import type { Logger } from '../logger';
 import { extractAgentToken, resolveAgentByToken } from '../otlp/auth';
+import { persistSpans } from '../otlp/persist';
 import { type ExportTraceServiceRequest, exportTraceServiceRequestSchema } from '../otlp/schema';
 
 interface OtlpRouterDeps {
@@ -94,6 +94,8 @@ export function createOtlpRouter({ logger, db }: OtlpRouterDeps) {
       }
 
       const counts = countSpans(body);
+      const persisted = await persistSpans({ db, body, agentId: resolved.agentId });
+
       logger.info(
         {
           agentId: resolved.agentId,
@@ -101,6 +103,7 @@ export function createOtlpRouter({ logger, db }: OtlpRouterDeps) {
           resourceSpansCount: counts.resourceSpans,
           scopeSpansCount: counts.scopeSpans,
           spanCount: counts.spans,
+          persisted,
         },
         'otlp traces received',
       );
