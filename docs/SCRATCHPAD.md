@@ -53,6 +53,84 @@
 - **7.1-7.5** ElizaOS plugin (otel-exporter, action hooks, auto-init, integration test)
 - **7.6-7.10** Agent Kit SDK (wrapper, otel-exporter, auto-instrument, integration test)
 
+### Epic 7 — підготовка (розвідка зроблена 2026-04-09)
+
+**Стан пакетів:** обидва — порожні placeholder'и (`export {}` у `src/index.ts`). Немає deps крім tsconfig.
+
+**Що треба зробити для кожного пакету:**
+
+#### ElizaOS Plugin (7.1-7.5)
+**Задача 7.1** — setup package:
+```
+pnpm --filter @agentscope/elizaos-plugin add -D @opentelemetry/sdk-node @opentelemetry/exporter-trace-otlp-http @opentelemetry/api
+```
+`@elizaos/core` — peer dep. Потрібно перевірити NPM яку версію ставити і що воно експортує (Plugin interface, action handlers, runtime).
+
+**Задача 7.2** — `src/otel-exporter.ts`:
+- OTLPTraceExporter з `@opentelemetry/exporter-trace-otlp-http`
+- URL: `${apiUrl}/v1/traces` (env `AGENTSCOPE_API_URL`)
+- Agent token: НЕ HTTP header, а **Resource attribute** `agent.token`
+- Pattern:
+  ```ts
+  const sdk = new NodeSDK({
+    resource: Resource.default().merge(new Resource({ 'agent.token': token })),
+    traceExporter: new OTLPTraceExporter({ url: `${apiUrl}/v1/traces` }),
+  });
+  ```
+
+**Задача 7.3** — `src/action-hooks.ts`:
+- Обертання ElizaOS action handlers у OTel span
+- Span attributes: `action.name`, `reasoning.prompt`, `reasoning.model`, `reasoning.output`, `solana.tx.signature`
+- Зберегти parent-child через OTel context propagation
+- Error → span status ERROR (code=2)
+
+**Задача 7.4** — `src/index.ts` public export:
+- Експортувати Plugin object для ElizaOS: `{ name: '@agentscope/elizaos-plugin', setup(runtime) {...} }`
+
+**Задача 7.5** — integration test:
+- Mock ElizaOS runtime, виконати action через plugin → перевірити spans у тестовому receiver (Hono mock server)
+
+#### Agent Kit SDK (7.6-7.10)
+**Задача 7.6** — setup:
+```
+pnpm --filter @agentscope/agent-kit-sdk add -D solana-agent-kit @opentelemetry/sdk-node @opentelemetry/exporter-trace-otlp-http @opentelemetry/api
+```
+`solana-agent-kit` — peer dep.
+
+**Задача 7.7** — `src/otel-setup.ts`:
+- `initAgentScope({ apiUrl, agentToken })` → creates global NodeSDK з OTel tracer
+- Same Resource attribute pattern: `{ 'agent.token': agentToken }`
+
+**Задача 7.8** — `src/trace-decorator.ts`:
+- `traced(fn, name)` wrapper або `@traced('action_name')` decorator
+- Wrap async function → auto-creates span → preserves return value → catches errors
+
+**Задача 7.9** — example:
+- `examples/agent-kit-trader.ts` — простий скрипт що показує як підключити SDK
+
+**Задача 7.10** — `docs/QUICKSTART.md`:
+- Register agent → get ingest token → install plugin → see tx у dashboard
+
+#### OTLP Auth патерн (для обох SDK)
+- Token в Resource attribute `agent.token` (const `AGENT_TOKEN_KEY` у `apps/api/src/otlp/auth.ts`)
+- Receiver: `extractAgentToken(body)` → шукає `body.resourceSpans[0].resource.attributes` → `key === 'agent.token'` → `value.stringValue`
+- DB lookup: `resolveAgentByToken(db, token)` → `agents WHERE ingest_token = ?`
+- 401 для missing/empty/unknown token
+- Receiver idempotent: `onConflictDoNothing` на `(traceId, spanId)` — safe retries
+
+#### OTLP Wire Format (ключове для SDK exporter)
+- `POST /v1/traces` → JSON body `ExportTraceServiceRequest`
+- traceId: 32 lowercase hex, spanId: 16 lowercase hex
+- Timestamps: nanoseconds (string preferred, number OK ≤ MAX_SAFE_INTEGER)
+- SpanKind: 0=UNSPECIFIED, 1=INTERNAL, 2=SERVER, 3=CLIENT, 4=PRODUCER, 5=CONSUMER
+- Status code: 0=UNSET, 1=OK, 2=ERROR
+- All schemas `.strict()` — unknown fields → 422
+- Response: `{ partialSuccess: {} }` 200
+
+#### Correlation з on-chain tx
+- Span attribute `solana.tx.signature` → persist.ts записує у `reasoning_logs.tx_signature`
+- Dashboard reasoning tree показує spans correlated з конкретною tx
+
 ### Epic 6 — ключові файли і рішення (6.1-6.20 CLOSED)
 - **`apps/dashboard/`** — Vite 5 + React 18 SPA, port 5173
 - **`src/lib/api-client.ts`** — typed fetch wrapper, auto-injects Privy accessToken via `getAccessToken()`. `apiClient.get<T>(path)`, `apiClient.post<T>(path, body)`
