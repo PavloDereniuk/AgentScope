@@ -12,7 +12,7 @@
 import type { Database } from '@agentscope/db';
 import { Hono } from 'hono';
 import type { AuthVerifier } from './lib/auth-verifier';
-import type { SseBus } from './lib/sse-bus';
+import type { BusEvent, SseBus } from './lib/sse-bus';
 import { type Logger, logger as defaultLogger } from './logger';
 import { type ApiEnv, requireAuth } from './middleware/auth';
 import { registerErrorHandlers } from './middleware/error';
@@ -49,11 +49,21 @@ export function buildApp(deps: AppDeps) {
   // via `ensureUser` without touching headers directly.
   const api = new Hono<ApiEnv>();
   api.use('*', requireAuth(deps.verifier, log));
-  api.route('/agents', createAgentsRouter(deps.db));
+  api.route('/agents', createAgentsRouter(deps.db, deps.sseBus));
   api.route('/transactions', createTransactionsRouter(deps.db));
   api.route('/alerts', createAlertsRouter(deps.db));
 
   app.route('/api', api);
+
+  // Internal endpoint for cross-service event publishing (6.15).
+  // The ingestion worker POSTs here after persisting a tx or firing an alert.
+  // No auth — intended to be called only from within the same Railway project
+  // (internal networking). Not exposed externally.
+  app.post('/internal/publish', async (c) => {
+    const event = (await c.req.json()) as BusEvent;
+    deps.sseBus.publish(event);
+    return c.json({ ok: true });
+  });
 
   return app;
 }

@@ -21,6 +21,8 @@ export interface PersistContext {
   logger: Logger;
   /** Detector deps. When absent, detection is skipped (e.g. in tests). */
   detector?: DetectorDeps;
+  /** Optional callback to publish SSE events to the API (6.15). */
+  publishEvent?: (event: { type: string; agentId: string; [key: string]: unknown }) => void;
 }
 
 /**
@@ -112,6 +114,14 @@ export async function persistTx(ctx: PersistContext, tx: TxUpdate): Promise<numb
       },
       'persisted tx',
     );
+
+    // Publish tx.new event for SSE (6.15).
+    ctx.publishEvent?.({
+      type: 'tx.new',
+      agentId,
+      signature: tx.signature,
+      at: new Date().toISOString(),
+    });
 
     // Run tx-triggered detector rules (5.9).
     if (ctx.detector) {

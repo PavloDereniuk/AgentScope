@@ -32,6 +32,8 @@ export interface DetectorDeps {
   defaults: DefaultThresholds;
   /** When set, alerts are delivered via the alerter after DB insert. */
   alerter?: DeliverDeps;
+  /** Optional callback to publish SSE events to the API (6.15). */
+  publishEvent?: (event: { type: string; agentId: string; [key: string]: unknown }) => void;
 }
 
 /**
@@ -80,6 +82,18 @@ export async function runTxDetector(
       })),
     )
     .returning({ id: alerts.id, triggeredAt: alerts.triggeredAt });
+
+  // Publish alert.new events for SSE (6.15).
+  for (const row of inserted) {
+    if (!row) continue;
+    deps.publishEvent?.({
+      type: 'alert.new',
+      agentId,
+      alertId: row.id,
+      severity: results[inserted.indexOf(row)]?.severity ?? 'info',
+      at: row.triggeredAt,
+    });
+  }
 
   // Deliver alerts via configured channels (5.14).
   if (deps.alerter) {

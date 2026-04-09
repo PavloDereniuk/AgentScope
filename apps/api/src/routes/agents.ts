@@ -22,6 +22,7 @@ import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 import { decodeTxCursor, encodeTxCursor } from '../lib/cursor';
+import type { SseBus } from '../lib/sse-bus';
 import { ensureUser } from '../lib/users';
 import type { ApiEnv } from '../middleware/auth';
 
@@ -60,7 +61,7 @@ const txListQuerySchema = z
     path: ['from'],
   });
 
-export function createAgentsRouter(db: Database) {
+export function createAgentsRouter(db: Database, sseBus?: SseBus) {
   const router = new Hono<ApiEnv>();
 
   router.post(
@@ -388,6 +389,74 @@ export function createAgentsRouter(db: Database) {
       return c.body(null, 204);
     },
   );
+
+  // 6.14 — SSE stream for real-time dashboard updates. Subscribes to the
+  // in-process bus for this agent's events and pushes them as text/event-stream.
+  // Ownership is verified before opening the stream.
+  if (sseBus) {
+    router.get(
+      '/:id/stream',
+      zValidator('param', agentIdParamSchema, (result) => {
+        if (!result.success) {
+          throw new HTTPException(422, { message: 'invalid agent id (expected uuid)' });
+        }
+      }),
+      async (c) => {
+        const privyDid = c.get('userId');
+        const { id: agentId } = c.req.valid('param');
+
+        const user = await ensureUser(db, privyDid);
+        const [agent] = await db
+          .select({ id: agents.id })
+          .from(agents)
+          .where(and(eq(agents.id, agentId), eq(agents.userId, user.id)))
+          .limit(1);
+        if (!agent) {
+          throw new HTTPException(404, { message: 'agent not found' });
+        }
+
+        return new Response(
+          new ReadableStream({
+            start(controller) {
+              const encoder = new TextEncoder();
+              const send = (data: string) => {
+                controller.enqueue(encoder.encode(`data: ${data}\n\n`));
+              };
+
+              // Send initial keepalive so the client knows the connection is alive
+              send(JSON.stringify({ type: 'connected', agentId }));
+
+              const unsub = sseBus.subscribe(agentId, (event) => {
+                send(JSON.stringify(event));
+              });
+
+              // Keepalive every 30s to prevent proxy/LB timeout
+              const keepalive = setInterval(() => {
+                try {
+                  controller.enqueue(encoder.encode(': keepalive\n\n'));
+                } catch {
+                  clearInterval(keepalive);
+                }
+              }, 30_000);
+
+              // Cleanup when client disconnects
+              c.req.raw.signal.addEventListener('abort', () => {
+                unsub();
+                clearInterval(keepalive);
+              });
+            },
+          }),
+          {
+            headers: {
+              'Content-Type': 'text/event-stream',
+              'Cache-Control': 'no-cache',
+              Connection: 'keep-alive',
+            },
+          },
+        );
+      },
+    );
+  }
 
   return router;
 }
