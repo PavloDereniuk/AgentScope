@@ -17,3 +17,5 @@ export type {
 
 export type { EvalLogger } from './evaluate';
 export { evaluateCron, evaluateTx } from './evaluate';
+
+export { slippageRule } from './rules/slippage';
