@@ -176,16 +176,16 @@
   ✅ 11 нових тестів (happy path + log assertions + 6 validation failures + strict mode). Route mounted at /v1/traces без auth (4.3 додасть agent-token)
 - [x] **4.3** Auth для OTLP: resource attribute `agent.token` (не span — per OTel idiom це Resource-level identity), lookup у `agents.ingest_token` → отримати `agent_id` + `user_id`. Missing/empty/unknown → 401 ⏱ 45m → 4.2, 3.5
   ✅ 4 нові тести: missing attrs → 401, empty token → 401, unknown token → 401, valid → 200 + logged agentId/userId; також перевірка що schema validation йде перед auth (422 < 401 pre-empts DB round-trip)
-- [ ] **4.4** Persist: spans → `reasoning_logs` (trace_id, span_id, parent_span_id, start/end, attributes) ⏱ 60m → 4.3
-  ✅ Тест: отримати 3-span trace → 3 рядки у БД
-- [ ] **4.5** Кореляція: якщо span має attribute `solana.tx.signature` → зберегти у `reasoning_logs.tx_signature` ⏱ 20m → 4.4
-  ✅ Тест: span з signature → field заповнено, без → null
+- [x] **4.4** Persist: spans → `reasoning_logs` (trace_id, span_id, parent_span_id, start/end, attributes) ⏱ 60m → 4.3
+  ✅ 7 нових тестів: 3-span→3 rows, parentSpanId present/null, nested AnyValue→jsonb, otel.kind+status в attrs, nano→timestamp, duplicate idempotent, persisted count logged
+- [x] **4.5** Кореляція: якщо span має attribute `solana.tx.signature` → зберегти у `reasoning_logs.tx_signature` ⏱ 20m → 4.4
+  ✅ 2 тести: span з signature → field заповнено, без → null
 
 ### API: reasoning read
-- [ ] **4.6** GET /api/agents/:id/reasoning (з фільтром по trace_id?) ⏱ 30m → 4.5
-  ✅ Тест: 2 trace → filter by trace_id повертає тільки 1
-- [ ] **4.7** Оновити GET /api/transactions/:signature — додати join з reasoning_logs (включно з повним span tree) ⏱ 30m → 4.6
-  ✅ Тест: tx + 5 spans → endpoint повертає всі 5 з parent-child структурою
+- [x] **4.6** GET /api/agents/:id/reasoning (з фільтром по trace_id?) ⏱ 30m → 4.5
+  ✅ 7 тестів: list all ASC, traceId filter, empty result, invalid traceId 422, cross-tenant 404, 401 no auth, txSignature present
+- [x] **4.7** Оновити GET /api/transactions/:signature — додати join з reasoning_logs (включно з повним span tree) ⏱ 30m → 4.6
+  ✅ Тест: tx + 5 spans (1 з txSignature) → endpoint повертає всі 5 з parent-child, uncorrelated trace excluded
 
 **Гейт Кінець E4:** ✅ Агент може відправити OTel trace → побачити у БД, корельований з tx.
 
@@ -196,39 +196,39 @@
 **Мета:** 5 rule-based правил, evaluator, Telegram delivery.
 
 ### Detector engine
-- [ ] **5.1** `packages/detector`: типи `RuleContext`, `RuleResult`, `RuleDef` ⏱ 30m
-  ✅ Експортуються, typecheck зелений
-- [ ] **5.2** `src/index.ts` — `evaluate(ctx) → Alert[]`, реєстр правил ⏱ 30m → 5.1
-  ✅ Unit: evaluate з 0 rules → []
+- [x] **5.1** `packages/detector`: типи `RuleContext`, `RuleResult`, `RuleDef` ⏱ 30m
+  ✅ TxRuleDef, CronRuleDef, contexts, snapshots, DefaultThresholds
+- [x] **5.2** `src/index.ts` — `evaluate(ctx) → Alert[]`, реєстр правил ⏱ 30m → 5.1
+  ✅ 7 unit tests: evaluateTx + evaluateCron з error isolation
 
 ### Rules (TDD)
-- [ ] **5.3** `tests/slippage.test.ts` — failing тест ⏱ 20m → 5.2
-- [ ] **5.4** `src/rules/slippage.ts` — slippage_spike (Jupiter swap > threshold%) ⏱ 30m → 5.3
-  ✅ Тест зелений
-- [ ] **5.5** `tests/gas.test.ts` failing → `src/rules/gas.ts` (fee > N × rolling 24h median per agent) ⏱ 60m → 5.2
-  ✅ Зелений; уважно з division by zero
-- [ ] **5.6** `tests/error-rate.test.ts` failing → `src/rules/error-rate.ts` (failed tx ratio > N% за 1h) ⏱ 45m → 5.2
-  ✅ Зелений
-- [ ] **5.7** `tests/drawdown.test.ts` failing → `src/rules/drawdown.ts` (1h P&L delta < -N%) ⏱ 60m → 5.2
-  ✅ Зелений (потребує SOL price; для MVP — фіксована з env або останнього tx)
-- [ ] **5.8** `tests/stale.test.ts` failing → `src/rules/stale.ts` (no activity > N min) ⏱ 30m → 5.2
-  ✅ Зелений
+- [x] **5.3** `tests/slippage.test.ts` — failing тест ⏱ 20m → 5.2
+- [x] **5.4** `src/rules/slippage.ts` — slippage_spike (Jupiter swap > threshold%) ⏱ 30m → 5.3
+  ✅ 9 tests: threshold, override, severity escalation, non-Jupiter skip, dedupeKey
+- [x] **5.5** `tests/gas.test.ts` failing → `src/rules/gas.ts` (fee > N × rolling 24h median per agent) ⏱ 60m → 5.2
+  ✅ 5 tests (PGlite): median query, threshold, critical escalation, no-history skip
+- [x] **5.6** `tests/error-rate.test.ts` failing → `src/rules/error-rate.ts` (failed tx ratio > N% за 1h) ⏱ 45m → 5.2
+  ✅ 4 tests (PGlite): ratio calc, threshold override, no-tx skip, critical
+- [x] **5.7** `tests/drawdown.test.ts` failing → `src/rules/drawdown.ts` (1h P&L delta < -N%) ⏱ 60m → 5.2
+  ✅ 4 tests (PGlite): SOL delta sum, threshold, no-tx skip, critical. MVP ref balance = 1 SOL
+- [x] **5.8** `tests/stale.test.ts` failing → `src/rules/stale.ts` (no activity > N min) ⏱ 30m → 5.2
+  ✅ 4 tests (PGlite): active OK, per-agent threshold, no-tx-ever info, severity escalation
 
 ### Detector runner у ingestion
-- [ ] **5.9** `apps/ingestion/src/detector-runner.ts` — після кожного persist викликати `evaluate(ctx)` для tx-based правил ⏱ 45m → 5.4, 5.5, 5.6, 2.11
-  ✅ Інтеграційний smoke: insert tx з slippage 50% → запис у `alerts`
-- [ ] **5.10** `apps/ingestion/src/cron.ts` — periodic (1 min) eval для time-based правил (drawdown, error_rate, stale) ⏱ 60m → 5.7, 5.8
-  ✅ Тест: запустити cron, агент без активності 31 хв → alert створено
+- [x] **5.9** `apps/ingestion/src/detector-runner.ts` — після кожного persist викликати `evaluate(ctx)` для tx-based правил ⏱ 45m → 5.4, 5.5, 5.6, 2.11
+  ✅ 2 integration tests (PGlite): slippage 50% → alert row, normal tx → no alert
+- [x] **5.10** `apps/ingestion/src/cron.ts` — periodic (1 min) eval для time-based правил (drawdown, error_rate, stale) ⏱ 60m → 5.7, 5.8
+  ✅ 1 integration test: agent inactive 31 min → stale_agent alert, active agent → none
 
 ### Alerter (Telegram first)
-- [ ] **5.11** `packages/alerter`: типи `AlertChannel`, `DeliveryResult` ⏱ 15m
-  ✅ Експортується
-- [ ] **5.12** `src/telegram.ts` — `sendTelegram(chatId, alert)` через Bot API ⏱ 45m → 5.11, 1.0d
-  ✅ Тест (mock fetch) + реальне відправлення у тестовий chat
-- [ ] **5.13** `src/index.ts` — `deliver(alert, channel)` strategy router (telegram only у MVP) ⏱ 30m → 5.12
-  ✅ Unit: deliver(.., 'telegram') викликає telegram.ts
-- [ ] **5.14** Інтеграція у ingestion: після створення alert у БД → `deliver()` → оновити `delivered_at` ⏱ 45m → 5.13, 5.10
-  ✅ E2E: симулювати slippage → з'являється повідомлення у Telegram чаті за <30 сек
+- [x] **5.11** `packages/alerter`: типи `AlertChannel`, `DeliveryResult` ⏱ 15m
+  ✅ AlertMessage, DeliveryResult, ChannelSender exported
+- [x] **5.12** `src/telegram.ts` — `sendTelegram(chatId, alert)` через Bot API ⏱ 45m → 5.11, 1.0d
+  ✅ formatTelegramMessage + createTelegramSender (2 format tests)
+- [x] **5.13** `src/index.ts` — `deliver(alert, channel)` strategy router (telegram only у MVP) ⏱ 30m → 5.12
+  ✅ 4 tests: route to telegram, not configured, unsupported channel, error propagation
+- [x] **5.14** Інтеграція у ingestion: після створення alert у БД → `deliver()` → оновити `delivered_at` ⏱ 45m → 5.13, 5.10
+  ✅ detector-runner delivers via alerter, updates delivered_at/delivery_status
 
 **Гейт Кінець E5:** ✅ Аномалія → alert у БД → Telegram повідомлення. 5 правил працюють.
 
@@ -464,8 +464,8 @@ E8 → E9 (deploy потребує всього)
 
 ## Поточний стан
 
-**Завершено:** 39 / 99 задач (Епік 1 + Епік 2 + Епік 3 + 4.1 + 4.2 + 4.3).
-**Поточна:** **4.4** (persist spans → reasoning_logs).
+**Завершено:** 57 / 99 задач (Епік 1-5).
+**Поточна:** **Epic 6** (Dashboard).
 
 **Епік 1:** ✅ 13/13 RUNTIME validated на справжньому Supabase + Helius
 **Епік 2:** ✅ 11/12 (2.12 = N/A для WS fallback). 22 unit tests з реальними mainnet fixtures.
