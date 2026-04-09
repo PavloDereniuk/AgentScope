@@ -1,9 +1,11 @@
+import { TxTimeline } from '@/components/tx-timeline';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
 import { useQuery } from '@tanstack/react-query';
 import { Activity, AlertTriangle, ArrowLeft, Clock, DollarSign } from 'lucide-react';
+import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 
 interface AgentDetail {
@@ -51,6 +53,8 @@ interface TxListResponse {
 
 export function AgentDetailPage() {
   const { id } = useParams<{ id: string }>();
+
+  const [selectedTx, setSelectedTx] = useState<string | null>(null);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['agent', id],
@@ -160,6 +164,14 @@ export function AgentDetailPage() {
           </CardContent>
         </Card>
       </div>
+
+      <TxTimeline transactions={transactions} onSelect={(sig) => setSelectedTx(sig)} />
+
+      {selectedTx && (
+        <p className="text-sm text-muted-foreground">
+          Selected tx: <span className="font-mono">{selectedTx}</span>
+        </p>
+      )}
     </div>
   );
 }
