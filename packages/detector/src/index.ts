@@ -18,4 +18,5 @@ export type {
 export type { EvalLogger } from './evaluate';
 export { evaluateCron, evaluateTx } from './evaluate';
 
+export { gasRule } from './rules/gas';
 export { slippageRule } from './rules/slippage';

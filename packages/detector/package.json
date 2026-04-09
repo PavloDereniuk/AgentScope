@@ -10,7 +10,11 @@
   },
   "dependencies": {
     "@agentscope/db": "workspace:*",
-    "@agentscope/shared": "workspace:*"
+    "@agentscope/shared": "workspace:*",
+    "drizzle-orm": "^0.36.4"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.2.13"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
