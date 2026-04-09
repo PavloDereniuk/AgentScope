@@ -9,6 +9,10 @@
  * OTel metadata that has no dedicated column (`kind`, `status.code`,
  * `status.message`) is stored inside the `attributes` jsonb under
  * reserved `otel.*` keys so the detector (Epic 5) can query them.
+ *
+ * Tx correlation (4.5): if a span carries a `solana.tx.signature`
+ * attribute, its value is extracted into `reasoning_logs.tx_signature`
+ * so the REST API can join reasoning logs with on-chain transactions.
  */
 
 import { type Database, reasoningLogs } from '@agentscope/db';
@@ -56,6 +60,9 @@ export function nanoToTimestamp(nanos: string): string {
   return new Date(ms).toISOString();
 }
 
+/** Span attribute key for on-chain transaction correlation (4.5). */
+export const TX_SIGNATURE_KEY = 'solana.tx.signature';
+
 // ── persist ──────────────────────────────────────────────────────────────────
 
 export interface PersistSpansOptions {
@@ -80,6 +87,8 @@ export async function persistSpans({ db, body, agentId }: PersistSpansOptions): 
         if (span.status?.code !== undefined) attrs['otel.status_code'] = span.status.code;
         if (span.status?.message !== undefined) attrs['otel.status_message'] = span.status.message;
 
+        const txSig = typeof attrs[TX_SIGNATURE_KEY] === 'string' ? attrs[TX_SIGNATURE_KEY] : null;
+
         rows.push({
           agentId,
           traceId: span.traceId,
@@ -89,6 +98,7 @@ export async function persistSpans({ db, body, agentId }: PersistSpansOptions): 
           startTime: nanoToTimestamp(span.startTimeUnixNano),
           endTime: nanoToTimestamp(span.endTimeUnixNano),
           attributes: attrs,
+          txSignature: txSig,
         });
       }
     }

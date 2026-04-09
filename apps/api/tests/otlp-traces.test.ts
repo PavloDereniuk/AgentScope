@@ -733,4 +733,83 @@ describe('POST /v1/traces', () => {
     const summary = ctx.records.find((r) => r.msg === 'otlp traces received');
     expect(summary).toMatchObject({ persisted: expect.any(Number) });
   });
+
+  // ── 4.5 — tx signature correlation ────────────────────────────────
+
+  it('extracts solana.tx.signature attribute into tx_signature column', async () => {
+    const tid = traceId('aa00bb00cc00dd00');
+    const sig = '5VERv8NMvzbJMEkV8xnrLkEaWRtSz9CosKDYjCJjBRnbJLgp8uirBgmQTnFg';
+    const payload = {
+      resourceSpans: [
+        {
+          resource: {
+            attributes: [{ key: 'agent.token', value: { stringValue: ctx.validToken } }],
+          },
+          scopeSpans: [
+            {
+              spans: [
+                {
+                  traceId: tid,
+                  spanId: spanId('a1a1a1a1a1a1a1a1'),
+                  name: 'solana.sendTransaction',
+                  startTimeUnixNano: '1000000000',
+                  endTimeUnixNano: '2000000000',
+                  attributes: [
+                    { key: 'solana.tx.signature', value: { stringValue: sig } },
+                    { key: 'other', value: { stringValue: 'ignored' } },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    const res = await postTraces(ctx.app, payload);
+    expect(res.status).toBe(200);
+
+    const [row] = await ctx.testDb.db
+      .select()
+      .from(reasoningLogs)
+      .where(eq(reasoningLogs.traceId, tid));
+
+    expect(row?.txSignature).toBe(sig);
+  });
+
+  it('leaves tx_signature null when solana.tx.signature is absent', async () => {
+    const tid = traceId('bb00cc00dd00ee00');
+    const payload = {
+      resourceSpans: [
+        {
+          resource: {
+            attributes: [{ key: 'agent.token', value: { stringValue: ctx.validToken } }],
+          },
+          scopeSpans: [
+            {
+              spans: [
+                {
+                  traceId: tid,
+                  spanId: spanId('b2b2b2b2b2b2b2b2'),
+                  name: 'agent.think',
+                  startTimeUnixNano: '1000000000',
+                  endTimeUnixNano: '2000000000',
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    const res = await postTraces(ctx.app, payload);
+    expect(res.status).toBe(200);
+
+    const [row] = await ctx.testDb.db
+      .select()
+      .from(reasoningLogs)
+      .where(eq(reasoningLogs.traceId, tid));
+
+    expect(row?.txSignature).toBeNull();
+  });
 });
