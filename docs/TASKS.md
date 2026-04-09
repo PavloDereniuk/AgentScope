@@ -259,37 +259,37 @@
   ✅ Навігація між сторінками працює
 - [x] **6.8** `routes/agents.tsx` — список агентів через react-query, status badge, search ⏱ 60m → 6.7, 3.6
   ✅ Список рендериться з реальних даних
-- [ ] **6.9** «Add Agent» dialog → POST /api/agents → invalidate query ⏱ 45m → 6.8, 3.5
+- [x] **6.9** «Add Agent» dialog → POST /api/agents → invalidate query ⏱ 45m → 6.8, 3.5
   ✅ Створення агента у UI → з'являється у списку
 
 ### Agent detail view
-- [ ] **6.10** `routes/agent-detail.tsx` — header з stats cards (tx count, success rate, SOL spent, last seen) ⏱ 60m → 6.7, 3.7
+- [x] **6.10** `routes/agent-detail.tsx` — header з stats cards (tx count, success rate, SOL spent, last seen) ⏱ 60m → 6.7, 3.7
   ✅ Картки рендеряться з API даних
-- [ ] **6.11** `components/tx-timeline.tsx` — chronological list of tx з icons по типу (swap/deposit/withdraw) ⏱ 75m → 6.10, 3.10
+- [x] **6.11** `components/tx-timeline.tsx` — chronological list of tx з icons по типу (swap/deposit/withdraw) ⏱ 75m → 6.10, 3.10
   ✅ Список з 50 tx скролиться, клік відкриває деталь
-- [ ] **6.12** `components/reasoning-tree.tsx` — рекурсивний дисплей spans (parent-child), expand/collapse ⏱ 60m → 6.11, 4.7
+- [x] **6.12** `components/reasoning-tree.tsx` — рекурсивний дисплей spans (parent-child), expand/collapse ⏱ 60m → 6.11, 4.7
   ✅ 3-рівневий trace відображається коректно
-- [ ] **6.13** `components/pnl-chart.tsx` — Recharts time series (sol_delta cumulative за 24h) ⏱ 60m → 6.10
+- [x] **6.13** `components/pnl-chart.tsx` — Recharts time series (sol_delta cumulative за 24h) ⏱ 60m → 6.10
   ✅ Графік рендериться, tooltip показує значення
 
 ### SSE live updates
-- [ ] **6.14** `apps/api`: GET /api/agents/:id/stream — SSE endpoint, що публікує tx/alert через sse-bus ⏱ 60m → 3.4, 3.10
+- [x] **6.14** `apps/api`: GET /api/agents/:id/stream — SSE endpoint, що публікує tx/alert через sse-bus ⏱ 60m → 3.4, 3.10
   ✅ `curl -N localhost:3000/api/agents/:id/stream` отримує events
-- [ ] **6.15** `apps/ingestion`: після persist tx + alert → publish у sse-bus (через HTTP POST до API чи shared in-memory? — IPC через DB LISTEN/NOTIFY) ⏱ 90m → 6.14
+- [x] **6.15** `apps/ingestion`: після persist tx + alert → publish у sse-bus (через HTTP POST до API чи shared in-memory? — IPC через DB LISTEN/NOTIFY) ⏱ 90m → 6.14
   ✅ tx у БД → SSE event на API → лог
-- [ ] **6.16** `apps/dashboard/src/lib/sse.ts` — EventSource wrapper, hook `useStream(agentId)` ⏱ 45m → 6.14
+- [x] **6.16** `apps/dashboard/src/lib/sse.ts` — EventSource wrapper, hook `useStream(agentId)` ⏱ 45m → 6.14
   ✅ Unit: mock EventSource → events отримуються
-- [ ] **6.17** Інтегрувати SSE у tx-timeline + status badge — нові tx з'являються без refresh ⏱ 45m → 6.11, 6.16
+- [x] **6.17** Інтегрувати SSE у tx-timeline + status badge — нові tx з'являються без refresh ⏱ 45m → 6.11, 6.16
   ✅ Симулювати tx у БД → з'являється у UI <2с
 
 ### Інші views
-- [ ] **6.18** `routes/alerts.tsx` — global alerts feed, filter by severity ⏱ 60m → 6.7, 3.12
+- [x] **6.18** `routes/alerts.tsx` — global alerts feed, filter by severity ⏱ 60m → 6.7, 3.12
   ✅ Список рендериться, filter працює
-- [ ] **6.19** `routes/settings.tsx` — webhook URL + alert rule thresholds (форма, PATCH /api/agents/:id) ⏱ 60m → 6.7, 3.8
+- [x] **6.19** `routes/settings.tsx` — webhook URL + alert rule thresholds (форма, PATCH /api/agents/:id) ⏱ 60m → 6.7, 3.8
   ✅ Зміни зберігаються
 
 ### Polish
-- [ ] **6.20** Loading states + error boundaries у всіх routes ⏱ 45m → 6.19
+- [x] **6.20** Loading states + error boundaries у всіх routes ⏱ 45m → 6.19
   ✅ React Query loading → skeletons; error → toast
 
 **Гейт Кінець E6:** ✅ Повний дашборд: login → register agent → live tx → drill-down з reasoning → alerts.
@@ -464,8 +464,8 @@ E8 → E9 (deploy потребує всього)
 
 ## Поточний стан
 
-**Завершено:** 65 / 99 задач (Епіки 1-5 closed, Epic 6: 6.1-6.8 done).
-**Поточна:** **6.9** — Add Agent dialog.
+**Завершено:** 77 / 99 задач (Епіки 1-6 closed).
+**Поточна:** **Epic 7** — SDK Integrations (ElizaOS plugin + Agent Kit).
 
 **Епік 1:** ✅ 13/13 RUNTIME validated на справжньому Supabase + Helius
 **Епік 2:** ✅ 11/12 (2.12 = N/A для WS fallback). 22 unit tests з реальними mainnet fixtures.

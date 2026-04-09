@@ -18,18 +18,18 @@
 
 ---
 
-## Стан: Epic 6 IN PROGRESS — DAY 5 (2026-04-09)
+## Стан: Epics 1-6 CLOSED — DAY 5 (2026-04-09)
 
 ### Поточна задача
-**6.9** — Add Agent dialog (POST /api/agents → invalidate query).
+**Epic 7** — SDK Integrations (ElizaOS plugin + Agent Kit SDK).
 
-### Прогрес: 65 / 99 (≈66%)
+### Прогрес: 77 / 99 (≈78%)
 - ✅ **Епік 1 (Foundation): 13/13** — RUNTIME validated на справжньому Supabase + Helius
 - ✅ **Епік 2 (Parsers): 11/12** — Jupiter v6 + Kamino Lend на real mainnet fixtures (2.12 = N/A для WS fallback)
 - ✅ **Епік 3 (REST API): 12/12 CLOSED** — Hono + Privy auth + SSE bus + full CRUD + tx + alerts. **88 api тестів.**
 - ✅ **Епік 4 (Reasoning Collector): 7/7 CLOSED** — OTLP/HTTP receiver, zod schema, agent-token auth, span persist, tx correlation, reasoning+transaction read endpoints. **31 tests.**
 - ✅ **Епік 5 (Detector+Alerter): 14/14 CLOSED** — evaluator, 5 rules, detector-runner, cron, alerter+Telegram delivery. **42 tests.**
-- ⏳ **Епік 6 (Dashboard): 8/20** — 6.1-6.8 done (Vite, Tailwind, shadcn, API client, Privy auth, routing, agent list). Next: 6.9 Add Agent dialog.
+- ✅ **Епік 6 (Dashboard): 20/20 CLOSED** — Full SPA: Privy auth, agent list+create, detail+stats+PnL chart+tx timeline+reasoning tree, SSE live updates, alerts feed, settings page, error boundary.
 - 📦 Епіки 7-9: не починалися
 - ⏳ Mainnet runtime валідація persist'у jupiter/kamino — у Тиждень 5 (по плану SPEC §10)
 
@@ -49,14 +49,11 @@
 **`package.json` повернуто у попередній стан.**
 
 ### Наступні задачі (черга з TASKS.md)
-**Epic 6: Dashboard** — залишок (12 задач):
-- **6.9** Add Agent dialog → POST /api/agents → invalidate query
-- **6.10-6.13** Agent detail: stats cards, tx timeline, reasoning tree, PnL chart
-- **6.14-6.17** SSE live updates (API endpoint + ingestion publish + dashboard hook)
-- **6.18-6.19** Alerts feed + Settings page
-- **6.20** Loading states + error boundaries
+**Epic 7: SDK Integrations** (10 задач, Week 5a):
+- **7.1-7.5** ElizaOS plugin (otel-exporter, action hooks, auto-init, integration test)
+- **7.6-7.10** Agent Kit SDK (wrapper, otel-exporter, auto-instrument, integration test)
 
-### Epic 6 — ключові файли і рішення (6.1-6.8)
+### Epic 6 — ключові файли і рішення (6.1-6.20 CLOSED)
 - **`apps/dashboard/`** — Vite 5 + React 18 SPA, port 5173
 - **`src/lib/api-client.ts`** — typed fetch wrapper, auto-injects Privy accessToken via `getAccessToken()`. `apiClient.get<T>(path)`, `apiClient.post<T>(path, body)`
 - **`src/lib/privy.tsx`** — PrivyProvider config + `useAuth()` hook (login/logout/user/isAuthenticated/isReady)
@@ -66,6 +63,19 @@
 - **`src/main.tsx`** — QueryClientProvider (staleTime 30s, retry 1) wrapping BrowserRouter + PrivyProvider
 - **lucide-react** for icons, shadcn/ui components (Button, Card, Badge, Input, Dialog, Toast)
 - **`@tanstack/react-query`** for server state management
+
+- **`src/components/tx-timeline.tsx`** — chronological tx list з instruction icons, SOL delta coloring, success/fail indicators
+- **`src/components/reasoning-tree.tsx`** — recursive span tree (buildTree from flat → parent-child), expand/collapse by depth
+- **`src/components/pnl-chart.tsx`** — Recharts AreaChart з cumulative SOL delta time series
+- **`src/components/error-boundary.tsx`** — React class ErrorBoundary з reload button
+- **`src/routes/agent-detail.tsx`** — full agent view: header+badges, 4 stat cards, PnL chart, tx timeline, reasoning tree (on tx select), SSE live updates
+- **`src/routes/alerts.tsx`** — global alerts feed з severity filter tabs
+- **`src/routes/settings.tsx`** — agent selector, webhook URL, 5 alert threshold inputs, PATCH save
+- **`src/lib/use-stream.ts`** — EventSource hook, invalidates react-query on tx.new/alert.new
+- **SSE cross-service:** ingestion → HTTP POST → API `/internal/publish` → sseBus → SSE stream → dashboard EventSource → query invalidation. Fire-and-forget.
+- **`apps/ingestion/src/event-publisher.ts`** — factory for HTTP event publisher
+- **API SSE endpoint:** `GET /api/agents/:id/stream` with ownership check, 30s keepalive, abort cleanup
+- **`createAgentsRouter(db, sseBus?)`** — optional sseBus wiring for SSE route
 
 **API endpoints вже готові (Epic 3+4):**
 - `GET/POST /api/agents` — list + create
