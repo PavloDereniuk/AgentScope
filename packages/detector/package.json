@@ -8,6 +8,10 @@
   "exports": {
     ".": "./src/index.ts"
   },
+  "dependencies": {
+    "@agentscope/db": "workspace:*",
+    "@agentscope/shared": "workspace:*"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "lint": "biome check .",

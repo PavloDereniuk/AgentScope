@@ -1,6 +1,16 @@
 /**
- * @agentscope/detector — rule-based anomaly detection (placeholder).
- * Real rules + evaluator land in tasks 5.1-5.10.
+ * @agentscope/detector — rule-based anomaly detection.
+ *
+ * Exports types (5.1), evaluator (5.2), and individual rules (5.3-5.8).
  */
 
-export {};
+export type {
+  AgentSnapshot,
+  CronRuleContext,
+  CronRuleDef,
+  DefaultThresholds,
+  RuleResult,
+  TxRuleContext,
+  TxRuleDef,
+  TxSnapshot,
+} from './types';
