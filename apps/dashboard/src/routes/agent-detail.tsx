@@ -1,3 +1,4 @@
+import { ReasoningTree } from '@/components/reasoning-tree';
 import { TxTimeline } from '@/components/tx-timeline';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -167,11 +168,7 @@ export function AgentDetailPage() {
 
       <TxTimeline transactions={transactions} onSelect={(sig) => setSelectedTx(sig)} />
 
-      {selectedTx && (
-        <p className="text-sm text-muted-foreground">
-          Selected tx: <span className="font-mono">{selectedTx}</span>
-        </p>
-      )}
+      {selectedTx && <ReasoningTree signature={selectedTx} />}
     </div>
   );
 }
