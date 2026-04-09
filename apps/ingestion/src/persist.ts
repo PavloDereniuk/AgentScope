@@ -10,6 +10,7 @@
 import { type Database, agentTransactions } from '@agentscope/db';
 import { type ParseInput, type ParsedTx, parseTransaction } from '@agentscope/parser';
 import type { ISOTimestamp, SolanaPubkey, SolanaSignature } from '@agentscope/shared';
+import { type DetectorDeps, runTxDetector } from './detector-runner';
 import type { TxUpdate } from './grpc-client';
 import type { Logger } from './logger';
 import type { WalletRegistry } from './registry';
@@ -18,6 +19,8 @@ export interface PersistContext {
   db: Database;
   registry: WalletRegistry;
   logger: Logger;
+  /** Detector deps. When absent, detection is skipped (e.g. in tests). */
+  detector?: DetectorDeps;
 }
 
 /**
@@ -109,6 +112,27 @@ export async function persistTx(ctx: PersistContext, tx: TxUpdate): Promise<numb
       },
       'persisted tx',
     );
+
+    // Run tx-triggered detector rules (5.9).
+    if (ctx.detector) {
+      try {
+        const alertCount = await runTxDetector(ctx.detector, agentId, {
+          signature: tx.signature,
+          instructionName: primary?.name ?? null,
+          parsedArgs: primary ? { ...primary.args, _all: allInstructions } : null,
+          solDelta: parsed?.solDelta ?? '0',
+          feeLamports: parsed?.feeLamports ?? 0,
+          success: parsed?.success ?? true,
+          blockTime: tx.blockTime,
+        });
+        if (alertCount > 0) {
+          ctx.logger.info({ agentId, signature: tx.signature, alertCount }, 'detector fired');
+        }
+      } catch (err) {
+        ctx.logger.error({ err, signature: tx.signature }, 'detector runner failed');
+      }
+    }
+
     return row.id;
   } catch (err) {
     ctx.logger.error({ err, signature: tx.signature }, 'failed to persist tx');
