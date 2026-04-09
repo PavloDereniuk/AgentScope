@@ -1,3 +1,4 @@
+import { PnlChart } from '@/components/pnl-chart';
 import { ReasoningTree } from '@/components/reasoning-tree';
 import { TxTimeline } from '@/components/tx-timeline';
 import { Badge } from '@/components/ui/badge';
@@ -165,6 +166,8 @@ export function AgentDetailPage() {
           </CardContent>
         </Card>
       </div>
+
+      <PnlChart transactions={transactions} />
 
       <TxTimeline transactions={transactions} onSelect={(sig) => setSelectedTx(sig)} />
 
