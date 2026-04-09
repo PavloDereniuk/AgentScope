@@ -9,6 +9,7 @@
  * by the evaluator — they never crash the ingestion pipeline.
  */
 
+import type { AlertMessage, DeliverDeps } from '@agentscope/alerter';
 import { type Database, agents, alerts } from '@agentscope/db';
 import {
   type DefaultThresholds,
@@ -29,6 +30,8 @@ export interface DetectorDeps {
   db: Database;
   logger: EvalLogger;
   defaults: DefaultThresholds;
+  /** When set, alerts are delivered via the alerter after DB insert. */
+  alerter?: DeliverDeps;
 }
 
 /**
@@ -41,14 +44,15 @@ export async function runTxDetector(
   agentId: string,
   transaction: TxSnapshot,
 ): Promise<number> {
-  // Fetch agent's per-rule thresholds.
+  // Fetch agent's name + per-rule thresholds.
   const [agent] = await deps.db
-    .select({ alertRules: agents.alertRules })
+    .select({ alertRules: agents.alertRules, name: agents.name })
     .from(agents)
     .where(eq(agents.id, agentId))
     .limit(1);
 
   const alertRules = (agent?.alertRules ?? {}) as AlertRuleThresholds;
+  const agentName = agent?.name ?? 'Unknown Agent';
 
   const results = await evaluateTx(
     TX_RULES,
@@ -64,15 +68,62 @@ export async function runTxDetector(
 
   if (results.length === 0) return 0;
 
-  await deps.db.insert(alerts).values(
-    results.map((r) => ({
-      agentId,
-      ruleName: r.ruleName,
-      severity: r.severity,
-      payload: r.payload,
-      dedupeKey: r.dedupeKey ?? null,
-    })),
-  );
+  const inserted = await deps.db
+    .insert(alerts)
+    .values(
+      results.map((r) => ({
+        agentId,
+        ruleName: r.ruleName,
+        severity: r.severity,
+        payload: r.payload,
+        dedupeKey: r.dedupeKey ?? null,
+      })),
+    )
+    .returning({ id: alerts.id, triggeredAt: alerts.triggeredAt });
+
+  // Deliver alerts via configured channels (5.14).
+  if (deps.alerter) {
+    const { deliver } = await import('@agentscope/alerter');
+    for (let i = 0; i < inserted.length; i++) {
+      const row = inserted[i];
+      const result = results[i];
+      if (!row || !result) continue;
+
+      const msg: AlertMessage = {
+        id: row.id,
+        agentId,
+        agentName,
+        ruleName: result.ruleName,
+        severity: result.severity,
+        payload: result.payload,
+        triggeredAt: row.triggeredAt,
+      };
+
+      try {
+        const delivery = await deliver(deps.alerter, msg, 'telegram');
+        if (delivery.success) {
+          await deps.db
+            .update(alerts)
+            .set({
+              deliveredAt: new Date().toISOString(),
+              deliveryChannel: 'telegram',
+              deliveryStatus: 'delivered',
+            })
+            .where(eq(alerts.id, row.id));
+        } else {
+          await deps.db
+            .update(alerts)
+            .set({
+              deliveryStatus: 'failed',
+              deliveryError: delivery.error ?? 'unknown',
+            })
+            .where(eq(alerts.id, row.id));
+        }
+      } catch (err) {
+        deps.logger.error({ err, alertId: row.id }, 'alert delivery failed');
+      }
+    }
+  }
 
   return results.length;
 }

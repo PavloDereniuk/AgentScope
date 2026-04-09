@@ -68,6 +68,9 @@ importers:
 
   apps/ingestion:
     dependencies:
+      '@agentscope/alerter':
+        specifier: workspace:^
+        version: link:../../packages/alerter
       '@agentscope/db':
         specifier: workspace:^
         version: link:../../packages/db
@@ -116,7 +119,11 @@ importers:
 
   packages/agent-kit-sdk: {}
 
-  packages/alerter: {}
+  packages/alerter:
+    dependencies:
+      '@agentscope/shared':
+        specifier: workspace:*
+        version: link:../shared
 
   packages/config: {}
 
