@@ -168,43 +168,65 @@ describe('GET /api/transactions/:signature', () => {
     expect(body.reasoningLogs).toEqual([]);
   });
 
-  it('joins correlated reasoning logs ordered by startTime ASC', async () => {
+  it('returns the full span tree for correlated traces, not just tx-stamped spans', async () => {
     const agent = await createAgent(ctx);
     await seedTransaction(ctx, agent.id, SIG_A);
 
-    // Seed 3 reasoning spans correlated to SIG_A, plus one uncorrelated
-    // span that must be filtered out. Insert out of chronological order
-    // so the ASC sort is exercised.
+    // 5 spans in one trace: only span-3 carries the txSignature, but
+    // the endpoint should return all 5 (the full reasoning tree) plus
+    // exclude the uncorrelated span from a different trace.
     await ctx.testDb.db.insert(reasoningLogs).values([
       {
         agentId: agent.id,
         traceId: 'abcd1234abcd1234abcd1234abcd1234',
-        spanId: '0000000000000002',
-        spanName: 'second',
-        startTime: '2026-04-08T12:00:01.000Z',
-        endTime: '2026-04-08T12:00:02.000Z',
-        txSignature: SIG_A,
+        spanId: '0000000000000001',
+        spanName: 'agent.plan',
+        startTime: '2026-04-08T12:00:00.000Z',
+        endTime: '2026-04-08T12:00:05.000Z',
+        txSignature: null,
       },
       {
         agentId: agent.id,
         traceId: 'abcd1234abcd1234abcd1234abcd1234',
-        spanId: '0000000000000001',
-        spanName: 'first',
-        startTime: '2026-04-08T12:00:00.500Z',
-        endTime: '2026-04-08T12:00:01.000Z',
-        txSignature: SIG_A,
+        spanId: '0000000000000002',
+        parentSpanId: '0000000000000001',
+        spanName: 'agent.evaluate',
+        startTime: '2026-04-08T12:00:01.000Z',
+        endTime: '2026-04-08T12:00:02.000Z',
+        txSignature: null,
       },
       {
         agentId: agent.id,
         traceId: 'abcd1234abcd1234abcd1234abcd1234',
         spanId: '0000000000000003',
-        spanName: 'third',
+        parentSpanId: '0000000000000001',
+        spanName: 'agent.execute',
         startTime: '2026-04-08T12:00:02.000Z',
-        endTime: '2026-04-08T12:00:03.000Z',
+        endTime: '2026-04-08T12:00:04.000Z',
         txSignature: SIG_A,
       },
       {
-        // Uncorrelated — must NOT appear in the response.
+        agentId: agent.id,
+        traceId: 'abcd1234abcd1234abcd1234abcd1234',
+        spanId: '0000000000000004',
+        parentSpanId: '0000000000000003',
+        spanName: 'solana.sendTx',
+        startTime: '2026-04-08T12:00:02.500Z',
+        endTime: '2026-04-08T12:00:03.000Z',
+        txSignature: null,
+      },
+      {
+        agentId: agent.id,
+        traceId: 'abcd1234abcd1234abcd1234abcd1234',
+        spanId: '0000000000000005',
+        parentSpanId: '0000000000000001',
+        spanName: 'agent.log',
+        startTime: '2026-04-08T12:00:04.000Z',
+        endTime: '2026-04-08T12:00:05.000Z',
+        txSignature: null,
+      },
+      {
+        // Different trace — must NOT appear.
         agentId: agent.id,
         traceId: 'ffffffffffffffffffffffffffffffff',
         spanId: 'ffffffffffffffff',
@@ -219,13 +241,27 @@ describe('GET /api/transactions/:signature', () => {
       headers: { Authorization: BEARER },
     });
     const body = (await res.json()) as {
-      reasoningLogs: Array<{ spanName: string; txSignature: string | null }>;
+      reasoningLogs: Array<{
+        spanName: string;
+        parentSpanId: string | null;
+        txSignature: string | null;
+      }>;
     };
-    expect(body.reasoningLogs).toHaveLength(3);
-    expect(body.reasoningLogs.map((l) => l.spanName)).toEqual(['first', 'second', 'third']);
-    for (const log of body.reasoningLogs) {
-      expect(log.txSignature).toBe(SIG_A);
-    }
+    expect(body.reasoningLogs).toHaveLength(5);
+    expect(body.reasoningLogs.map((l) => l.spanName)).toEqual([
+      'agent.plan',
+      'agent.evaluate',
+      'agent.execute',
+      'solana.sendTx',
+      'agent.log',
+    ]);
+    // Only one span carries the txSignature; others are null
+    const withSig = body.reasoningLogs.filter((l) => l.txSignature !== null);
+    expect(withSig).toHaveLength(1);
+    expect(withSig[0]?.spanName).toBe('agent.execute');
+    // Parent-child structure preserved
+    expect(body.reasoningLogs[1]?.parentSpanId).toBe('0000000000000001');
+    expect(body.reasoningLogs[3]?.parentSpanId).toBe('0000000000000003');
   });
 
   it('distinguishes transactions by signature across multiple agents', async () => {

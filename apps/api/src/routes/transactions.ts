@@ -21,7 +21,7 @@
 
 import { type Database, agentTransactions, agents, reasoningLogs } from '@agentscope/db';
 import { zValidator } from '@hono/zod-validator';
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, eq, inArray } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
@@ -63,15 +63,24 @@ export function createTransactionsRouter(db: Database) {
         throw new HTTPException(404, { message: 'transaction not found' });
       }
 
-      // Reasoning logs are persisted with the correlated tx_signature
-      // by the OTLP receiver (task 4.5). For txs without an attached
-      // trace we return an empty array — never null — so the shape is
-      // stable for the dashboard timeline.
-      const logs = await db
-        .select()
+      // Full span tree (4.7): find all trace IDs that have at least one
+      // span correlated to this signature, then return every span in
+      // those traces. This gives the dashboard the complete reasoning
+      // context — not just the span that triggered the transaction.
+      const correlated = await db
+        .selectDistinct({ traceId: reasoningLogs.traceId })
         .from(reasoningLogs)
-        .where(eq(reasoningLogs.txSignature, signature))
-        .orderBy(asc(reasoningLogs.startTime));
+        .where(eq(reasoningLogs.txSignature, signature));
+
+      const traceIds = correlated.map((r) => r.traceId);
+      const logs =
+        traceIds.length > 0
+          ? await db
+              .select()
+              .from(reasoningLogs)
+              .where(inArray(reasoningLogs.traceId, traceIds))
+              .orderBy(asc(reasoningLogs.startTime))
+          : [];
 
       return c.json({ transaction: joined.transaction, reasoningLogs: logs });
     },
