@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
+import { useStream } from '@/lib/use-stream';
 import { useQuery } from '@tanstack/react-query';
 import { Activity, AlertTriangle, ArrowLeft, Clock, DollarSign } from 'lucide-react';
 import { useState } from 'react';
@@ -57,6 +58,9 @@ export function AgentDetailPage() {
   const { id } = useParams<{ id: string }>();
 
   const [selectedTx, setSelectedTx] = useState<string | null>(null);
+
+  // Subscribe to SSE for real-time updates (6.16+6.17)
+  useStream(id);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['agent', id],
