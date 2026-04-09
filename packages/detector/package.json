@@ -16,8 +16,8 @@
     "build": "tsc -p tsconfig.json",
     "lint": "biome check .",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "echo 'placeholder test (real detector tests in 5.3+)'",
-    "test:watch": "echo 'placeholder'",
+    "test": "vitest run",
+    "test:watch": "vitest watch",
     "clean": "rm -rf dist .turbo"
   }
 }

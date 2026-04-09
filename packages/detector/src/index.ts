@@ -14,3 +14,6 @@ export type {
   TxRuleDef,
   TxSnapshot,
 } from './types';
+
+export type { EvalLogger } from './evaluate';
+export { evaluateCron, evaluateTx } from './evaluate';
