@@ -6,8 +6,8 @@ export function App() {
       <Route
         path="*"
         element={
-          <main style={{ display: 'grid', placeItems: 'center', minHeight: '100vh' }}>
-            <h1>AgentScope</h1>
+          <main className="grid min-h-screen place-items-center">
+            <h1 className="text-4xl font-bold">AgentScope</h1>
           </main>
         }
       />
