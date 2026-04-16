@@ -301,29 +301,29 @@
 **Мета:** ElizaOS plugin (auto-instrumentation) + Solana Agent Kit helper, quickstart ≤5 хв.
 
 ### ElizaOS plugin
-- [ ] **7.1** `packages/elizaos-plugin`: peer deps `@elizaos/core`, dev `@opentelemetry/sdk-node` ⏱ 20m
+- [x] **7.1** `packages/elizaos-plugin`: peer deps `@elizaos/core`, dev `@opentelemetry/sdk-node` ⏱ 20m
   ✅ Install OK
-- [ ] **7.2** `src/otel-exporter.ts` — OTLP HTTP exporter з env-driven endpoint + agent token ⏱ 45m → 7.1, 4.3
+- [x] **7.2** `src/otel-exporter.ts` — OTLP HTTP exporter з env-driven endpoint + agent token ⏱ 45m → 7.1, 4.3
   ✅ Unit: експортер шле POST на /v1/traces
-- [ ] **7.3** `src/action-hooks.ts` — обертання ElizaOS action handlers у span (context propagation, prompt + output у attributes) ⏱ 90m → 7.2
+- [x] **7.3** `src/action-hooks.ts` — обертання ElizaOS action handlers у span (context propagation, prompt + output у attributes) ⏱ 90m → 7.2
   ✅ Тест: викликати action → span у експортера
-- [ ] **7.4** `src/index.ts` — public Plugin export, auto-init у `setup()` ⏱ 30m → 7.3
+- [x] **7.4** `src/index.ts` — public Plugin export, auto-init у `setup()` ⏱ 30m → 7.3
   ✅ Імпорт `@agentscope/elizaos-plugin` як plugin працює
-- [ ] **7.5** Інтеграційний тест з фейковим ElizaOS runtime → перевірка spans у тестовому receiver ⏱ 60m → 7.4
+- [x] **7.5** Інтеграційний тест з фейковим ElizaOS runtime → перевірка spans у тестовому receiver ⏱ 60m → 7.4
   ✅ Зелений
 
 ### Agent Kit SDK
-- [ ] **7.6** `packages/agent-kit-sdk`: peer dep `solana-agent-kit` ⏱ 15m
+- [x] **7.6** `packages/agent-kit-sdk`: peer dep `solana-agent-kit` ⏱ 15m
   ✅ Install OK
-- [ ] **7.7** `src/otel-setup.ts` — `initAgentScope({apiUrl, agentToken})` — глобальна OTel setup для Node ⏱ 45m → 7.6, 7.2
+- [x] **7.7** `src/otel-setup.ts` — `initAgentScope({apiUrl, agentToken})` — глобальна OTel setup для Node ⏱ 45m → 7.6, 7.2
   ✅ Виклик інжектить tracer
-- [ ] **7.8** `src/trace-decorator.ts` — `@traced('action_name')` decorator або `traced(fn, name)` wrapper ⏱ 60m → 7.7
+- [x] **7.8** `src/trace-decorator.ts` — `@traced('action_name')` decorator або `traced(fn, name)` wrapper ⏱ 60m → 7.7
   ✅ Тест: traced(asyncFn) повертає той самий результат, але з span
-- [ ] **7.9** Приклад використання у `examples/agent-kit-trader.ts` ⏱ 30m → 7.8
+- [x] **7.9** Приклад використання у `examples/agent-kit-trader.ts` ⏱ 30m → 7.8
   ✅ Файл компілюється, можна запустити
 
 ### Quickstart docs
-- [ ] **7.10** `docs/QUICKSTART.md` — крок-за-кроком: register agent → install plugin → see tx ⏱ 60m → 7.5, 7.9
+- [x] **7.10** `docs/QUICKSTART.md` — крок-за-кроком: register agent → install plugin → see tx ⏱ 60m → 7.5, 7.9
   ✅ Користувач може пройти за 5 хв (тестово)
 
 **Гейт Кінець E7:** ✅ Один з SDK дає трейс у дашборд за ≤5 хв від cold start.
