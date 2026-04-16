@@ -8,11 +8,26 @@
   "exports": {
     ".": "./src/index.ts"
   },
+  "peerDependencies": {
+    "@elizaos/core": "*"
+  },
+  "peerDependenciesMeta": {
+    "@elizaos/core": {
+      "optional": true
+    }
+  },
+  "dependencies": {
+    "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.214.0",
+    "@opentelemetry/resources": "^2.6.1",
+    "@opentelemetry/sdk-node": "^0.214.0"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "lint": "biome check .",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "echo 'placeholder test (real plugin tests in 7.5)'",
+    "test": "vitest run",
+    "test:watch": "vitest watch",
     "clean": "rm -rf dist .turbo"
   }
 }
