@@ -9,7 +9,7 @@
 ## Install
 
 ```bash
-pnpm install
+
 ```
 
 ## Environment Variables
