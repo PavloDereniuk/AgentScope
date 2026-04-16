@@ -61,5 +61,6 @@ wallets/
 *.key
 .cache/
 
-# Markdown files
+# Markdown files (except README for GitHub)
 *.md
+!README.md
