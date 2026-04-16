@@ -492,6 +492,14 @@ pnpm build         # production build (all packages)
 
 ---
 
+## Development Process
+
+AgentScope was built solo for the [Colosseum Frontier AI track](https://arena.colosseum.org/frontier) using an agentic engineering workflow.
+
+The codebase was developed with **[Claude Code](https://claude.ai/code)** — Anthropic's AI coding agent — with every architectural decision, security pattern, and implementation detail continuously reviewed and validated by the author.
+
+---
+
 ## License
 
 MIT
