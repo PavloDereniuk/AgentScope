@@ -66,8 +66,9 @@ export const privyDidSchema = z
 
 export const isoTimestampSchema = z
   .string()
-  .datetime({ offset: false })
-  .transform((s) => s as unknown as ISOTimestamp);
+  // offset: true accepts both Z and +HH:MM suffixes; transform normalizes to UTC Z format.
+  .datetime({ offset: true })
+  .transform((s) => new Date(s).toISOString() as unknown as ISOTimestamp);
 
 // ─── Enum schemas ──────────────────────────────────────────────────────────
 

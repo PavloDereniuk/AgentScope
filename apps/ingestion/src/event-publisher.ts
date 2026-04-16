@@ -12,15 +12,23 @@ export function createEventPublisher(apiUrl: string, internalSecret: string, log
   const endpoint = `${apiUrl.replace(/\/$/, '')}/internal/publish`;
 
   return (event: { type: string; agentId: string; [key: string]: unknown }) => {
-    fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Internal-Secret': internalSecret,
-      },
-      body: JSON.stringify(event),
-    }).catch((err) => {
-      logger.warn({ err, eventType: event.type }, 'failed to publish SSE event');
-    });
+    void (async () => {
+      try {
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Internal-Secret': internalSecret,
+          },
+          body: JSON.stringify(event),
+          signal: AbortSignal.timeout(5_000),
+        });
+        if (!res.ok) {
+          logger.warn({ status: res.status, eventType: event.type }, 'SSE publish returned non-OK');
+        }
+      } catch (err) {
+        logger.warn({ err, eventType: event.type }, 'failed to publish SSE event');
+      }
+    })();
   };
 }

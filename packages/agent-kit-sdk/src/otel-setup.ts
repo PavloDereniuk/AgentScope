@@ -9,6 +9,21 @@ export interface AgentScopeConfig {
   agentToken: string;
 }
 
+/** Validate apiUrl to prevent SSRF via non-HTTP protocols. */
+function validateApiUrl(apiUrl: string): void {
+  let url: URL;
+  try {
+    url = new URL(apiUrl);
+  } catch {
+    throw new Error(`[agentscope] Invalid apiUrl "${apiUrl}": must be a valid URL`);
+  }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') {
+    throw new Error(
+      `[agentscope] Invalid apiUrl: protocol must be http or https, got ${url.protocol}`,
+    );
+  }
+}
+
 let _activeSdk: NodeSDK | undefined;
 
 /**
@@ -21,9 +36,12 @@ let _activeSdk: NodeSDK | undefined;
  * Returns the SDK so callers can await sdk.shutdown() on SIGTERM.
  */
 export function initAgentScope(config: AgentScopeConfig): NodeSDK {
+  validateApiUrl(config.apiUrl);
   if (_activeSdk) {
-    // Fire-and-forget: caller is intentionally replacing the SDK.
-    void _activeSdk.shutdown();
+    // Shut down previous SDK; log if it fails so lost spans are visible.
+    _activeSdk.shutdown().catch((err) => {
+      console.error('[agentscope] SDK shutdown failed during reinit:', err);
+    });
   }
   _activeSdk = new NodeSDK({
     resource: resourceFromAttributes({ 'agent.token': config.agentToken }),

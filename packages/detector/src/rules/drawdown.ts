@@ -41,6 +41,9 @@ export const drawdownRule: CronRuleDef = {
     const txCount = row?.txCount ?? 0;
     if (txCount === 0) return null;
 
+    // totalDelta is a SOL decimal string (e.g. "-0.250000000"). parseFloat is
+    // accurate for the sub-10-SOL ranges typical of MVP agents; for amounts
+    // approaching 9M SOL precision would degrade, which is not a practical concern.
     const totalDelta = Number.parseFloat(row?.totalDelta ?? '0');
     if (totalDelta >= 0) return null;
 

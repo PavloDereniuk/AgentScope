@@ -105,8 +105,19 @@ const discriminatorIndex = new Map<string, IndexedInstruction>();
 for (const ix of idl.instructions) {
   const flat = flattenAccounts(ix.accounts);
   const indexed: IndexedInstruction = { name: ix.name, flatAccounts: flat };
-  discriminatorIndex.set(anchorDiscriminator(ix.name), indexed);
-  discriminatorIndex.set(anchorDiscriminator(camelToSnake(ix.name)), indexed);
+  // Register both camelCase and snake_case discriminators. Using a Set prevents
+  // the camelCase and snake_case variants from clobbering each other when they
+  // hash to the same 8-byte prefix (shouldn't happen in practice but worth guarding).
+  const keys = new Set([anchorDiscriminator(ix.name), anchorDiscriminator(camelToSnake(ix.name))]);
+  for (const key of keys) {
+    const existing = discriminatorIndex.get(key);
+    if (existing && existing.name !== ix.name) {
+      console.warn(
+        `[kamino-parser] discriminator collision: key ${key} maps to both "${existing.name}" and "${ix.name}" — latter wins`,
+      );
+    }
+    discriminatorIndex.set(key, indexed);
+  }
 }
 
 // ─── Operation aliasing ───────────────────────────────────────────────────

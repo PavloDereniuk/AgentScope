@@ -50,6 +50,13 @@ export function useStream(agentId: string | undefined) {
           // ignore malformed messages
         }
       };
+
+      // Track definitively-closed connections so stale refs don't linger.
+      es.onerror = () => {
+        if (es.readyState === EventSource.CLOSED) {
+          esRef.current = null;
+        }
+      };
     });
 
     return () => {

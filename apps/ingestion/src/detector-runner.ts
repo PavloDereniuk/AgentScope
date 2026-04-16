@@ -84,8 +84,9 @@ export async function runTxDetector(
     .returning({ id: alerts.id, triggeredAt: alerts.triggeredAt });
 
   // Publish alert.new events for SSE (6.15).
-  // Correlate by index — indexOf() would always return -1 on Drizzle
-  // result objects since each is a new reference from the DB driver.
+  // Correlate by index: PostgreSQL's INSERT ... RETURNING preserves the VALUES
+  // insertion order, so inserted[i] matches results[i]. indexOf() cannot be used
+  // because Drizzle result objects are new references with no value equality.
   for (let i = 0; i < inserted.length; i++) {
     const row = inserted[i];
     const result = results[i];

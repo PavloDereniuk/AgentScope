@@ -53,6 +53,8 @@ export function formatTelegramMessage(msg: AlertMessage): string {
 }
 
 const MAX_RETRIES = 3;
+/** Cap how long we honour Telegram's retry_after to avoid blocking indefinitely. */
+const MAX_RETRY_AFTER_SEC = 60;
 
 /**
  * Create a Telegram sender. The returned `send` function posts to the
@@ -83,7 +85,7 @@ export function createTelegramSender(config: TelegramConfig) {
             const body = (await res.json().catch(() => null)) as {
               parameters?: { retry_after?: number };
             } | null;
-            const waitSec = body?.parameters?.retry_after ?? 5;
+            const waitSec = Math.min(body?.parameters?.retry_after ?? 5, MAX_RETRY_AFTER_SEC);
             await new Promise((r) => setTimeout(r, waitSec * 1000));
             continue;
           }

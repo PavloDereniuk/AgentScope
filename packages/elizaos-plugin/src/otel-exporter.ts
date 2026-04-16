@@ -9,12 +9,28 @@ export interface AgentScopeConfig {
   agentToken: string;
 }
 
+/** Validate apiUrl to prevent SSRF via non-HTTP protocols. */
+function validateApiUrl(apiUrl: string): void {
+  let url: URL;
+  try {
+    url = new URL(apiUrl);
+  } catch {
+    throw new Error(`[agentscope] Invalid apiUrl "${apiUrl}": must be a valid URL`);
+  }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') {
+    throw new Error(
+      `[agentscope] Invalid apiUrl: protocol must be http or https, got ${url.protocol}`,
+    );
+  }
+}
+
 /**
  * Creates (but does not start) a configured NodeSDK that exports OTLP traces
  * to AgentScope. The agent identity is passed via Resource attribute `agent.token`
  * — the AgentScope receiver extracts it from resourceSpans[0].resource.attributes.
  */
 export function createSdk(config: AgentScopeConfig): NodeSDK {
+  validateApiUrl(config.apiUrl);
   return new NodeSDK({
     resource: resourceFromAttributes({ 'agent.token': config.agentToken }),
     traceExporter: new OTLPTraceExporter({

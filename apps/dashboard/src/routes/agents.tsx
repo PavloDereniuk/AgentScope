@@ -59,8 +59,8 @@ function AddAgentDialog() {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
     mutation.mutate({
-      name: fd.get('name') as string,
-      walletPubkey: fd.get('walletPubkey') as string,
+      name: (fd.get('name') as string).trim(),
+      walletPubkey: (fd.get('walletPubkey') as string).trim(),
       framework: fd.get('framework') as string,
       agentType: fd.get('agentType') as string,
     });

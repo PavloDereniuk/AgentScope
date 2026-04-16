@@ -52,6 +52,8 @@ export type Database = ReturnType<typeof createDb>;
  * @param tx     Drizzle transaction (NOT the top-level db client).
  * @param userId UUID string of the authenticated user, or null to clear.
  */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export async function setRequestUserId(
   tx: { execute: (q: ReturnType<typeof sql>) => Promise<unknown> },
   userId: string | null,
@@ -59,6 +61,9 @@ export async function setRequestUserId(
   if (userId === null) {
     await tx.execute(sql`SET LOCAL app.user_id = ''`);
     return;
+  }
+  if (!UUID_RE.test(userId)) {
+    throw new Error(`setRequestUserId: invalid UUID format: "${userId}"`);
   }
   await tx.execute(sql`SET LOCAL app.user_id = ${userId}`);
 }

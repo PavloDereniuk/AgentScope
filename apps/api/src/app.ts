@@ -9,6 +9,7 @@
  * different flavor of the app, it creates one via `buildApp`.
  */
 
+import { timingSafeEqual } from 'node:crypto';
 import type { Database } from '@agentscope/db';
 import { zValidator } from '@hono/zod-validator';
 import { Hono } from 'hono';
@@ -75,7 +76,14 @@ export function buildApp(deps: AppDeps) {
     }),
     async (c) => {
       const secret = c.req.header('X-Internal-Secret');
-      if (!deps.internalSecret || !secret || secret !== deps.internalSecret) {
+      const expected = deps.internalSecret;
+      if (!expected || !secret) {
+        throw new HTTPException(401, { message: 'unauthorized' });
+      }
+      // Timing-safe comparison prevents secret enumeration via response-time differences.
+      const secretBuf = Buffer.from(secret);
+      const expectedBuf = Buffer.from(expected);
+      if (secretBuf.length !== expectedBuf.length || !timingSafeEqual(secretBuf, expectedBuf)) {
         throw new HTTPException(401, { message: 'unauthorized' });
       }
       deps.sseBus.publish(c.req.valid('json'));

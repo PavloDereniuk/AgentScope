@@ -62,8 +62,11 @@ export function nanoToTimestamp(nanos: string): string {
   } catch {
     throw new Error(`invalid nanosecond timestamp: ${nanos}`);
   }
-  const ms = Number(big / 1_000_000n);
-  return new Date(ms).toISOString();
+  const ms = big / 1_000_000n;
+  if (ms > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new Error(`nanosecond timestamp too large to convert safely: ${nanos}`);
+  }
+  return new Date(Number(ms)).toISOString();
 }
 
 /** Span attribute key for on-chain transaction correlation (4.5). */

@@ -50,11 +50,18 @@ function pickPrimaryInstruction(parsed: ParsedTx) {
  * Returns the inserted row's id, or null if no registered wallet matched.
  */
 export async function persistTx(ctx: PersistContext, tx: TxUpdate): Promise<number | null> {
-  const matchedWallet = tx.rawAccountKeys.find((k) => ctx.registry.lookup(k) !== undefined);
-  if (!matchedWallet) return null;
-
-  const agentId = ctx.registry.lookup(matchedWallet);
-  if (!agentId) return null;
+  // Resolve wallet and agentId in a single lookup to avoid a race between
+  // two separate registry.lookup() calls if the cache refreshes in between.
+  let agentId: string | undefined;
+  const matchedWallet = tx.rawAccountKeys.find((k) => {
+    const id = ctx.registry.lookup(k);
+    if (id !== undefined) {
+      agentId = id;
+      return true;
+    }
+    return false;
+  });
+  if (!matchedWallet || !agentId) return null;
 
   // Parse if we have the raw tx; otherwise insert minimal row.
   let parsed: ParsedTx | null = null;

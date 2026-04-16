@@ -236,6 +236,8 @@ function findInputOutputMints(
   }
 
   if (!inputMint || !outputMint) return null;
+  // Degenerate case: a "swap" where input and output are the same mint is nonsensical.
+  if (inputMint === outputMint) return null;
   return { inputMint, outputMint };
 }
 

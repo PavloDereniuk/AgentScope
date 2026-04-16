@@ -37,7 +37,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     init.body = JSON.stringify(body);
   }
 
-  const res = await fetch(path, init);
+  const res = await fetch(path, { ...init, signal: AbortSignal.timeout(30_000) });
 
   if (res.status === 204) {
     return undefined as T;

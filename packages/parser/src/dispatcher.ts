@@ -323,7 +323,7 @@ export function parseTransaction(input: ParseInput): ParsedTx {
     instructions,
     solDelta,
     tokenDeltas,
-    feeLamports: Number(input.transaction.meta?.fee ?? 0),
+    feeLamports: input.transaction.meta?.fee ?? 0,
     success: input.transaction.meta?.err === null,
     rawLogs: input.transaction.meta?.logMessages ?? [],
   } as const satisfies ParsedTx & { blockTime: ISOTimestamp };

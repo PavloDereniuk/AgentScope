@@ -65,10 +65,17 @@ async function main(): Promise<void> {
   await stream.reconcileWallets(registry.wallets());
   logger.info({ registeredAgents: registry.size() }, 'subscribed to logs for registered wallets');
 
+  let reconciling = false;
   const reconcileTimer = setInterval(() => {
+    // Guard against overlapping calls if reconcileWallets takes > 30s.
+    if (reconciling) return;
+    reconciling = true;
     stream
       .reconcileWallets(registry.wallets())
-      .catch((err) => logger.error({ err }, 'wallet reconcile failed'));
+      .catch((err) => logger.error({ err }, 'wallet reconcile failed'))
+      .finally(() => {
+        reconciling = false;
+      });
   }, 30_000);
 
   // Graceful shutdown handlers.
@@ -76,8 +83,10 @@ async function main(): Promise<void> {
     logger.info({ signal }, 'shutting down');
     clearInterval(reconcileTimer);
     registry.stop();
-    void stream.close();
-    setTimeout(() => process.exit(0), 100);
+    stream
+      .close()
+      .catch((err) => logger.error({ err }, 'stream close failed'))
+      .finally(() => process.exit(0));
   };
   process.on('SIGINT', () => shutdown('SIGINT'));
   process.on('SIGTERM', () => shutdown('SIGTERM'));

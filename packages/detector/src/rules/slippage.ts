@@ -21,8 +21,9 @@ export const slippageRule: TxRuleDef = {
   async evaluate(ctx): Promise<RuleResult | null> {
     const { transaction, agent, defaults } = ctx;
 
-    // Only applies to Jupiter swap instructions.
-    if (!transaction.instructionName?.startsWith('jupiter.')) return null;
+    // Only applies to the canonical Jupiter swap instruction.
+    // Matching the exact name avoids false positives on jupiter.unknown (unrecognised discriminators).
+    if (transaction.instructionName !== 'jupiter.swap') return null;
 
     const args = transaction.parsedArgs;
     if (!args || typeof args.slippageBps !== 'number') return null;

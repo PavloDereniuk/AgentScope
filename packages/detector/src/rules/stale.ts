@@ -47,7 +47,9 @@ export const staleRule: CronRuleDef = {
         inactiveMinutes,
         thresholdMinutes,
       },
-      dedupeKey: `stale:${agent.id}:${Math.floor(now.getTime() / (thresholdMinutes * 60_000))}`,
+      // Dedupe window is capped at max(threshold, 60min) to prevent alert spam
+      // when short thresholds (e.g. 5min) would otherwise generate one alert per window.
+      dedupeKey: `stale:${agent.id}:${Math.floor(now.getTime() / (Math.max(thresholdMinutes, 60) * 60_000))}`,
     };
   },
 };
