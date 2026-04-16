@@ -72,6 +72,15 @@ export function nanoToTimestamp(nanos: string): string {
 /** Span attribute key for on-chain transaction correlation (4.5). */
 export const TX_SIGNATURE_KEY = 'solana.tx.signature';
 
+/**
+ * Base58 Solana signature guard. Real ed25519 signatures are 64 bytes
+ * → 86-88 base58 chars, but test fixtures and edge cases (leading zero
+ * bytes) can encode shorter. 32-88 covers all valid encodings while
+ * rejecting empty strings, spaces, and non-base58 content (SQL, paths,
+ * UUIDs with dashes, etc.).
+ */
+const SOLANA_SIG_RE = /^[1-9A-HJ-NP-Za-km-z]{32,88}$/;
+
 // ── persist ──────────────────────────────────────────────────────────────────
 
 export interface PersistSpansOptions {
@@ -96,7 +105,21 @@ export async function persistSpans({ db, body, agentId }: PersistSpansOptions): 
         if (span.status?.code !== undefined) attrs['otel.status_code'] = span.status.code;
         if (span.status?.message !== undefined) attrs['otel.status_message'] = span.status.message;
 
-        const txSig = typeof attrs[TX_SIGNATURE_KEY] === 'string' ? attrs[TX_SIGNATURE_KEY] : null;
+        const rawSig = typeof attrs[TX_SIGNATURE_KEY] === 'string' ? attrs[TX_SIGNATURE_KEY] : null;
+        // Validate format before persisting — the attribute is agent-controlled
+        // and an arbitrary string would corrupt tx-correlation queries.
+        const txSig = rawSig !== null && SOLANA_SIG_RE.test(rawSig) ? rawSig : null;
+
+        let startTime: string;
+        let endTime: string;
+        try {
+          startTime = nanoToTimestamp(span.startTimeUnixNano);
+          endTime = nanoToTimestamp(span.endTimeUnixNano);
+        } catch {
+          // Skip individual spans with malformed timestamps rather than
+          // failing the entire batch (which could be triggered by any agent).
+          continue;
+        }
 
         rows.push({
           agentId,
@@ -104,8 +127,8 @@ export async function persistSpans({ db, body, agentId }: PersistSpansOptions): 
           spanId: span.spanId,
           parentSpanId: span.parentSpanId ?? null,
           spanName: span.name,
-          startTime: nanoToTimestamp(span.startTimeUnixNano),
-          endTime: nanoToTimestamp(span.endTimeUnixNano),
+          startTime,
+          endTime,
           attributes: attrs,
           txSignature: txSig,
         });

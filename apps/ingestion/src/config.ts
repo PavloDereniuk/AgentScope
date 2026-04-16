@@ -26,6 +26,12 @@ const envSchema = z.object({
   API_INTERNAL_URL: z.string().url().optional(),
   /** Shared secret for /internal/* endpoints — must match API's INTERNAL_SECRET. */
   INTERNAL_SECRET: z.string().min(32).optional(),
+
+  // ── Alerter (Telegram) ─────────────────────────────────────────────────────
+  /** Telegram bot token (BotFather). Required to deliver alerts via Telegram. */
+  TELEGRAM_BOT_TOKEN: z.string().min(1).optional(),
+  /** Telegram chat ID to send alerts to (user, group, or channel). */
+  TELEGRAM_CHAT_ID: z.string().min(1).optional(),
 });
 
 export type Config = z.infer<typeof envSchema>;

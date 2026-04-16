@@ -81,16 +81,18 @@ export async function runTxDetector(
         dedupeKey: r.dedupeKey ?? null,
       })),
     )
-    .returning({ id: alerts.id, triggeredAt: alerts.triggeredAt });
+    // Include dedupeKey in RETURNING so we can correlate inserted rows back to
+    // their RuleResult by key instead of relying on array-index order (which is
+    // not guaranteed to be stable if onConflictDoNothing ever skips rows).
+    .returning({ id: alerts.id, triggeredAt: alerts.triggeredAt, dedupeKey: alerts.dedupeKey });
+
+  // Build a lookup map: dedupeKey → inserted row (null key falls back to index).
+  const insertedByKey = new Map(inserted.map((row) => [row.dedupeKey, row]));
 
   // Publish alert.new events for SSE (6.15).
-  // Correlate by index: PostgreSQL's INSERT ... RETURNING preserves the VALUES
-  // insertion order, so inserted[i] matches results[i]. indexOf() cannot be used
-  // because Drizzle result objects are new references with no value equality.
-  for (let i = 0; i < inserted.length; i++) {
-    const row = inserted[i];
-    const result = results[i];
-    if (!row || !result) continue;
+  for (const result of results) {
+    const row = insertedByKey.get(result.dedupeKey ?? null);
+    if (!row) continue;
     deps.publishEvent?.({
       type: 'alert.new',
       agentId,
@@ -103,10 +105,9 @@ export async function runTxDetector(
   // Deliver alerts via configured channels (5.14).
   if (deps.alerter) {
     const { deliver } = await import('@agentscope/alerter');
-    for (let i = 0; i < inserted.length; i++) {
-      const row = inserted[i];
-      const result = results[i];
-      if (!row || !result) continue;
+    for (const result of results) {
+      const row = insertedByKey.get(result.dedupeKey ?? null);
+      if (!row) continue;
 
       const msg: AlertMessage = {
         id: row.id,

@@ -57,7 +57,10 @@ const JUPITER_V6_PROGRAM_ID = (idl.address ??
  */
 interface VariantLayout {
   startOffset?: number;
-  endOffset?: 'tail19' | 'tail20';
+  // Only 'tail19' is implemented (last 19 bytes = 8 + 8 + 2 + 1).
+  // If a future variant needs a different tail size, add it here and
+  // implement the corresponding branch in readFixedFields.
+  endOffset?: 'tail19';
   exactOut: boolean;
 }
 
@@ -144,7 +147,8 @@ function readFixedFields(data: Uint8Array, layout: VariantLayout): FixedFields |
     slippageOff = layout.startOffset + 16;
   } else {
     // v1: tail layout — [...vec... | amountA | amountB | slippage | platform_fee_bps]
-    // Last 19 bytes = 8 + 8 + 2 + 1
+    // Last 19 bytes = 8 + 8 + 2 + 1. Guard against malformed/truncated data.
+    if (data.length < 19) return null;
     amountAOff = data.length - 19;
     amountBOff = data.length - 11;
     slippageOff = data.length - 3;

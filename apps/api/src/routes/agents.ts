@@ -103,12 +103,27 @@ export function createAgentsRouter(db: Database, sseBus: SseBus) {
   );
 
   // 3.6 — List all agents owned by the authenticated user, newest first.
+  // ingestToken is intentionally omitted — it is only needed when
+  // configuring the OTel exporter, not for the list view.
   router.get('/', async (c) => {
     const privyDid = c.get('userId');
     const user = await ensureUser(db, privyDid);
 
     const rows = await db
-      .select()
+      .select({
+        id: agents.id,
+        userId: agents.userId,
+        walletPubkey: agents.walletPubkey,
+        name: agents.name,
+        framework: agents.framework,
+        agentType: agents.agentType,
+        status: agents.status,
+        tags: agents.tags,
+        webhookUrl: agents.webhookUrl,
+        alertRules: agents.alertRules,
+        createdAt: agents.createdAt,
+        lastSeenAt: agents.lastSeenAt,
+      })
       .from(agents)
       .where(eq(agents.userId, user.id))
       .orderBy(desc(agents.createdAt))

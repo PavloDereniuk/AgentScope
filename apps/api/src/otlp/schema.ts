@@ -182,7 +182,9 @@ const spanSchema = z
 const scopeSpansSchema = z
   .object({
     scope: instrumentationScopeSchema.optional(),
-    spans: z.array(spanSchema).optional(),
+    // Cap per-scope span count to prevent a single large scope from causing OOM
+    // before chunked insertion kicks in.
+    spans: z.array(spanSchema).max(1000).optional(),
     schemaUrl: z.string().optional(),
   })
   .strict();
@@ -198,10 +200,15 @@ const resourceSpansSchema = z
 /**
  * Top-level body of `POST /v1/traces`. All fields are optional per
  * proto3 semantics; an empty object `{}` is a valid (no-op) request.
+ *
+ * Hard caps on array lengths prevent a single malformed/malicious batch
+ * from assembling an unbounded `rows[]` array in memory before chunking.
+ * With max 100 resourceSpans × max 1000 spans each = 100 000 spans max,
+ * well within the 500-row chunker's capacity.
  */
 export const exportTraceServiceRequestSchema = z
   .object({
-    resourceSpans: z.array(resourceSpansSchema).optional(),
+    resourceSpans: z.array(resourceSpansSchema).max(100).optional(),
   })
   .strict();
 

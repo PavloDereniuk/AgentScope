@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { getAccessToken } from './api-client';
 
 interface StreamEvent {
@@ -13,56 +13,76 @@ interface StreamEvent {
  * alert.new event arrives, the relevant react-query cache is
  * invalidated so the UI refreshes automatically.
  *
- * Auth: EventSource cannot send custom headers, so the Privy token is
- * passed as a ?token= query param and validated by requireAuth on the
- * server side.
+ * Auth: Uses fetch-based streaming so the Privy token is sent via an
+ * `Authorization: Bearer` header rather than a URL query param.
+ * EventSource was replaced because it cannot set custom headers, which
+ * forced the token into the URL where it would appear in access logs,
+ * browser history, and HTTP Referer headers.
  */
 export function useStream(agentId: string | undefined) {
   const queryClient = useQueryClient();
-  const esRef = useRef<EventSource | null>(null);
 
   useEffect(() => {
     if (!agentId) return;
 
-    let cancelled = false;
+    const controller = new AbortController();
 
-    void getAccessToken().then((token) => {
-      if (cancelled) return;
+    void (async () => {
+      const token = await getAccessToken();
+      if (controller.signal.aborted) return;
 
-      const url = token
-        ? `/api/agents/${agentId}/stream?token=${encodeURIComponent(token)}`
-        : `/api/agents/${agentId}/stream`;
+      const headers: Record<string, string> = { Accept: 'text/event-stream' };
+      if (token) headers.Authorization = `Bearer ${token}`;
 
-      const es = new EventSource(url);
-      esRef.current = es;
+      let response: Response;
+      try {
+        response = await fetch(`/api/agents/${agentId}/stream`, {
+          headers,
+          signal: controller.signal,
+        });
+      } catch {
+        // Aborted on unmount or network error — nothing to do.
+        return;
+      }
 
-      es.onmessage = (e) => {
-        try {
-          const event = JSON.parse(e.data) as StreamEvent;
-          if (event.type === 'tx.new') {
-            queryClient.invalidateQueries({ queryKey: ['agent', agentId] });
-            queryClient.invalidateQueries({ queryKey: ['agent-tx', agentId] });
-          } else if (event.type === 'alert.new') {
-            queryClient.invalidateQueries({ queryKey: ['agent', agentId] });
-            queryClient.invalidateQueries({ queryKey: ['alerts'] });
+      if (!response.ok || !response.body) return;
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      try {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done || controller.signal.aborted) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() ?? '';
+
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue;
+            try {
+              const event = JSON.parse(line.slice(6)) as StreamEvent;
+              if (event.type === 'tx.new') {
+                queryClient.invalidateQueries({ queryKey: ['agent', agentId] });
+                queryClient.invalidateQueries({ queryKey: ['agent-tx', agentId] });
+              } else if (event.type === 'alert.new') {
+                queryClient.invalidateQueries({ queryKey: ['agent', agentId] });
+                queryClient.invalidateQueries({ queryKey: ['alerts'] });
+              }
+            } catch {
+              // ignore malformed messages
+            }
           }
-        } catch {
-          // ignore malformed messages
         }
-      };
-
-      // Track definitively-closed connections so stale refs don't linger.
-      es.onerror = () => {
-        if (es.readyState === EventSource.CLOSED) {
-          esRef.current = null;
-        }
-      };
-    });
+      } finally {
+        reader.releaseLock();
+      }
+    })();
 
     return () => {
-      cancelled = true;
-      esRef.current?.close();
-      esRef.current = null;
+      controller.abort();
     };
   }, [agentId, queryClient]);
 }

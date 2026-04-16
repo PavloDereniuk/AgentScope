@@ -18,7 +18,8 @@ interface AgentDetail {
   framework: string;
   agentType: string;
   status: string;
-  ingestToken: string;
+  // ingestToken intentionally omitted — returned only by GET /api/agents/:id
+  // (settings page) and should not sit in the detail page's React Query cache.
   tags: string[];
   createdAt: string;
   updatedAt: string;
@@ -95,7 +96,12 @@ export function AgentDetailPage() {
   const { agent, recentTxCount, lastAlert } = data;
   const transactions = txData?.transactions ?? [];
 
-  const totalSolSpent = transactions.reduce((sum, tx) => sum + Number(tx.solDelta), 0);
+  const totalSolSpent = transactions.reduce((sum, tx) => {
+    const delta = Number(tx.solDelta);
+    // Guard against null/empty solDelta producing NaN which would propagate
+    // through the entire reduce and render "NaN" on screen.
+    return Number.isFinite(delta) ? sum + delta : sum;
+  }, 0);
   const successRate =
     transactions.length > 0
       ? Math.round((transactions.filter((t) => t.success).length / transactions.length) * 100)

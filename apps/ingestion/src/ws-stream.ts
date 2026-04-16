@@ -72,7 +72,8 @@ export async function createWsStream(
    * need a follow-up RPC call to get program IDs and account keys.
    */
   async function handleLogs(logs: Logs, ctx: Context): Promise<void> {
-    if (logs.err) return; // skip failed tx
+    // Do NOT skip failed transactions — the error_rate detector rule needs them
+    // persisted with success=false. The parser reads tx.meta.err to set that flag.
 
     try {
       const tx = await connection.getTransaction(logs.signature, {
@@ -114,7 +115,8 @@ export async function createWsStream(
       handlers.onTransaction?.(update);
     } catch (err) {
       logger.error({ err, sig: logs.signature }, 'failed to hydrate tx from log');
-      handlers.onError?.(err as Error);
+      const error = err instanceof Error ? err : new Error(String(err));
+      handlers.onError?.(error);
     }
   }
 
@@ -123,7 +125,15 @@ export async function createWsStream(
       const existing = walletSubs.get(walletPubkey);
       if (existing !== undefined) return existing;
     }
-    const pk = new PublicKey(walletPubkey);
+    let pk: PublicKey;
+    try {
+      pk = new PublicKey(walletPubkey);
+    } catch {
+      // A malformed pubkey in the DB should not abort the entire reconcile
+      // loop — log and skip so the remaining wallets still get subscribed.
+      logger.error({ walletPubkey }, 'invalid wallet pubkey, skipping subscription');
+      throw new Error(`invalid pubkey: ${walletPubkey}`);
+    }
     const subId = connection.onLogs(
       pk,
       (logs, ctx) => {
@@ -160,10 +170,15 @@ export async function createWsStream(
       }
     }
 
-    // Subscribe new wallets.
+    // Subscribe new wallets — skip individual bad pubkeys without aborting
+    // the entire loop (a single malformed entry must not block the rest).
     for (const wallet of desired) {
       if (!current.has(wallet)) {
-        await subscribeWallet(wallet);
+        try {
+          await subscribeWallet(wallet);
+        } catch (err) {
+          logger.error({ err, wallet }, 'skipping wallet subscription due to error');
+        }
       }
     }
 

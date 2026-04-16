@@ -28,10 +28,18 @@ export const slippageRule: TxRuleDef = {
     const args = transaction.parsedArgs;
     if (!args || typeof args.slippageBps !== 'number') return null;
 
+    // A negative slippageBps value is a parser anomaly — skip rather than
+    // firing a false alert (negative slippage would trivially pass the check).
+    if (args.slippageBps < 0) return null;
+
     const actualPct = args.slippageBps / 100;
     const thresholdPct = agent.alertRules.slippagePctThreshold ?? defaults.slippagePct;
 
     if (actualPct <= thresholdPct) return null;
+
+    // A zero threshold means every swap looks critical (0 * 5 = 0). Guard
+    // explicitly so a misconfigured agent doesn't produce constant alerts.
+    if (thresholdPct <= 0) return null;
 
     const severity = actualPct >= thresholdPct * CRITICAL_MULTIPLIER ? 'critical' : 'warning';
 

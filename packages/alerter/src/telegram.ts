@@ -63,11 +63,15 @@ const MAX_RETRY_AFTER_SEC = 60;
  * retry_after field on 429 responses.
  */
 export function createTelegramSender(config: TelegramConfig) {
-  const url = `https://api.telegram.org/bot${config.botToken}/sendMessage`;
+  // URL is built inside `send` — storing it as a constant would embed the
+  // bot token in error messages and stack traces emitted by `fetch`.
+  const apiBase = 'https://api.telegram.org/bot';
 
   return {
     async send(msg: AlertMessage): Promise<DeliveryResult> {
       const text = formatTelegramMessage(msg);
+      // Build the URL per call so the token never leaks into a stored value.
+      const url = `${apiBase}${config.botToken}/sendMessage`;
 
       for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
         try {
@@ -87,6 +91,9 @@ export function createTelegramSender(config: TelegramConfig) {
             } | null;
             const waitSec = Math.min(body?.parameters?.retry_after ?? 5, MAX_RETRY_AFTER_SEC);
             await new Promise((r) => setTimeout(r, waitSec * 1000));
+            // Increment attempt so 429s count toward MAX_RETRIES and the loop
+            // cannot spin forever when Telegram throttles all requests.
+            attempt++;
             continue;
           }
 

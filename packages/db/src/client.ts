@@ -25,7 +25,8 @@ export interface DbConfig {
  * Disposing: call `await client.$client.end()` to close the pool.
  */
 export function createDb(config: DbConfig) {
-  const sql = postgres(config.connectionString, {
+  // Named pgClient to avoid shadowing the `sql` tag imported from drizzle-orm.
+  const pgClient = postgres(config.connectionString, {
     max: config.maxConnections ?? 10,
     idle_timeout: 20,
     connect_timeout: 10,
@@ -35,7 +36,9 @@ export function createDb(config: DbConfig) {
     },
   });
 
-  return drizzle(sql, { casing: 'snake_case' });
+  // drizzle-orm/postgres-js exposes `db.$client` automatically (the TClient
+  // generic param). No manual Object.assign needed — just return directly.
+  return drizzle(pgClient, { casing: 'snake_case' });
 }
 
 export type Database = ReturnType<typeof createDb>;

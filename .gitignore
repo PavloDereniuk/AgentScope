@@ -64,3 +64,6 @@ wallets/
 # Markdown files (except README for GitHub)
 *.md
 !README.md
+# Skill definitions and review artifacts are tracked
+!.claude/skills/**/*.md
+!output/md/code-review/fixes-history.md

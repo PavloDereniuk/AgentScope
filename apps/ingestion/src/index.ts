@@ -14,12 +14,26 @@
  *   5.14 — alerter delivery on detector trigger
  */
 
+import { createTelegramSender } from '@agentscope/alerter';
+import type { DefaultThresholds } from '@agentscope/detector';
 import { loadConfig } from './config';
+import { startCron } from './cron';
 import { getDb } from './db';
+import type { DetectorDeps } from './detector-runner';
+import { createEventPublisher } from './event-publisher';
 import { logger } from './logger';
 import { persistTx } from './persist';
 import { createWalletRegistry } from './registry';
 import { createWsStream } from './ws-stream';
+
+/** Sensible production defaults — agents may override per-rule via alertRules. */
+const DETECTOR_DEFAULTS: DefaultThresholds = {
+  slippagePct: 5,
+  gasMult: 3,
+  drawdownPct: 10,
+  errorRatePct: 20,
+  staleMinutes: 30,
+};
 
 async function main(): Promise<void> {
   const config = loadConfig();
@@ -36,6 +50,32 @@ async function main(): Promise<void> {
   const db = getDb(config);
   const registry = await createWalletRegistry(db, logger);
 
+  // Set up optional SSE event publisher (requires API_INTERNAL_URL + INTERNAL_SECRET).
+  const publishEvent =
+    config.API_INTERNAL_URL && config.INTERNAL_SECRET
+      ? createEventPublisher(config.API_INTERNAL_URL, config.INTERNAL_SECRET, logger)
+      : undefined;
+
+  // Set up optional Telegram alerter (requires TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID).
+  const telegramSender =
+    config.TELEGRAM_BOT_TOKEN && config.TELEGRAM_CHAT_ID
+      ? createTelegramSender({
+          botToken: config.TELEGRAM_BOT_TOKEN,
+          chatId: config.TELEGRAM_CHAT_ID,
+        })
+      : undefined;
+
+  // Detector deps shared between tx-triggered runner and periodic cron.
+  // Use conditional spread so optional properties are absent (not `undefined`)
+  // which is required by exactOptionalPropertyTypes.
+  const detectorDeps: DetectorDeps = {
+    db,
+    logger,
+    defaults: DETECTOR_DEFAULTS,
+    ...(telegramSender ? { alerter: { telegram: telegramSender } } : {}),
+    ...(publishEvent ? { publishEvent } : {}),
+  };
+
   let lastLoggedSlot = 0;
   const stream = await createWsStream(
     {
@@ -51,7 +91,16 @@ async function main(): Promise<void> {
       },
       onTransaction: (tx) => {
         // Fire-and-forget — persist errors are logged inside persistTx.
-        void persistTx({ db, registry, logger }, tx);
+        void persistTx(
+          {
+            db,
+            registry,
+            logger,
+            detector: detectorDeps,
+            ...(publishEvent ? { publishEvent } : {}),
+          },
+          tx,
+        );
       },
       onError: (err) => {
         logger.error({ err }, 'rpc stream error');
@@ -78,10 +127,15 @@ async function main(): Promise<void> {
       });
   }, 30_000);
 
+  // Start periodic cron for time-based rules (drawdown, error_rate, stale_agent).
+  const cron = startCron({ db, logger, defaults: DETECTOR_DEFAULTS });
+  logger.info('cron evaluator started');
+
   // Graceful shutdown handlers.
   const shutdown = (signal: string) => {
     logger.info({ signal }, 'shutting down');
     clearInterval(reconcileTimer);
+    cron.stop();
     registry.stop();
     stream
       .close()
