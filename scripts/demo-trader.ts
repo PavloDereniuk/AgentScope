@@ -1,19 +1,18 @@
 /**
- * 8.2 — Demo trader agent: Jupiter-style SOL/USDC swap loop.
+ * 9.4 — Demo trader agent: Jupiter-style SOL/USDC swap loop.
  *
- * On devnet Jupiter is unavailable, so we simulate the swap with a
- * SystemProgram.transfer (0.001 SOL to self).  The on-chain tx is real and
- * picked up by the ingestion service; the rich reasoning spans are sent to
- * AgentScope via OTel and appear in the reasoning tree.
+ * Simulates a trading agent with a SystemProgram.transfer (0.001 SOL to self).
+ * The on-chain tx is real and picked up by the ingestion service; reasoning
+ * spans are sent to AgentScope via OTel and appear in the reasoning tree.
  *
  * Prerequisites:
- *   pnpm --filter @agentscope/scripts setup-wallets
+ *   pnpm --filter @agentscope/scripts setup-wallets   (fund wallet ≥ 0.01 SOL)
  *   Register agent in dashboard → copy ingest token → set env vars
  *
  * Run: pnpm --filter @agentscope/scripts demo-trader
  *
  * Env vars required:
- *   SOLANA_RPC_URL            (default: devnet public)
+ *   SOLANA_RPC_URL            (default: mainnet-beta public RPC)
  *   AGENTSCOPE_API_URL        (default: http://localhost:3000)
  *   AGENTSCOPE_AGENT_TOKEN_TRADER
  */
@@ -29,7 +28,7 @@ import {
 import { readFileSync } from 'node:fs';
 import { initAgentScope, traced } from '@agentscope/agent-kit-sdk';
 
-const RPC_URL = process.env['SOLANA_RPC_URL'] ?? 'https://api.devnet.solana.com';
+const RPC_URL = process.env['SOLANA_RPC_URL'] ?? 'https://api.mainnet-beta.solana.com';
 const API_URL = process.env['AGENTSCOPE_API_URL'] ?? 'http://localhost:3000';
 const AGENT_TOKEN = process.env['AGENTSCOPE_AGENT_TOKEN_TRADER'] ?? '';
 const LOOP_INTERVAL_MS = Number(process.env['DEMO_INTERVAL_MS'] ?? '60000');
@@ -39,12 +38,24 @@ if (!AGENT_TOKEN) {
   process.exit(1);
 }
 
+const MIN_SOL_BALANCE = 0.005;
+
 const connection = new Connection(RPC_URL, 'confirmed');
 const secretKey = JSON.parse(readFileSync('../wallets/trader.keypair.json', 'utf-8')) as number[];
 const wallet = Keypair.fromSecretKey(Uint8Array.from(secretKey));
 
 console.info(`Trader wallet: ${wallet.publicKey.toBase58()}`);
 console.info(`AgentScope API: ${API_URL}`);
+
+const balance = await connection.getBalance(wallet.publicKey);
+const solBalance = balance / LAMPORTS_PER_SOL;
+if (solBalance < MIN_SOL_BALANCE) {
+  console.error(
+    `Insufficient balance: ${solBalance.toFixed(6)} SOL. Fund wallet with at least ${MIN_SOL_BALANCE} SOL before running.`,
+  );
+  process.exit(1);
+}
+console.info(`Balance: ${solBalance.toFixed(6)} SOL`);
 
 const sdk = initAgentScope({ apiUrl: API_URL, agentToken: AGENT_TOKEN });
 

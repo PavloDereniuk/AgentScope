@@ -13,7 +13,7 @@ const envSchema = z.object({
 
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
 
-  SOLANA_NETWORK: z.enum(['devnet', 'mainnet']).default('devnet'),
+  SOLANA_NETWORK: z.enum(['devnet', 'mainnet']).default('mainnet'),
   HELIUS_API_KEY: z.string().min(1, 'HELIUS_API_KEY is required'),
   /** HTTP JSON-RPC URL (Helius free tier). Used for getTransaction hydrate calls. */
   SOLANA_RPC_URL: z.string().url('SOLANA_RPC_URL must be a URL'),

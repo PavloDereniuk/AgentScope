@@ -1,13 +1,13 @@
 /**
- * 8.4 — Demo NFT-bot: Tensor-style NFT sniper (mock mode).
+ * 9.5 — Demo NFT-bot: Tensor-style NFT sniper (mock mode).
  *
  * Simulates an NFT sniping agent: scans floor prices, snipes undervalued
- * listings. On devnet, NFT purchases are mocked with SOL transfers.
+ * listings. NFT purchases are mocked with 0.001 SOL transfers to self.
  *
  * Run: pnpm --filter @agentscope/scripts demo-nft
  *
  * Env vars:
- *   SOLANA_RPC_URL
+ *   SOLANA_RPC_URL            (default: mainnet-beta public RPC)
  *   AGENTSCOPE_API_URL
  *   AGENTSCOPE_AGENT_TOKEN_NFT
  */
@@ -23,7 +23,7 @@ import {
 import { readFileSync } from 'node:fs';
 import { initAgentScope, traced } from '@agentscope/agent-kit-sdk';
 
-const RPC_URL = process.env['SOLANA_RPC_URL'] ?? 'https://api.devnet.solana.com';
+const RPC_URL = process.env['SOLANA_RPC_URL'] ?? 'https://api.mainnet-beta.solana.com';
 const API_URL = process.env['AGENTSCOPE_API_URL'] ?? 'http://localhost:3000';
 const AGENT_TOKEN = process.env['AGENTSCOPE_AGENT_TOKEN_NFT'] ?? '';
 const LOOP_INTERVAL_MS = Number(process.env['DEMO_INTERVAL_MS'] ?? '60000');
@@ -33,11 +33,23 @@ if (!AGENT_TOKEN) {
   process.exit(1);
 }
 
+const MIN_SOL_BALANCE = 0.005;
+
 const connection = new Connection(RPC_URL, 'confirmed');
 const secretKey = JSON.parse(readFileSync('../wallets/nft-bot.keypair.json', 'utf-8')) as number[];
 const wallet = Keypair.fromSecretKey(Uint8Array.from(secretKey));
 
 console.info(`NFT-bot wallet: ${wallet.publicKey.toBase58()}`);
+
+const balance = await connection.getBalance(wallet.publicKey);
+const solBalance = balance / LAMPORTS_PER_SOL;
+if (solBalance < MIN_SOL_BALANCE) {
+  console.error(
+    `Insufficient balance: ${solBalance.toFixed(6)} SOL. Fund wallet with at least ${MIN_SOL_BALANCE} SOL before running.`,
+  );
+  process.exit(1);
+}
+console.info(`Balance: ${solBalance.toFixed(6)} SOL`);
 
 const sdk = initAgentScope({ apiUrl: API_URL, agentToken: AGENT_TOKEN });
 

@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "setup-wallets": "tsx --env-file=../.env setup-devnet-wallets.ts",
+    "setup-wallets": "tsx --env-file=../.env setup-wallets.ts",
+    "setup-devnet-wallets": "tsx --env-file=../.env setup-devnet-wallets.ts",
     "demo-trader": "tsx --env-file=../.env demo-trader.ts",
     "demo-yield": "tsx --env-file=../.env demo-yield.ts",
     "demo-nft": "tsx --env-file=../.env demo-nft.ts",

@@ -1,11 +1,15 @@
 /**
- * 8.5 — Trigger anomaly: forces high-slippage reasoning + error spans to
+ * 9.6 — Trigger anomaly: forces high-slippage reasoning + error spans to
  * exercise the slippage and error-rate alert rules in the detector.
+ *
+ * Defaults to DEVNET to avoid spending real SOL on test transactions.
+ * Set ANOMALY_NETWORK=mainnet only if you want to test with real funds.
  *
  * Run: pnpm --filter @agentscope/scripts trigger-anomaly
  *
  * Env vars:
- *   SOLANA_RPC_URL
+ *   ANOMALY_NETWORK             (default: devnet — safe for testing)
+ *   SOLANA_RPC_URL              (overrides ANOMALY_NETWORK RPC if set)
  *   AGENTSCOPE_API_URL
  *   AGENTSCOPE_AGENT_TOKEN_TRADER   (reuses trader agent)
  */
@@ -21,7 +25,12 @@ import {
 import { readFileSync } from 'node:fs';
 import { initAgentScope, traced } from '@agentscope/agent-kit-sdk';
 
-const RPC_URL = process.env['SOLANA_RPC_URL'] ?? 'https://api.devnet.solana.com';
+const ANOMALY_NETWORK = process.env['ANOMALY_NETWORK'] ?? 'devnet';
+const DEFAULT_RPC =
+  ANOMALY_NETWORK === 'mainnet'
+    ? 'https://api.mainnet-beta.solana.com'
+    : 'https://api.devnet.solana.com';
+const RPC_URL = process.env['SOLANA_RPC_URL'] ?? DEFAULT_RPC;
 const API_URL = process.env['AGENTSCOPE_API_URL'] ?? 'http://localhost:3000';
 const AGENT_TOKEN = process.env['AGENTSCOPE_AGENT_TOKEN_TRADER'] ?? '';
 
@@ -36,7 +45,10 @@ const wallet = Keypair.fromSecretKey(Uint8Array.from(secretKey));
 
 const sdk = initAgentScope({ apiUrl: API_URL, agentToken: AGENT_TOKEN });
 
-console.info('Triggering anomaly scenario...');
+console.info(`Triggering anomaly scenario on ${ANOMALY_NETWORK}...`);
+if (ANOMALY_NETWORK === 'mainnet') {
+  console.warn('WARNING: running on mainnet — real SOL will be spent on tx fees');
+}
 
 // 1. High-slippage span (triggers slippage alert rule)
 await traced(

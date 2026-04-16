@@ -1,14 +1,14 @@
 /**
- * 8.3 — Demo yield-bot: Kamino-style deposit/withdraw loop.
+ * 9.5 — Demo yield-bot: Kamino-style deposit/withdraw loop.
  *
  * Simulates a yield optimization agent that evaluates APY and decides
  * whether to deposit or withdraw from a Kamino vault.
- * On devnet, actions are mocked with SOL transfers; reasoning is real OTel spans.
+ * Actions are mocked with 0.001 SOL transfers to self; reasoning is real OTel spans.
  *
  * Run: pnpm --filter @agentscope/scripts demo-yield
  *
  * Env vars:
- *   SOLANA_RPC_URL
+ *   SOLANA_RPC_URL            (default: mainnet-beta public RPC)
  *   AGENTSCOPE_API_URL
  *   AGENTSCOPE_AGENT_TOKEN_YIELD
  */
@@ -24,7 +24,7 @@ import {
 import { readFileSync } from 'node:fs';
 import { initAgentScope, traced } from '@agentscope/agent-kit-sdk';
 
-const RPC_URL = process.env['SOLANA_RPC_URL'] ?? 'https://api.devnet.solana.com';
+const RPC_URL = process.env['SOLANA_RPC_URL'] ?? 'https://api.mainnet-beta.solana.com';
 const API_URL = process.env['AGENTSCOPE_API_URL'] ?? 'http://localhost:3000';
 const AGENT_TOKEN = process.env['AGENTSCOPE_AGENT_TOKEN_YIELD'] ?? '';
 const LOOP_INTERVAL_MS = Number(process.env['DEMO_INTERVAL_MS'] ?? '60000');
@@ -34,11 +34,23 @@ if (!AGENT_TOKEN) {
   process.exit(1);
 }
 
+const MIN_SOL_BALANCE = 0.005;
+
 const connection = new Connection(RPC_URL, 'confirmed');
 const secretKey = JSON.parse(readFileSync('../wallets/yield-bot.keypair.json', 'utf-8')) as number[];
 const wallet = Keypair.fromSecretKey(Uint8Array.from(secretKey));
 
 console.info(`Yield-bot wallet: ${wallet.publicKey.toBase58()}`);
+
+const balance = await connection.getBalance(wallet.publicKey);
+const solBalance = balance / LAMPORTS_PER_SOL;
+if (solBalance < MIN_SOL_BALANCE) {
+  console.error(
+    `Insufficient balance: ${solBalance.toFixed(6)} SOL. Fund wallet with at least ${MIN_SOL_BALANCE} SOL before running.`,
+  );
+  process.exit(1);
+}
+console.info(`Balance: ${solBalance.toFixed(6)} SOL`);
 
 const sdk = initAgentScope({ apiUrl: API_URL, agentToken: AGENT_TOKEN });
 
