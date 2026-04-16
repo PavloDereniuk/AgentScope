@@ -3,7 +3,8 @@
 > **Datadog for Solana AI agents.**
 > Full-stack observability platform for on-chain AI agents — registry, transaction tracing, OpenTelemetry reasoning logs, rule-based anomaly detection, real-time dashboard, Telegram alerts.
 
-**Status:** Epics 1–8 complete (98%), Epic 9 (deploy + submission) in progress.
+**Repository:** [github.com/PavloDereniuk/AgentScope](https://github.com/PavloDereniuk/AgentScope)
+**Status:** Epics 1–9 complete (~98%), Epic 10 (deploy + submission) in progress.
 **Deadline:** 2026-05-11 — [Colosseum Frontier AI track](https://arena.colosseum.org/frontier)
 
 ---
@@ -424,7 +425,7 @@ PUBLIC_DASHBOARD_URL=https://...
 
 ```bash
 # Prerequisites: Node 24+, pnpm 9+
-git clone https://github.com/PavloDereniuk/agentscope
+git clone https://github.com/PavloDereniuk/AgentScope.git
 cd agentscope
 pnpm install
 cp .env.example .env   # fill in vars above
