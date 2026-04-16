@@ -8,11 +8,26 @@
   "exports": {
     ".": "./src/index.ts"
   },
+  "peerDependencies": {
+    "solana-agent-kit": "*"
+  },
+  "peerDependenciesMeta": {
+    "solana-agent-kit": {
+      "optional": true
+    }
+  },
+  "dependencies": {
+    "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.214.0",
+    "@opentelemetry/resources": "^2.6.1",
+    "@opentelemetry/sdk-node": "^0.214.0"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "lint": "biome check .",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "echo 'placeholder test (real SDK tests in 7.6+)'",
+    "test": "vitest run",
+    "test:watch": "vitest watch",
     "clean": "rm -rf dist .turbo"
   }
 }
