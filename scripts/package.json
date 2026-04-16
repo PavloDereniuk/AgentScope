@@ -1,0 +1,20 @@
+{
+  "name": "@agentscope/scripts",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "setup-wallets": "tsx --env-file=../.env setup-devnet-wallets.ts",
+    "demo-trader": "tsx --env-file=../.env demo-trader.ts",
+    "demo-yield": "tsx --env-file=../.env demo-yield.ts",
+    "demo-nft": "tsx --env-file=../.env demo-nft.ts",
+    "trigger-anomaly": "tsx --env-file=../.env trigger-anomaly.ts"
+  },
+  "dependencies": {
+    "@agentscope/agent-kit-sdk": "workspace:*",
+    "@solana/web3.js": "^1.98.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2"
+  }
+}
