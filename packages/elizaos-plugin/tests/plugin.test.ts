@@ -90,7 +90,8 @@ describe('elizaos-plugin — integration', () => {
   afterAll(async () => {
     await sdk.shutdown();
     await mock.close();
-    process.env.OTEL_BSP_SCHEDULE_DELAY = undefined;
+    // biome-ignore lint/performance/noDelete: removing env var requires delete
+    delete process.env.OTEL_BSP_SCHEDULE_DELAY;
   });
 
   beforeEach(() => {

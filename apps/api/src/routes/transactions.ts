@@ -67,10 +67,12 @@ export function createTransactionsRouter(db: Database) {
       // span correlated to this signature, then return every span in
       // those traces. This gives the dashboard the complete reasoning
       // context — not just the span that triggered the transaction.
+      // Limits prevent a DoS via unbounded IN (...) clauses.
       const correlated = await db
         .selectDistinct({ traceId: reasoningLogs.traceId })
         .from(reasoningLogs)
-        .where(eq(reasoningLogs.txSignature, signature));
+        .where(eq(reasoningLogs.txSignature, signature))
+        .limit(10);
 
       const traceIds = correlated.map((r) => r.traceId);
       const logs =
@@ -80,6 +82,7 @@ export function createTransactionsRouter(db: Database) {
               .from(reasoningLogs)
               .where(inArray(reasoningLogs.traceId, traceIds))
               .orderBy(asc(reasoningLogs.startTime))
+              .limit(500)
           : [];
 
       return c.json({ transaction: joined.transaction, reasoningLogs: logs });

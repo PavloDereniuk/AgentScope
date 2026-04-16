@@ -22,6 +22,10 @@ const envSchema = z.object({
   // Yellowstone gRPC (LaserStream) — paid on Helius. Optional, unused in MVP.
   YELLOWSTONE_GRPC_URL: z.string().url().optional(),
   YELLOWSTONE_GRPC_TOKEN: z.string().optional(),
+  /** URL of the API server for internal event publishing. */
+  API_INTERNAL_URL: z.string().url().optional(),
+  /** Shared secret for /internal/* endpoints — must match API's INTERNAL_SECRET. */
+  INTERNAL_SECRET: z.string().min(32).optional(),
 });
 
 export type Config = z.infer<typeof envSchema>;

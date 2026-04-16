@@ -17,6 +17,11 @@ export function setTokenGetter(fn: TokenGetter) {
   getToken = fn;
 }
 
+/** Get the current Privy access token. Used by non-fetch transports (e.g. EventSource). */
+export function getAccessToken(): Promise<string | null> {
+  return getToken();
+}
+
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',

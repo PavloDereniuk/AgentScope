@@ -56,16 +56,23 @@ export async function runCronCycle(deps: CronDeps): Promise<number> {
     );
 
     if (results.length > 0) {
-      await deps.db.insert(alerts).values(
-        results.map((r) => ({
-          agentId: agent.id,
-          ruleName: r.ruleName,
-          severity: r.severity,
-          payload: r.payload,
-          dedupeKey: r.dedupeKey ?? null,
-        })),
-      );
-      totalAlerts += results.length;
+      // onConflictDoNothing prevents alert storms: if the same dedupeKey
+      // fires on every 60s cycle (e.g. persistent drawdown), only the
+      // first insert goes through — subsequent cycles are no-ops.
+      const inserted = await deps.db
+        .insert(alerts)
+        .values(
+          results.map((r) => ({
+            agentId: agent.id,
+            ruleName: r.ruleName,
+            severity: r.severity,
+            payload: r.payload,
+            dedupeKey: r.dedupeKey ?? null,
+          })),
+        )
+        .onConflictDoNothing()
+        .returning({ id: alerts.id });
+      totalAlerts += inserted.length;
     }
   }
 

@@ -25,13 +25,15 @@ export const gasRule: TxRuleDef = {
 
     const [row] = await db
       .select({
-        median: sql<number>`percentile_cont(0.5) WITHIN GROUP (ORDER BY ${agentTransactions.feeLamports})`,
+        // Use ::text + parseFloat to avoid pg-driver returning a string
+        // when sql<number> silently produces NaN for percentile_cont results.
+        median: sql<string>`(percentile_cont(0.5) WITHIN GROUP (ORDER BY ${agentTransactions.feeLamports}))::text`,
       })
       .from(agentTransactions)
       .where(and(eq(agentTransactions.agentId, agent.id), gte(agentTransactions.blockTime, since)));
 
-    const median = row?.median;
-    if (median == null || median <= 0) return null;
+    const median = Number.parseFloat(row?.median ?? '0');
+    if (Number.isNaN(median) || median <= 0) return null;
 
     const ratio = transaction.feeLamports / median;
     if (ratio <= threshold) return null;

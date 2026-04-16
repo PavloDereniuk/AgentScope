@@ -15,9 +15,16 @@ let _activeSdk: NodeSDK | undefined;
  * Initialises the global OTel NodeSDK and starts exporting traces to AgentScope.
  * Call once at agent startup, before any traced() calls.
  *
+ * If called a second time (e.g. in tests or hot-reload), the previous SDK
+ * is shut down before the new one starts to prevent resource leaks.
+ *
  * Returns the SDK so callers can await sdk.shutdown() on SIGTERM.
  */
 export function initAgentScope(config: AgentScopeConfig): NodeSDK {
+  if (_activeSdk) {
+    // Fire-and-forget: caller is intentionally replacing the SDK.
+    void _activeSdk.shutdown();
+  }
   _activeSdk = new NodeSDK({
     resource: resourceFromAttributes({ 'agent.token': config.agentToken }),
     traceExporter: new OTLPTraceExporter({

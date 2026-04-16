@@ -33,7 +33,7 @@ export async function traced<T>(
       return result;
     } catch (err) {
       span.setStatus({ code: SpanStatusCode.ERROR, message: String(err) });
-      span.recordException(err as Error);
+      span.recordException(err instanceof Error ? err : new Error(String(err)));
       throw err;
     } finally {
       span.end();

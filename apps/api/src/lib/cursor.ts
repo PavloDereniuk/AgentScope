@@ -51,6 +51,11 @@ export function decodeTxCursor(cursor: string): TxCursor | null {
     ) {
       return null;
     }
+    // Validate that t is a parseable ISO date string to prevent injecting
+    // invalid strings into Drizzle timestamp conditions.
+    if (Number.isNaN(Date.parse((parsed as TxCursor).t))) {
+      return null;
+    }
     return { t: (parsed as TxCursor).t, i: (parsed as TxCursor).i };
   } catch {
     return null;

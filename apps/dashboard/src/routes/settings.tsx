@@ -68,7 +68,8 @@ export function SettingsPage() {
 
     for (const field of fields) {
       const val = fd.get(field) as string;
-      if (val) alertRules[field] = Number(val);
+      const num = Number(val);
+      if (val && !Number.isNaN(num) && num > 0) alertRules[field] = num;
     }
 
     const body: Record<string, unknown> = { webhookUrl };

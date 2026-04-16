@@ -23,7 +23,7 @@ const db = createDb({
 
 const verifier = createPrivyVerifier(config.PRIVY_APP_ID, config.PRIVY_APP_SECRET);
 const sseBus = createSseBus(logger);
-const app = buildApp({ db, verifier, sseBus, logger });
+const app = buildApp({ db, verifier, sseBus, internalSecret: config.INTERNAL_SECRET, logger });
 
 serve({ fetch: app.fetch, port: config.PORT }, (info) => {
   logger.info({ port: info.port }, 'agentscope-api listening');

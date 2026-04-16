@@ -14,28 +14,32 @@
  */
 
 import { EventEmitter } from 'node:events';
+import { z } from 'zod';
 import type { Logger } from '../logger';
+
+/** Zod schema for validating incoming /internal/publish payloads. */
+export const busEventSchema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('tx.new'),
+    agentId: z.string().min(1),
+    signature: z.string().min(1),
+    at: z.string().min(1),
+  }),
+  z.object({
+    type: z.literal('alert.new'),
+    agentId: z.string().min(1),
+    alertId: z.string().min(1),
+    severity: z.enum(['info', 'warning', 'critical']),
+    at: z.string().min(1),
+  }),
+]);
 
 /**
  * Discriminated union of every event the dashboard cares about. Keep
  * payloads small — SSE is best-effort, clients refetch details via REST
  * when they need the full picture.
  */
-export type BusEvent =
-  | {
-      type: 'tx.new';
-      agentId: string;
-      signature: string;
-      /** ISO-8601 timestamp the event was published at. */
-      at: string;
-    }
-  | {
-      type: 'alert.new';
-      agentId: string;
-      alertId: string;
-      severity: 'info' | 'warning' | 'critical';
-      at: string;
-    };
+export type BusEvent = z.infer<typeof busEventSchema>;
 
 export type BusEventType = BusEvent['type'];
 

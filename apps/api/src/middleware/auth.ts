@@ -37,16 +37,24 @@ const BEARER_RE = /^Bearer\s+(\S+)\s*$/i;
  */
 export function requireAuth(verifier: AuthVerifier, logger: Logger): MiddlewareHandler<ApiEnv> {
   return async (c, next) => {
+    // Primary: Authorization: Bearer <token> header.
+    // Fallback: ?token= query param for EventSource (which cannot set headers).
     const header = c.req.header('Authorization');
-    if (!header) {
-      throw new HTTPException(401, { message: 'missing authorization header' });
-    }
+    let token: string | undefined;
 
-    const match = BEARER_RE.exec(header);
-    if (!match?.[1]) {
-      throw new HTTPException(401, { message: 'malformed authorization header' });
+    if (header) {
+      const match = BEARER_RE.exec(header);
+      if (!match?.[1]) {
+        throw new HTTPException(401, { message: 'malformed authorization header' });
+      }
+      token = match[1];
+    } else {
+      const queryToken = c.req.query('token');
+      if (!queryToken) {
+        throw new HTTPException(401, { message: 'missing authorization header' });
+      }
+      token = queryToken;
     }
-    const token = match[1];
 
     try {
       const { userId } = await verifier.verify(token);

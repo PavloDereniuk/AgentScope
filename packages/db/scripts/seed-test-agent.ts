@@ -6,7 +6,8 @@
  * Usage: DATABASE_URL=... AGENT_WALLET=<base58> pnpm tsx scripts/seed-test-agent.ts
  */
 
-import { sql } from 'drizzle-orm';
+import { randomUUID } from 'node:crypto';
+import { and, eq } from 'drizzle-orm';
 import { createDb } from '../src/client';
 import { agents, users } from '../src/schema';
 
@@ -36,7 +37,7 @@ async function main() {
   const existingUser = await db
     .select()
     .from(users)
-    .where(sql`${users.privyDid} = ${privyDid}`)
+    .where(eq(users.privyDid, privyDid))
     .limit(1);
 
   let userId: string;
@@ -56,7 +57,7 @@ async function main() {
   const existingAgent = await db
     .select()
     .from(agents)
-    .where(sql`${agents.userId} = ${userId} AND ${agents.walletPubkey} = ${wallet}`)
+    .where(and(eq(agents.userId, userId), eq(agents.walletPubkey, wallet)))
     .limit(1);
 
   if (existingAgent.length > 0 && existingAgent[0]) {
@@ -70,7 +71,7 @@ async function main() {
         name: 'Test Seed Agent',
         framework: 'custom',
         agentType: 'other',
-        ingestToken: `tok_seed_${Date.now()}`,
+        ingestToken: `tok_seed_${randomUUID()}`,
       })
       .returning({ id: agents.id, walletPubkey: agents.walletPubkey });
     if (!inserted[0]) throw new Error('agent insert failed');

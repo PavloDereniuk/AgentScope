@@ -56,7 +56,13 @@ export function flattenAttributes(kvs: KeyValue[]): Record<string, unknown> {
  * precision is lost — acceptable for MVP.
  */
 export function nanoToTimestamp(nanos: string): string {
-  const ms = Number(BigInt(nanos) / 1_000_000n);
+  let big: bigint;
+  try {
+    big = BigInt(nanos);
+  } catch {
+    throw new Error(`invalid nanosecond timestamp: ${nanos}`);
+  }
+  const ms = Number(big / 1_000_000n);
   return new Date(ms).toISOString();
 }
 
@@ -106,11 +112,20 @@ export async function persistSpans({ db, body, agentId }: PersistSpansOptions): 
 
   if (rows.length === 0) return 0;
 
-  const inserted = await db
-    .insert(reasoningLogs)
-    .values(rows)
-    .onConflictDoNothing({ target: [reasoningLogs.traceId, reasoningLogs.spanId] })
-    .returning({ id: reasoningLogs.id });
+  // Chunk inserts to avoid hitting Postgres's 65535 bind-parameter limit.
+  // At ~9 columns per row this caps out at ~7 282 rows; 500 rows/chunk is safe.
+  const CHUNK_SIZE = 500;
+  let insertedCount = 0;
 
-  return inserted.length;
+  for (let i = 0; i < rows.length; i += CHUNK_SIZE) {
+    const chunk = rows.slice(i, i + CHUNK_SIZE);
+    const result = await db
+      .insert(reasoningLogs)
+      .values(chunk)
+      .onConflictDoNothing({ target: [reasoningLogs.traceId, reasoningLogs.spanId] })
+      .returning({ id: reasoningLogs.id });
+    insertedCount += result.length;
+  }
+
+  return insertedCount;
 }

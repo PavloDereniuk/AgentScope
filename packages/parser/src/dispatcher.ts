@@ -15,6 +15,7 @@ import type {
   TokenBalance,
   VersionedTransactionResponse,
 } from '@solana/web3.js';
+import bs58 from 'bs58';
 import type { ParseContext, ParseInput, ParsedInstruction, ParsedTx, ProgramParser } from './types';
 
 /**
@@ -92,9 +93,8 @@ function extractInstructions(tx: VersionedTransactionResponse): UniformInstructi
   return legacy.map((ix) => ({
     programIdIndex: ix.programIdIndex,
     accountIndexes: ix.accounts,
-    // Legacy CompiledInstruction.data is a base58 string. For MVP we
-    // accept the rare hit and decode lazily — most modern devnet tx are v0.
-    data: typeof ix.data === 'string' ? Buffer.from(ix.data, 'base64') : ix.data,
+    // Legacy CompiledInstruction.data is a base58-encoded string (not base64).
+    data: typeof ix.data === 'string' ? Buffer.from(bs58.decode(ix.data)) : ix.data,
   }));
 }
 
@@ -260,6 +260,8 @@ function computeOwnerMintFlows(
 // ─── Public dispatcher ────────────────────────────────────────────────────
 
 const UNKNOWN_NAME = 'unknown';
+/** Sentinel for malformed instructions where programIdIndex is out of range. */
+const UNKNOWN_PROGRAM_ID = 'unknown' as SolanaPubkey;
 
 export function parseTransaction(input: ParseInput): ParsedTx {
   const accountKeys = collectAccountKeys(input.transaction);
@@ -274,10 +276,10 @@ export function parseTransaction(input: ParseInput): ParsedTx {
   const instructions: ParsedInstruction[] = rawInstructions.map((ix, index) => {
     const programId = accountKeys[ix.programIdIndex];
     if (!programId) {
-      // Malformed — index out of range. Record as unknown rather than throw.
+      // Malformed — index out of range. Record with sentinel rather than throw.
       return {
         index,
-        programId: '' as SolanaPubkey,
+        programId: UNKNOWN_PROGRAM_ID,
         name: UNKNOWN_NAME,
         args: {} as ParsedArgs,
       };

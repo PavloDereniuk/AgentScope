@@ -42,7 +42,7 @@ export const staleRule: CronRuleDef = {
 
     return {
       ruleName: 'stale_agent',
-      severity: inactiveMinutes >= thresholdMinutes * 3 ? 'warning' : 'info',
+      severity: inactiveMinutes >= thresholdMinutes * 3 ? 'critical' : 'warning',
       payload: {
         inactiveMinutes,
         thresholdMinutes,

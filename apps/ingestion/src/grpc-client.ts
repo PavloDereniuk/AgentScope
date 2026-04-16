@@ -164,6 +164,9 @@ function projectTx(update: SubscribeUpdate): TxUpdate | null {
   return {
     signature,
     slot,
+    // Yellowstone gRPC transaction updates don't carry a block timestamp;
+    // fall back to wall-clock receive time. ws-stream.ts uses
+    // getTransaction() which returns the confirmed block time.
     blockTime: new Date().toISOString(),
     isVote,
     programIds,

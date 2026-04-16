@@ -8,13 +8,16 @@
 
 import type { Logger } from './logger';
 
-export function createEventPublisher(apiUrl: string, logger: Logger) {
+export function createEventPublisher(apiUrl: string, internalSecret: string, logger: Logger) {
   const endpoint = `${apiUrl.replace(/\/$/, '')}/internal/publish`;
 
   return (event: { type: string; agentId: string; [key: string]: unknown }) => {
     fetch(endpoint, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Internal-Secret': internalSecret,
+      },
       body: JSON.stringify(event),
     }).catch((err) => {
       logger.warn({ err, eventType: event.type }, 'failed to publish SSE event');

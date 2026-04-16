@@ -84,13 +84,17 @@ export async function runTxDetector(
     .returning({ id: alerts.id, triggeredAt: alerts.triggeredAt });
 
   // Publish alert.new events for SSE (6.15).
-  for (const row of inserted) {
-    if (!row) continue;
+  // Correlate by index — indexOf() would always return -1 on Drizzle
+  // result objects since each is a new reference from the DB driver.
+  for (let i = 0; i < inserted.length; i++) {
+    const row = inserted[i];
+    const result = results[i];
+    if (!row || !result) continue;
     deps.publishEvent?.({
       type: 'alert.new',
       agentId,
       alertId: row.id,
-      severity: results[inserted.indexOf(row)]?.severity ?? 'info',
+      severity: result.severity,
       at: row.triggeredAt,
     });
   }

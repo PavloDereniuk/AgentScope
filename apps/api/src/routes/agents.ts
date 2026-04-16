@@ -61,7 +61,7 @@ const txListQuerySchema = z
     path: ['from'],
   });
 
-export function createAgentsRouter(db: Database, sseBus?: SseBus) {
+export function createAgentsRouter(db: Database, sseBus: SseBus) {
   const router = new Hono<ApiEnv>();
 
   router.post(
@@ -111,7 +111,8 @@ export function createAgentsRouter(db: Database, sseBus?: SseBus) {
       .select()
       .from(agents)
       .where(eq(agents.userId, user.id))
-      .orderBy(desc(agents.createdAt));
+      .orderBy(desc(agents.createdAt))
+      .limit(200); // safety cap; cursor pagination post-MVP
 
     return c.json({ agents: rows });
   });
@@ -195,7 +196,10 @@ export function createAgentsRouter(db: Database, sseBus?: SseBus) {
       // Build a SET clause only from keys that were actually present
       // in the request. Unset keys are left untouched — this is what
       // makes PATCH genuinely partial.
-      const patch: Record<string, unknown> = {};
+      type AgentPatch = Partial<
+        Pick<typeof agents.$inferInsert, 'name' | 'tags' | 'webhookUrl' | 'alertRules'>
+      >;
+      const patch: AgentPatch = {};
       if (body.name !== undefined) patch.name = body.name;
       if (body.tags !== undefined) patch.tags = [...body.tags];
       if (body.webhookUrl !== undefined) patch.webhookUrl = body.webhookUrl;
@@ -313,7 +317,7 @@ export function createAgentsRouter(db: Database, sseBus?: SseBus) {
       .string()
       .regex(/^[0-9a-f]{32}$/, 'traceId must be 32 lowercase hex characters')
       .optional(),
-    limit: z.coerce.number().int().min(1).max(100).default(50).optional(),
+    limit: z.coerce.number().int().min(1).max(100).default(50),
   });
 
   router.get(
@@ -355,7 +359,7 @@ export function createAgentsRouter(db: Database, sseBus?: SseBus) {
         .from(reasoningLogs)
         .where(and(...where))
         .orderBy(asc(reasoningLogs.startTime))
-        .limit(limit ?? 50);
+        .limit(limit);
 
       return c.json({ reasoningLogs: logs });
     },
@@ -393,70 +397,73 @@ export function createAgentsRouter(db: Database, sseBus?: SseBus) {
   // 6.14 — SSE stream for real-time dashboard updates. Subscribes to the
   // in-process bus for this agent's events and pushes them as text/event-stream.
   // Ownership is verified before opening the stream.
-  if (sseBus) {
-    router.get(
-      '/:id/stream',
-      zValidator('param', agentIdParamSchema, (result) => {
-        if (!result.success) {
-          throw new HTTPException(422, { message: 'invalid agent id (expected uuid)' });
-        }
-      }),
-      async (c) => {
-        const privyDid = c.get('userId');
-        const { id: agentId } = c.req.valid('param');
+  router.get(
+    '/:id/stream',
+    zValidator('param', agentIdParamSchema, (result) => {
+      if (!result.success) {
+        throw new HTTPException(422, { message: 'invalid agent id (expected uuid)' });
+      }
+    }),
+    async (c) => {
+      const privyDid = c.get('userId');
+      const { id: agentId } = c.req.valid('param');
 
-        const user = await ensureUser(db, privyDid);
-        const [agent] = await db
-          .select({ id: agents.id })
-          .from(agents)
-          .where(and(eq(agents.id, agentId), eq(agents.userId, user.id)))
-          .limit(1);
-        if (!agent) {
-          throw new HTTPException(404, { message: 'agent not found' });
-        }
+      const user = await ensureUser(db, privyDid);
+      const [agent] = await db
+        .select({ id: agents.id })
+        .from(agents)
+        .where(and(eq(agents.id, agentId), eq(agents.userId, user.id)))
+        .limit(1);
+      if (!agent) {
+        throw new HTTPException(404, { message: 'agent not found' });
+      }
 
-        return new Response(
-          new ReadableStream({
-            start(controller) {
-              const encoder = new TextEncoder();
-              const send = (data: string) => {
-                controller.enqueue(encoder.encode(`data: ${data}\n\n`));
-              };
+      return new Response(
+        new ReadableStream({
+          start(controller) {
+            const encoder = new TextEncoder();
+            const send = (data: string) => {
+              controller.enqueue(encoder.encode(`data: ${data}\n\n`));
+            };
 
-              // Send initial keepalive so the client knows the connection is alive
-              send(JSON.stringify({ type: 'connected', agentId }));
+            // Send initial keepalive so the client knows the connection is alive
+            send(JSON.stringify({ type: 'connected', agentId }));
 
-              const unsub = sseBus.subscribe(agentId, (event) => {
-                send(JSON.stringify(event));
-              });
+            const unsub = sseBus.subscribe(agentId, (event) => {
+              send(JSON.stringify(event));
+            });
 
-              // Keepalive every 30s to prevent proxy/LB timeout
-              const keepalive = setInterval(() => {
-                try {
-                  controller.enqueue(encoder.encode(': keepalive\n\n'));
-                } catch {
-                  clearInterval(keepalive);
-                }
-              }, 30_000);
-
-              // Cleanup when client disconnects
-              c.req.raw.signal.addEventListener('abort', () => {
-                unsub();
+            // Keepalive every 30s to prevent proxy/LB timeout
+            const keepalive = setInterval(() => {
+              try {
+                controller.enqueue(encoder.encode(': keepalive\n\n'));
+              } catch {
                 clearInterval(keepalive);
-              });
-            },
-          }),
-          {
-            headers: {
-              'Content-Type': 'text/event-stream',
-              'Cache-Control': 'no-cache',
-              Connection: 'keep-alive',
-            },
+              }
+            }, 30_000);
+
+            // Cleanup when client disconnects — close the stream to free resources
+            c.req.raw.signal.addEventListener('abort', () => {
+              unsub();
+              clearInterval(keepalive);
+              try {
+                controller.close();
+              } catch {
+                // already closed
+              }
+            });
           },
-        );
-      },
-    );
-  }
+        }),
+        {
+          headers: {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            Connection: 'keep-alive',
+          },
+        },
+      );
+    },
+  );
 
   return router;
 }

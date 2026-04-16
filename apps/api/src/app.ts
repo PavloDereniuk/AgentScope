@@ -10,9 +10,11 @@
  */
 
 import type { Database } from '@agentscope/db';
+import { zValidator } from '@hono/zod-validator';
 import { Hono } from 'hono';
+import { HTTPException } from 'hono/http-exception';
 import type { AuthVerifier } from './lib/auth-verifier';
-import type { BusEvent, SseBus } from './lib/sse-bus';
+import { type SseBus, busEventSchema } from './lib/sse-bus';
 import { type Logger, logger as defaultLogger } from './logger';
 import { type ApiEnv, requireAuth } from './middleware/auth';
 import { registerErrorHandlers } from './middleware/error';
@@ -25,6 +27,12 @@ export interface AppDeps {
   db: Database;
   verifier: AuthVerifier;
   sseBus: SseBus;
+  /**
+   * Shared secret validated on /internal/* endpoints.
+   * Required in production (enforced via config.ts INTERNAL_SECRET).
+   * Tests may omit it — the endpoint will reject all requests in that case.
+   */
+  internalSecret?: string;
   logger?: Logger;
 }
 
@@ -56,14 +64,24 @@ export function buildApp(deps: AppDeps) {
   app.route('/api', api);
 
   // Internal endpoint for cross-service event publishing (6.15).
-  // The ingestion worker POSTs here after persisting a tx or firing an alert.
-  // No auth — intended to be called only from within the same Railway project
-  // (internal networking). Not exposed externally.
-  app.post('/internal/publish', async (c) => {
-    const event = (await c.req.json()) as BusEvent;
-    deps.sseBus.publish(event);
-    return c.json({ ok: true });
-  });
+  // Protected by a shared secret — the ingestion worker must send
+  // X-Internal-Secret matching INTERNAL_SECRET env var.
+  app.post(
+    '/internal/publish',
+    zValidator('json', busEventSchema, (result) => {
+      if (!result.success) {
+        throw new HTTPException(422, { message: 'invalid event payload' });
+      }
+    }),
+    async (c) => {
+      const secret = c.req.header('X-Internal-Secret');
+      if (!deps.internalSecret || !secret || secret !== deps.internalSecret) {
+        throw new HTTPException(401, { message: 'unauthorized' });
+      }
+      deps.sseBus.publish(c.req.valid('json'));
+      return c.json({ ok: true });
+    },
+  );
 
   return app;
 }

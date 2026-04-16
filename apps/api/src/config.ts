@@ -16,6 +16,8 @@ const envSchema = z.object({
 
   PRIVY_APP_ID: z.string().min(1, 'PRIVY_APP_ID is required'),
   PRIVY_APP_SECRET: z.string().min(1, 'PRIVY_APP_SECRET is required'),
+  /** Shared secret for cross-service /internal/* endpoints. */
+  INTERNAL_SECRET: z.string().min(32, 'INTERNAL_SECRET must be at least 32 chars'),
 });
 
 export type Config = z.infer<typeof envSchema>;

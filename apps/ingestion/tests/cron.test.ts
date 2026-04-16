@@ -142,7 +142,7 @@ describe('cron cycle', () => {
       const staleAlerts = await db.select().from(alerts).where(eq(alerts.agentId, staleAgentId));
       const staleAlert = staleAlerts.find((a) => a.ruleName === 'stale_agent');
       expect(staleAlert).toBeDefined();
-      expect(staleAlert?.severity).toBe('info');
+      expect(staleAlert?.severity).toBe('warning');
 
       // Active agent should NOT have a stale alert
       const activeAlerts = await db.select().from(alerts).where(eq(alerts.agentId, activeAgentId));
