@@ -1,0 +1,41 @@
+---
+const DASHBOARD_URL = import.meta.env.PUBLIC_DASHBOARD_URL ?? 'https://agentscope-dashboard.vercel.app';
+---
+
+<section class="bg-gray-900 py-20 px-6">
+  <div class="mx-auto max-w-2xl text-center">
+    <h2 class="text-3xl font-bold text-white">
+      Ready to instrument your agent?
+    </h2>
+    <p class="mt-4 text-gray-400 text-lg">
+      It takes less than 5 minutes to go from zero to full observability.
+    </p>
+
+    <!-- Quick-start snippet -->
+    <div class="mt-8 rounded-xl border border-gray-800 bg-gray-950 p-6 text-left font-mono text-sm">
+      <p class="text-gray-500 mb-3"># Install</p>
+      <p class="text-green-400">pnpm add @agentscope/agent-kit-sdk</p>
+      <p class="text-gray-500 mt-4 mb-3"># Instrument</p>
+      <p><span class="text-purple-400">import</span> <span class="text-white">{'{ initAgentScope, traced }'}</span> <span class="text-purple-400">from</span> <span class="text-yellow-300">'@agentscope/agent-kit-sdk'</span>;</p>
+      <p class="mt-1"><span class="text-blue-400">initAgentScope</span>({'{ apiUrl, agentToken }'}); <span class="text-gray-600">// one line</span></p>
+      <p class="mt-1"><span class="text-blue-400">await traced</span>(<span class="text-yellow-300">'swap'</span>, () =&gt; kit.<span class="text-blue-400">trade</span>(mint, amount)); <span class="text-gray-600">// done</span></p>
+    </div>
+
+    <div class="mt-10 flex flex-col sm:flex-row gap-4 justify-center">
+      <a
+        href={DASHBOARD_URL}
+        class="inline-flex items-center justify-center gap-2 rounded-lg bg-green-500 px-8 py-3 text-base font-semibold text-gray-950 hover:bg-green-400 transition-colors"
+      >
+        Open Dashboard →
+      </a>
+      <a
+        href="https://github.com/PavloDereniuk/agentscope/blob/main/docs/QUICKSTART.md"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-700 bg-transparent px-8 py-3 text-base font-semibold text-gray-300 hover:border-gray-500 transition-colors"
+      >
+        Read the Quickstart
+      </a>
+    </div>
+  </div>
+</section>

@@ -4,12 +4,17 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "echo 'placeholder build (real Astro setup in 8.6)'",
-    "dev": "echo 'placeholder dev (real Astro setup in 8.6)'",
-    "preview": "echo 'placeholder'",
+    "build": "astro build",
+    "dev": "astro dev --port 4321",
+    "preview": "astro preview",
     "lint": "biome check .",
-    "typecheck": "echo 'placeholder typecheck (real astro check in 8.6)'",
-    "test": "echo 'placeholder test'",
+    "typecheck": "astro check",
+    "test": "echo 'no tests for landing'",
     "clean": "rm -rf dist .astro .turbo"
+  },
+  "dependencies": {
+    "astro": "^4.16.18",
+    "@astrojs/tailwind": "^5.1.4",
+    "tailwindcss": "^3.4.17"
   }
 }

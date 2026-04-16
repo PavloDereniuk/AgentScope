@@ -1,0 +1,56 @@
+---
+import Hero from '../components/Hero.astro';
+import Features from '../components/Features.astro';
+import DemoVideo from '../components/DemoVideo.astro';
+import CTA from '../components/CTA.astro';
+---
+
+<!doctype html>
+<html lang="en" class="scroll-smooth">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="AgentScope — Datadog for Solana AI agents. Full observability: transaction timeline, reasoning traces, anomaly detection, and Telegram alerts." />
+    <meta property="og:title" content="AgentScope — Observability for Solana AI Agents" />
+    <meta property="og:description" content="Register your on-chain agent, instrument in 5 lines, get full observability." />
+    <meta property="og:type" content="website" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>AgentScope — Observability for Solana AI Agents</title>
+  </head>
+
+  <body class="bg-gray-950 text-white antialiased">
+    <!-- Nav -->
+    <nav class="fixed top-0 inset-x-0 z-50 border-b border-gray-800/60 bg-gray-950/80 backdrop-blur-sm">
+      <div class="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
+        <a href="/" class="flex items-center gap-2 text-lg font-bold text-white">
+          <span class="text-green-400">⬡</span> AgentScope
+        </a>
+        <div class="flex items-center gap-6 text-sm text-gray-400">
+          <a href="https://github.com/PavloDereniuk/agentscope" target="_blank" rel="noopener noreferrer" class="hover:text-white transition-colors">GitHub</a>
+          <a href="/docs/QUICKSTART" class="hover:text-white transition-colors">Docs</a>
+          <a
+            href={import.meta.env.PUBLIC_DASHBOARD_URL ?? 'https://agentscope-dashboard.vercel.app'}
+            class="rounded-lg bg-green-500 px-4 py-1.5 text-sm font-semibold text-gray-950 hover:bg-green-400 transition-colors"
+          >
+            Dashboard
+          </a>
+        </div>
+      </div>
+    </nav>
+
+    <main>
+      <Hero />
+      <Features />
+      <DemoVideo />
+      <CTA />
+    </main>
+
+    <footer class="border-t border-gray-800 bg-gray-950 py-8 px-6 text-center text-sm text-gray-600">
+      <p>
+        Built for
+        <a href="https://arena.colosseum.org/frontier" target="_blank" rel="noopener noreferrer" class="text-gray-500 hover:text-gray-300">Colosseum Frontier 2026</a>
+        · MIT License
+      </p>
+    </footer>
+  </body>
+</html>

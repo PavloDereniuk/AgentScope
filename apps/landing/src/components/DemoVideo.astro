@@ -1,0 +1,30 @@
+---
+// Replace VIDEO_ID with the actual YouTube video ID once recorded (task 9.9)
+const VIDEO_ID = import.meta.env.PUBLIC_DEMO_VIDEO_ID ?? '';
+---
+
+<section class="bg-gray-950 py-20 px-6">
+  <div class="mx-auto max-w-3xl text-center">
+    <h2 class="text-3xl font-bold text-white">See it in action</h2>
+    <p class="mt-3 text-gray-400">Watch a live demo of three agents running on devnet with full observability.</p>
+
+    <div class="mt-10 overflow-hidden rounded-2xl border border-gray-800 shadow-2xl aspect-video bg-gray-900 flex items-center justify-center">
+      {VIDEO_ID ? (
+        <iframe
+          class="w-full h-full"
+          src={`https://www.youtube.com/embed/${VIDEO_ID}?rel=0&modestbranding=1`}
+          title="AgentScope demo"
+          frameborder="0"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+          allowfullscreen
+        />
+      ) : (
+        <div class="text-center text-gray-600 p-12">
+          <div class="text-5xl mb-4">🎬</div>
+          <p class="text-lg font-medium text-gray-500">Demo video coming soon</p>
+          <p class="mt-2 text-sm">Check back before the Colosseum submission (2026-05-11)</p>
+        </div>
+      )}
+    </div>
+  </div>
+</section>
