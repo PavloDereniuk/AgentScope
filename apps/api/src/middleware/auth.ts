@@ -37,24 +37,18 @@ const BEARER_RE = /^Bearer\s+(\S+)\s*$/i;
  */
 export function requireAuth(verifier: AuthVerifier, logger: Logger): MiddlewareHandler<ApiEnv> {
   return async (c, next) => {
-    // Primary: Authorization: Bearer <token> header.
-    // Fallback: ?token= query param for EventSource (which cannot set headers).
+    // Tokens are accepted only via `Authorization: Bearer <token>`. The dashboard
+    // consumes SSE via fetch+ReadableStream, so the old `?token=` query-param
+    // fallback is unneeded and would expose credentials in access logs / Referer.
     const header = c.req.header('Authorization');
-    let token: string | undefined;
-
-    if (header) {
-      const match = BEARER_RE.exec(header);
-      if (!match?.[1]) {
-        throw new HTTPException(401, { message: 'malformed authorization header' });
-      }
-      token = match[1];
-    } else {
-      const queryToken = c.req.query('token');
-      if (!queryToken) {
-        throw new HTTPException(401, { message: 'missing authorization header' });
-      }
-      token = queryToken;
+    if (!header) {
+      throw new HTTPException(401, { message: 'missing authorization header' });
     }
+    const match = BEARER_RE.exec(header);
+    if (!match?.[1]) {
+      throw new HTTPException(401, { message: 'malformed authorization header' });
+    }
+    const token = match[1];
 
     try {
       const { userId } = await verifier.verify(token);

@@ -211,6 +211,13 @@ export const alerts = pgTable(
     /**
      * Per-rule cooldown key — used by detector to avoid duplicate alerts
      * within a window. Indexed for fast lookup of latest alert by (agent, rule).
+     *
+     * Nullable by design: not every future rule must participate in dedupe.
+     * When null, the uniqueness constraint is bypassed (Postgres treats null
+     * as distinct), so the alert is always inserted. Rules that *do* want
+     * dedupe must always produce a non-null key — the detector-runner uses
+     * this key to correlate RETURNING rows back to RuleResults, and a null
+     * key silently falls back to per-agent/per-rule pairing.
      */
     dedupeKey: text('dedupe_key'),
   },

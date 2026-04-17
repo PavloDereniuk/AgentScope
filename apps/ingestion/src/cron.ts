@@ -86,9 +86,25 @@ export function startCron(deps: CronDeps): { stop: () => void } {
   const intervalMs = deps.intervalMs ?? 60_000;
 
   const timer = setInterval(() => {
-    runCronCycle(deps).catch((err) => {
-      deps.logger.error({ err }, 'cron cycle failed');
-    });
+    // Double-wrap: runCronCycle().catch() handles rejections from the promise
+    // chain, and the outer try/catch protects against synchronous throws in
+    // catch() handlers themselves. Without this, one bad handler error would
+    // surface as an uncaughtException and kill the process.
+    try {
+      runCronCycle(deps).catch((err) => {
+        try {
+          deps.logger.error({ err }, 'cron cycle failed');
+        } catch {
+          // swallow — nothing sensible to do if the logger itself throws
+        }
+      });
+    } catch (err) {
+      try {
+        deps.logger.error({ err }, 'cron setInterval tick threw synchronously');
+      } catch {
+        // swallow — see above
+      }
+    }
   }, intervalMs);
 
   return {

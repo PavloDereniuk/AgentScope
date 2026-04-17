@@ -28,7 +28,10 @@ export function PnlChart({ transactions }: { transactions: TxRow[] }) {
     );
     let cumulative = 0;
     return sorted.map<DataPoint>((tx) => {
-      cumulative += Number(tx.solDelta);
+      // A single NaN (e.g. null/empty solDelta) poisons the accumulator and
+      // renders the entire chart as NaN, so guard each increment.
+      const delta = Number(tx.solDelta);
+      if (Number.isFinite(delta)) cumulative += delta;
       return {
         time: new Date(tx.blockTime).toLocaleString(undefined, {
           month: 'short',

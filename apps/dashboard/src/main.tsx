@@ -10,7 +10,10 @@ import './index.css';
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 30_000,
+      // 10s balances freshness against request volume. SSE events trigger
+      // targeted invalidations for alerts/transactions, so this mostly
+      // affects background refetches on tab focus.
+      staleTime: 10_000,
       retry: 1,
     },
   },

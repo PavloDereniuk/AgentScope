@@ -25,12 +25,24 @@ function validateApiUrl(apiUrl: string): void {
 }
 
 /**
+ * Fail fast on empty/whitespace tokens. Without this, the plugin would emit
+ * OTLP traces with an empty agent.token Resource attribute and the AgentScope
+ * receiver would silently drop every span.
+ */
+function validateAgentToken(agentToken: string): void {
+  if (typeof agentToken !== 'string' || agentToken.trim().length === 0) {
+    throw new Error('[agentscope] agentToken is required and must be a non-empty string');
+  }
+}
+
+/**
  * Creates (but does not start) a configured NodeSDK that exports OTLP traces
  * to AgentScope. The agent identity is passed via Resource attribute `agent.token`
  * — the AgentScope receiver extracts it from resourceSpans[0].resource.attributes.
  */
 export function createSdk(config: AgentScopeConfig): NodeSDK {
   validateApiUrl(config.apiUrl);
+  validateAgentToken(config.agentToken);
   return new NodeSDK({
     resource: resourceFromAttributes({ 'agent.token': config.agentToken }),
     traceExporter: new OTLPTraceExporter({

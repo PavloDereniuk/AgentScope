@@ -51,11 +51,41 @@ export function SettingsPage() {
     },
   });
 
+  const [webhookError, setWebhookError] = useState<string | null>(null);
+
+  // Clear any previous mutation/validation error when the user switches agents —
+  // otherwise the old error message would stick to the new form until the
+  // next submission. `selectedId` is read below so this effect re-runs on change.
+  useEffect(() => {
+    if (!selectedId) return;
+    setWebhookError(null);
+    mutation.reset();
+  }, [selectedId, mutation.reset]);
+
   function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
 
-    const webhookUrl = (fd.get('webhookUrl') as string) || null;
+    const webhookInput = (fd.get('webhookUrl') as string) || '';
+    let webhookUrl: string | null = null;
+    if (webhookInput.trim().length > 0) {
+      // Validate client-side: must be an http/https URL. The backend re-validates
+      // but failing fast here gives a better UX and blocks javascript: / data:
+      // URLs from ever reaching the agent's webhook config.
+      try {
+        const parsed = new URL(webhookInput);
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+          setWebhookError('Webhook URL must use http:// or https://');
+          return;
+        }
+        webhookUrl = parsed.toString();
+      } catch {
+        setWebhookError('Webhook URL is not a valid URL');
+        return;
+      }
+    }
+    setWebhookError(null);
+
     const alertRules: Record<string, number> = {};
 
     const fields = [
@@ -195,6 +225,7 @@ export function SettingsPage() {
             </CardContent>
           </Card>
 
+          {webhookError && <p className="text-sm text-destructive">{webhookError}</p>}
           {mutation.error && (
             <p className="text-sm text-destructive">{(mutation.error as Error).message}</p>
           )}

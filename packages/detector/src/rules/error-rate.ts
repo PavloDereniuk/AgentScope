@@ -18,6 +18,9 @@ export const errorRateRule: CronRuleDef = {
   async evaluate(ctx): Promise<RuleResult | null> {
     const { agent, defaults, db, now } = ctx;
     const threshold = agent.alertRules.errorRatePctThreshold ?? defaults.errorRatePct;
+    // A non-positive threshold would flag every tx with a single failure as
+    // critical (alert storm on misconfig); skip entirely.
+    if (threshold <= 0) return null;
     const since = new Date(now.getTime() - WINDOW_MS).toISOString();
 
     const [row] = await db

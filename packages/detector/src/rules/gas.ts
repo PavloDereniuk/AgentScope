@@ -21,6 +21,9 @@ export const gasRule: TxRuleDef = {
     const { transaction, agent, defaults, db, now } = ctx;
 
     const threshold = agent.alertRules.gasMultThreshold ?? defaults.gasMult;
+    // Guard against misconfigured or corrupted thresholds. A non-positive
+    // multiplier would make every tx exceed baseline and trigger alert storms.
+    if (threshold <= 0) return null;
     const since = new Date(now.getTime() - WINDOW_MS).toISOString();
 
     const [row] = await db

@@ -114,7 +114,12 @@ export async function createWsStream(
 
       handlers.onTransaction?.(update);
     } catch (err) {
-      logger.error({ err, sig: logs.signature }, 'failed to hydrate tx from log');
+      // Include rpcUrl for ops — same error message on a misconfigured RPC vs
+      // a transient upstream outage needs to be distinguishable in logs.
+      logger.error(
+        { err, sig: logs.signature, rpcUrl: opts.rpcUrl },
+        'failed to hydrate tx from log',
+      );
       const error = err instanceof Error ? err : new Error(String(err));
       handlers.onError?.(error);
     }

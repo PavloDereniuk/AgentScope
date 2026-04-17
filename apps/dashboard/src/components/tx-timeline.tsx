@@ -44,42 +44,49 @@ export function TxTimeline({
         <CardTitle className="text-base">Recent Transactions</CardTitle>
       </CardHeader>
       <CardContent className="max-h-[480px] space-y-1 overflow-y-auto p-0 px-4 pb-4">
-        {transactions.map((tx) => (
-          <button
-            type="button"
-            key={tx.id}
-            onClick={() => onSelect?.(tx.signature)}
-            className="flex w-full items-center gap-3 rounded-md px-2 py-2 text-left transition-colors hover:bg-accent/40"
-          >
-            <TxIcon name={tx.instructionName} />
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <span className="truncate font-mono text-xs">{tx.signature.slice(0, 16)}...</span>
-                {tx.instructionName && (
-                  <Badge variant="outline" className="text-[10px]">
-                    {tx.instructionName}
-                  </Badge>
+        {transactions.map((tx) => {
+          // NaN propagates through comparisons (NaN < 0 is false), so we
+          // compute the display delta once with an isFinite guard to avoid
+          // rendering "NaN SOL" and miscoloring failed txs.
+          const rawDelta = Number(tx.solDelta);
+          const delta = Number.isFinite(rawDelta) ? rawDelta : 0;
+          return (
+            <button
+              type="button"
+              key={tx.id}
+              onClick={() => onSelect?.(tx.signature)}
+              className="flex w-full items-center gap-3 rounded-md px-2 py-2 text-left transition-colors hover:bg-accent/40"
+            >
+              <TxIcon name={tx.instructionName} />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="truncate font-mono text-xs">{tx.signature.slice(0, 16)}...</span>
+                  {tx.instructionName && (
+                    <Badge variant="outline" className="text-[10px]">
+                      {tx.instructionName}
+                    </Badge>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {new Date(tx.blockTime).toLocaleString()}
+                </p>
+              </div>
+              <div className="shrink-0 text-right">
+                <p
+                  className={`text-xs font-medium ${delta < 0 ? 'text-destructive' : 'text-green-500'}`}
+                >
+                  {delta >= 0 ? '+' : ''}
+                  {delta.toFixed(4)} SOL
+                </p>
+                {tx.success ? (
+                  <CheckCircle2 className="ml-auto h-3 w-3 text-green-500" />
+                ) : (
+                  <XCircle className="ml-auto h-3 w-3 text-destructive" />
                 )}
               </div>
-              <p className="text-xs text-muted-foreground">
-                {new Date(tx.blockTime).toLocaleString()}
-              </p>
-            </div>
-            <div className="shrink-0 text-right">
-              <p
-                className={`text-xs font-medium ${Number(tx.solDelta) < 0 ? 'text-destructive' : 'text-green-500'}`}
-              >
-                {Number(tx.solDelta) >= 0 ? '+' : ''}
-                {Number(tx.solDelta).toFixed(4)} SOL
-              </p>
-              {tx.success ? (
-                <CheckCircle2 className="ml-auto h-3 w-3 text-green-500" />
-              ) : (
-                <XCircle className="ml-auto h-3 w-3 text-destructive" />
-              )}
-            </div>
-          </button>
-        ))}
+            </button>
+          );
+        })}
       </CardContent>
     </Card>
   );

@@ -325,8 +325,10 @@ export function createAgentsRouter(db: Database, sseBus: SseBus) {
   );
 
   // 4.6 — Reasoning logs for an agent. Optional trace_id filter narrows
-  // to a single trace; otherwise returns the most recent spans up to a
-  // hard cap of 100 (no cursor for MVP, same rationale as alerts).
+  // to a single trace; otherwise returns up to 100 spans (no cursor for
+  // MVP, same rationale as alerts). Ordered by startTime ASC so the
+  // dashboard's tree builder can walk parent→child in natural execution
+  // order without a secondary in-memory re-sort.
   const reasoningQuerySchema = z.object({
     traceId: z
       .string()
@@ -441,12 +443,26 @@ export function createAgentsRouter(db: Database, sseBus: SseBus) {
               controller.enqueue(encoder.encode(`data: ${data}\n\n`));
             };
 
-            // Send initial keepalive so the client knows the connection is alive
-            send(JSON.stringify({ type: 'connected', agentId }));
+            // Send initial keepalive so the client knows the connection is alive.
+            // Don't echo the agentId — the client already has it from the URL,
+            // and including it risks information leakage if headers are logged.
+            send(JSON.stringify({ type: 'connected' }));
 
-            const unsub = sseBus.subscribe(agentId, (event) => {
-              send(JSON.stringify(event));
-            });
+            let unsub: () => void = () => {};
+            try {
+              unsub = sseBus.subscribe(agentId, (event) => {
+                send(JSON.stringify(event));
+              });
+            } catch (err) {
+              // Defensive: subscribe should not throw, but if it does we close
+              // the stream cleanly rather than leaking a half-open response.
+              try {
+                controller.close();
+              } catch {
+                // already closed
+              }
+              throw err;
+            }
 
             // Keepalive every 30s to prevent proxy/LB timeout
             const keepalive = setInterval(() => {

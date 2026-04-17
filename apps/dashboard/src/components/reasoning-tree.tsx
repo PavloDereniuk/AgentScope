@@ -25,21 +25,38 @@ const MAX_TREE_DEPTH = 50;
 
 function buildTree(spans: SpanRow[]): TreeNode[] {
   const byId = new Map<string, TreeNode>();
+  const parentOf = new Map<string, string>();
   for (const span of spans) {
     byId.set(span.spanId, { span, children: [] });
+    if (span.parentSpanId && span.parentSpanId !== span.spanId) {
+      parentOf.set(span.spanId, span.parentSpanId);
+    }
   }
+
+  // Detect transitive cycles (A → B → C → A) by walking up from each span.
+  // Any span that reaches itself via its parent chain is in a cycle; we
+  // promote it to a root so the tree stays finite and rendering never loops.
+  const inCycle = new Set<string>();
+  for (const span of spans) {
+    const seen = new Set<string>([span.spanId]);
+    let current = parentOf.get(span.spanId);
+    while (current) {
+      if (seen.has(current)) {
+        inCycle.add(span.spanId);
+        break;
+      }
+      seen.add(current);
+      current = parentOf.get(current);
+    }
+  }
+
   const roots: TreeNode[] = [];
-  // Track which nodes have been assigned a parent to detect cycles:
-  // a node that appears as a child of itself (directly or transitively)
-  // would cause infinite recursion in SpanNode rendering.
   const childSet = new Set<string>();
   for (const span of spans) {
     const node = byId.get(span.spanId);
     if (!node) continue;
-    const parent =
-      span.parentSpanId && span.parentSpanId !== span.spanId
-        ? byId.get(span.parentSpanId)
-        : undefined;
+    const parentId = parentOf.get(span.spanId);
+    const parent = parentId && !inCycle.has(span.spanId) ? byId.get(parentId) : undefined;
     if (parent && !childSet.has(span.spanId)) {
       childSet.add(span.spanId);
       parent.children.push(node);

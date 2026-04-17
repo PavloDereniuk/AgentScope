@@ -63,6 +63,15 @@ const MAX_RETRY_AFTER_SEC = 60;
  * retry_after field on 429 responses.
  */
 export function createTelegramSender(config: TelegramConfig) {
+  // Fail fast on empty/whitespace credentials. Otherwise the first alert
+  // would retry MAX_RETRIES times against an obviously-invalid bot URL,
+  // wasting latency and producing confusing logs on every alert.
+  if (typeof config.botToken !== 'string' || config.botToken.trim().length === 0) {
+    throw new Error('[alerter] botToken is required and must be a non-empty string');
+  }
+  if (typeof config.chatId !== 'string' || config.chatId.trim().length === 0) {
+    throw new Error('[alerter] chatId is required and must be a non-empty string');
+  }
   // URL is built inside `send` — storing it as a constant would embed the
   // bot token in error messages and stack traces emitted by `fetch`.
   const apiBase = 'https://api.telegram.org/bot';

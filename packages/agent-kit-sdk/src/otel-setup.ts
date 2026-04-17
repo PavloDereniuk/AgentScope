@@ -24,6 +24,17 @@ function validateApiUrl(apiUrl: string): void {
   }
 }
 
+/**
+ * Fail fast on empty/whitespace tokens. Without this check, OTLP export would
+ * silently succeed against the AgentScope API but every trace would be rejected
+ * as unauthenticated — a confusing "my traces aren't showing up" class of bug.
+ */
+function validateAgentToken(agentToken: string): void {
+  if (typeof agentToken !== 'string' || agentToken.trim().length === 0) {
+    throw new Error('[agentscope] agentToken is required and must be a non-empty string');
+  }
+}
+
 let _activeSdk: NodeSDK | undefined;
 
 /**
@@ -37,6 +48,7 @@ let _activeSdk: NodeSDK | undefined;
  */
 export function initAgentScope(config: AgentScopeConfig): NodeSDK {
   validateApiUrl(config.apiUrl);
+  validateAgentToken(config.agentToken);
   if (_activeSdk) {
     // Shut down previous SDK; log if it fails so lost spans are visible.
     _activeSdk.shutdown().catch((err) => {
@@ -53,7 +65,12 @@ export function initAgentScope(config: AgentScopeConfig): NodeSDK {
   return _activeSdk;
 }
 
-/** Returns the active SDK instance (undefined before initAgentScope is called). */
+/**
+ * Returns the active SDK instance.
+ *
+ * @returns The current NodeSDK instance, or `undefined` if `initAgentScope`
+ *   has not yet been called in this process.
+ */
 export function getActiveSdk(): NodeSDK | undefined {
   return _activeSdk;
 }

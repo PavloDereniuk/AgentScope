@@ -103,46 +103,54 @@ export async function runTxDetector(
   }
 
   // Deliver alerts via configured channels (5.14).
+  // Each delivery is isolated with its own try/catch so one Telegram failure
+  // does not block other alerts, and we await all deliveries in parallel via
+  // Promise.all to avoid sequential latency and ensure every DB update
+  // completes before the function returns (no orphaned pending writes).
   if (deps.alerter) {
+    const alerter = deps.alerter;
     const { deliver } = await import('@agentscope/alerter');
-    for (const result of results) {
-      const row = insertedByKey.get(result.dedupeKey ?? null);
-      if (!row) continue;
 
-      const msg: AlertMessage = {
-        id: row.id,
-        agentId,
-        agentName,
-        ruleName: result.ruleName,
-        severity: result.severity,
-        payload: result.payload,
-        triggeredAt: row.triggeredAt,
-      };
+    await Promise.all(
+      results.map(async (result) => {
+        const row = insertedByKey.get(result.dedupeKey ?? null);
+        if (!row) return;
 
-      try {
-        const delivery = await deliver(deps.alerter, msg, 'telegram');
-        if (delivery.success) {
-          await deps.db
-            .update(alerts)
-            .set({
-              deliveredAt: new Date().toISOString(),
-              deliveryChannel: 'telegram',
-              deliveryStatus: 'delivered',
-            })
-            .where(eq(alerts.id, row.id));
-        } else {
-          await deps.db
-            .update(alerts)
-            .set({
-              deliveryStatus: 'failed',
-              deliveryError: delivery.error ?? 'unknown',
-            })
-            .where(eq(alerts.id, row.id));
+        const msg: AlertMessage = {
+          id: row.id,
+          agentId,
+          agentName,
+          ruleName: result.ruleName,
+          severity: result.severity,
+          payload: result.payload,
+          triggeredAt: row.triggeredAt,
+        };
+
+        try {
+          const delivery = await deliver(alerter, msg, 'telegram');
+          if (delivery.success) {
+            await deps.db
+              .update(alerts)
+              .set({
+                deliveredAt: new Date().toISOString(),
+                deliveryChannel: 'telegram',
+                deliveryStatus: 'delivered',
+              })
+              .where(eq(alerts.id, row.id));
+          } else {
+            await deps.db
+              .update(alerts)
+              .set({
+                deliveryStatus: 'failed',
+                deliveryError: delivery.error ?? 'unknown',
+              })
+              .where(eq(alerts.id, row.id));
+          }
+        } catch (err) {
+          deps.logger.error({ err, alertId: row.id }, 'alert delivery failed');
         }
-      } catch (err) {
-        deps.logger.error({ err, alertId: row.id }, 'alert delivery failed');
-      }
-    }
+      }),
+    );
   }
 
   return results.length;

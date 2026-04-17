@@ -16,6 +16,9 @@ export const staleRule: CronRuleDef = {
   async evaluate(ctx): Promise<RuleResult | null> {
     const { agent, defaults, db, now } = ctx;
     const thresholdMinutes = agent.alertRules.staleMinutesThreshold ?? defaults.staleMinutes;
+    // Non-positive thresholds would flag every agent as stale on every cycle
+    // and also break the dedupe window calculation (division by zero).
+    if (thresholdMinutes <= 0) return null;
 
     const [latest] = await db
       .select({ blockTime: agentTransactions.blockTime })

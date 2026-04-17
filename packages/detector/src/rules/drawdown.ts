@@ -28,6 +28,9 @@ export const drawdownRule: CronRuleDef = {
   async evaluate(ctx): Promise<RuleResult | null> {
     const { agent, defaults, db, now } = ctx;
     const threshold = agent.alertRules.drawdownPctThreshold ?? defaults.drawdownPct;
+    // A non-positive threshold would fire on any negative delta — alert
+    // storm on misconfig. Skip entirely.
+    if (threshold <= 0) return null;
     const since = new Date(now.getTime() - WINDOW_MS).toISOString();
 
     const [row] = await db
