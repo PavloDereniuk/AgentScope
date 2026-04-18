@@ -58,7 +58,7 @@ export async function createWalletRegistry(
         'wallet registry hit LIMIT — some agents will not be monitored',
       );
     }
-    logger.debug({ count: cache.size }, 'wallet registry refreshed');
+    logger.trace({ count: cache.size }, 'wallet registry refreshed');
   }
 
   await refresh();

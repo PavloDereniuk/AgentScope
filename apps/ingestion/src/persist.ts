@@ -31,13 +31,29 @@ export interface PersistContext {
  * swap ops over utility wrappers (refresh_*, init_*, ATA setup) so
  * the timeline shows "kamino.deposit" instead of "kamino.refresh_reserve".
  */
+/** Program IDs of system/infra programs that never represent the primary user intent. */
+const SYSTEM_PROGRAM_PREFIXES = new Set([
+  'comp', // ComputeBudget
+  '1111', // System Program (1111...)
+  'toke', // Token Program (Toke...)
+  'atas', // ATA Program (ATAs...)
+  'memo', // Memo Program
+]);
+
 function pickPrimaryInstruction(parsed: ParsedTx) {
   const recognized = parsed.instructions.filter((ix) => !ix.name.endsWith('.unknown'));
   // Skip refresh / utility instructions when picking the primary.
   const meaningful = recognized.filter(
     (ix) => !ix.name.startsWith('kamino.refresh_') && !ix.name.startsWith('kamino.init_'),
   );
-  return meaningful[0] ?? recognized[0] ?? parsed.instructions[0] ?? null;
+  if (meaningful[0]) return meaningful[0];
+  if (recognized[0]) return recognized[0];
+
+  // All unknown — prefer non-system programs over ComputeBudget/System/Token.
+  const nonSystem = parsed.instructions.filter(
+    (ix) => !SYSTEM_PROGRAM_PREFIXES.has(ix.name.split('.')[0] ?? ''),
+  );
+  return nonSystem[0] ?? parsed.instructions[0] ?? null;
 }
 
 /**

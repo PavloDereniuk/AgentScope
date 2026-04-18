@@ -1,7 +1,10 @@
 import { PrivyProvider as BasePrivyProvider, usePrivy } from '@privy-io/react-auth';
+import { toSolanaWalletConnectors } from '@privy-io/react-auth/solana';
 import type { ReactNode } from 'react';
 import { useEffect } from 'react';
 import { setTokenGetter } from './api-client';
+
+const solanaConnectors = toSolanaWalletConnectors();
 
 const PRIVY_APP_ID = import.meta.env.VITE_PRIVY_APP_ID;
 
@@ -21,6 +24,9 @@ export function PrivyProvider({ children }: { children: ReactNode }) {
           theme: 'dark',
         },
         loginMethods: ['email', 'wallet'],
+        externalWallets: {
+          solana: { connectors: solanaConnectors },
+        },
       }}
     >
       <TokenSync />

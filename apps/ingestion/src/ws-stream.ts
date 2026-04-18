@@ -76,12 +76,22 @@ export async function createWsStream(
     // persisted with success=false. The parser reads tx.meta.err to set that flag.
 
     try {
-      const tx = await connection.getTransaction(logs.signature, {
+      // onLogs fires before the transaction is queryable via getTransaction
+      // on some RPC providers. Retry once after a short delay to avoid
+      // silently dropping transactions due to this race condition.
+      let tx = await connection.getTransaction(logs.signature, {
         maxSupportedTransactionVersion: 0,
         commitment: 'confirmed',
       });
       if (!tx) {
-        logger.warn({ sig: logs.signature }, 'tx not found in getTransaction');
+        await new Promise((r) => setTimeout(r, 2000));
+        tx = await connection.getTransaction(logs.signature, {
+          maxSupportedTransactionVersion: 0,
+          commitment: 'confirmed',
+        });
+      }
+      if (!tx) {
+        logger.warn({ sig: logs.signature }, 'tx not found after retry');
         return;
       }
 
@@ -117,7 +127,7 @@ export async function createWsStream(
       // Include rpcUrl for ops — same error message on a misconfigured RPC vs
       // a transient upstream outage needs to be distinguishable in logs.
       logger.error(
-        { err, sig: logs.signature, rpcUrl: opts.rpcUrl },
+        { err, sig: logs.signature, rpcUrl: opts.rpcUrl.replace(/api-key=[^&]+/, 'api-key=***') },
         'failed to hydrate tx from log',
       );
       const error = err instanceof Error ? err : new Error(String(err));
@@ -187,10 +197,11 @@ export async function createWsStream(
       }
     }
 
-    logger.info(
-      { added: wallets.filter((w) => !current.has(w)).length, total: walletSubs.size },
-      'wallet subscriptions reconciled',
-    );
+    const added = wallets.filter((w) => !current.has(w)).length;
+    const removed = [...current].filter((w) => !desired.has(w)).length;
+    if (added > 0 || removed > 0) {
+      logger.info({ added, removed, total: walletSubs.size }, 'wallet subscriptions reconciled');
+    }
   }
 
   async function close(): Promise<void> {

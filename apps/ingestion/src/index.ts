@@ -42,7 +42,7 @@ async function main(): Promise<void> {
   logger.info(
     {
       network: config.SOLANA_NETWORK,
-      rpc: config.SOLANA_RPC_URL,
+      rpc: config.SOLANA_RPC_URL.replace(/api-key=[^&]+/, 'api-key=***'),
       env: config.NODE_ENV,
     },
     'ingestion worker started',
@@ -93,7 +93,7 @@ async function main(): Promise<void> {
     {
       onSlot: (slot) => {
         if (slot !== lastLoggedSlot) {
-          logger.debug({ slot }, 'slot');
+          logger.trace({ slot }, 'slot');
           lastLoggedSlot = slot;
         }
       },
