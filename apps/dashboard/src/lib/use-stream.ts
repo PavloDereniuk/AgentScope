@@ -18,6 +18,10 @@ interface StreamEvent {
  * EventSource was replaced because it cannot set custom headers, which
  * forced the token into the URL where it would appear in access logs,
  * browser history, and HTTP Referer headers.
+ *
+ * Reconnect: the stream is re-established with exponential backoff (up
+ * to 30s) on any non-abort disconnect. The token is re-fetched on each
+ * reconnect so an expired Privy JWT is refreshed transparently.
  */
 export function useStream(agentId: string | undefined) {
   const queryClient = useQueryClient();
@@ -26,10 +30,22 @@ export function useStream(agentId: string | undefined) {
     if (!agentId) return;
 
     const controller = new AbortController();
+    let backoffMs = 1_000;
+    const MAX_BACKOFF = 30_000;
 
-    void (async () => {
+    function handleEvent(event: StreamEvent) {
+      if (event.type === 'tx.new') {
+        queryClient.invalidateQueries({ queryKey: ['agent', agentId] });
+        queryClient.invalidateQueries({ queryKey: ['agent-tx', agentId] });
+      } else if (event.type === 'alert.new') {
+        queryClient.invalidateQueries({ queryKey: ['agent', agentId] });
+        queryClient.invalidateQueries({ queryKey: ['alerts'] });
+      }
+    }
+
+    async function runOnce(): Promise<boolean> {
       const token = await getAccessToken();
-      if (controller.signal.aborted) return;
+      if (controller.signal.aborted) return false;
 
       const headers: Record<string, string> = { Accept: 'text/event-stream' };
       if (token) headers.Authorization = `Bearer ${token}`;
@@ -40,12 +56,21 @@ export function useStream(agentId: string | undefined) {
           headers,
           signal: controller.signal,
         });
-      } catch {
-        // Aborted on unmount or network error — nothing to do.
-        return;
+      } catch (err) {
+        if (controller.signal.aborted) return false;
+        // eslint-disable-next-line no-console
+        console.warn('[useStream] fetch failed, will retry', err);
+        return true;
       }
 
-      if (!response.ok || !response.body) return;
+      if (!response.ok || !response.body) {
+        // eslint-disable-next-line no-console
+        console.warn('[useStream] non-OK response', response.status);
+        return true;
+      }
+
+      // Reset backoff once the stream opens successfully.
+      backoffMs = 1_000;
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -63,21 +88,30 @@ export function useStream(agentId: string | undefined) {
           for (const line of lines) {
             if (!line.startsWith('data: ')) continue;
             try {
-              const event = JSON.parse(line.slice(6)) as StreamEvent;
-              if (event.type === 'tx.new') {
-                queryClient.invalidateQueries({ queryKey: ['agent', agentId] });
-                queryClient.invalidateQueries({ queryKey: ['agent-tx', agentId] });
-              } else if (event.type === 'alert.new') {
-                queryClient.invalidateQueries({ queryKey: ['agent', agentId] });
-                queryClient.invalidateQueries({ queryKey: ['alerts'] });
+              handleEvent(JSON.parse(line.slice(6)) as StreamEvent);
+            } catch (err) {
+              // Don't silently swallow — server-side encoding bugs are easier
+              // to catch when at least a console warning surfaces.
+              if (import.meta.env.DEV) {
+                // eslint-disable-next-line no-console
+                console.warn('[useStream] malformed SSE payload', err);
               }
-            } catch {
-              // ignore malformed messages
             }
           }
         }
       } finally {
         reader.releaseLock();
+      }
+      return true;
+    }
+
+    void (async () => {
+      while (!controller.signal.aborted) {
+        const shouldRetry = await runOnce();
+        if (controller.signal.aborted || !shouldRetry) break;
+        // Exponential backoff with cap.
+        await new Promise((r) => setTimeout(r, backoffMs));
+        backoffMs = Math.min(MAX_BACKOFF, backoffMs * 2);
       }
     })();
 

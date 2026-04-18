@@ -136,7 +136,10 @@ function projectTx(update: SubscribeUpdate): TxUpdate | null {
   if (!txWrap?.transaction) return null;
   const info = txWrap.transaction;
 
-  const signature = info.signature ? bs58.encode(info.signature) : '';
+  // A tx update with no signature is malformed (or never finalised);
+  // dropping it here avoids writing a garbage row downstream.
+  if (!info.signature || info.signature.length === 0) return null;
+  const signature = bs58.encode(info.signature);
   const slot = Number(txWrap.slot ?? 0);
   const isVote = info.isVote ?? false;
 

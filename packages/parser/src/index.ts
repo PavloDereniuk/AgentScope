@@ -14,7 +14,7 @@ import './kamino/parser';
 
 export { parseTransaction, registerParser } from './dispatcher';
 export { jupiterParser } from './jupiter/parser';
-export { kaminoParser } from './kamino/parser';
+export { kaminoParser, getKaminoLoadWarnings } from './kamino/parser';
 export type {
   ParseInput,
   ParsedInstruction,

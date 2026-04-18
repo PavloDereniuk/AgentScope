@@ -27,20 +27,36 @@ export interface RegistryOptions {
   refreshIntervalMs?: number;
 }
 
+/** Safety cap on a single registry refresh query. */
+const MAX_REGISTERED_AGENTS = 10_000;
+
 export async function createWalletRegistry(
   db: Database,
   logger: Logger,
   options: RegistryOptions = {},
 ): Promise<WalletRegistry> {
   const refreshInterval = options.refreshIntervalMs ?? 30_000;
-  const cache = new Map<string, string>();
+  // Cache reference is reassignable — refresh() builds a new Map and
+  // atomically swaps it in so in-flight lookup() calls never see a
+  // half-populated state (clear-then-fill would create a miss window).
+  let cache = new Map<string, string>();
 
   async function refresh(): Promise<void> {
-    const rows = await db.select({ id: agents.id, walletPubkey: agents.walletPubkey }).from(agents);
+    const rows = await db
+      .select({ id: agents.id, walletPubkey: agents.walletPubkey })
+      .from(agents)
+      .limit(MAX_REGISTERED_AGENTS);
 
-    cache.clear();
+    const next = new Map<string, string>();
     for (const row of rows) {
-      cache.set(row.walletPubkey, row.id);
+      next.set(row.walletPubkey, row.id);
+    }
+    cache = next;
+    if (rows.length >= MAX_REGISTERED_AGENTS) {
+      logger.warn(
+        { limit: MAX_REGISTERED_AGENTS },
+        'wallet registry hit LIMIT — some agents will not be monitored',
+      );
     }
     logger.debug({ count: cache.size }, 'wallet registry refreshed');
   }

@@ -56,7 +56,9 @@ const txListQuerySchema = z
     from: z.string().datetime({ offset: true }).optional(),
     to: z.string().datetime({ offset: true }).optional(),
   })
-  .refine((q) => !q.from || !q.to || q.from <= q.to, {
+  // Compare epoch ms, not raw strings — z.datetime({offset:true}) accepts
+  // both Z and ±HH:MM suffixes so text-compare is not canonical.
+  .refine((q) => !q.from || !q.to || Date.parse(q.from) <= Date.parse(q.to), {
     message: 'from must be <= to',
     path: ['from'],
   });

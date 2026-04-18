@@ -183,8 +183,10 @@ const scopeSpansSchema = z
   .object({
     scope: instrumentationScopeSchema.optional(),
     // Cap per-scope span count to prevent a single large scope from causing OOM
-    // before chunked insertion kicks in.
-    spans: z.array(spanSchema).max(1000).optional(),
+    // before chunked insertion kicks in. 200 is well above a realistic agent
+    // reasoning trace but small enough that a rogue agent cannot flood
+    // Supabase free-tier write budget in a single POST.
+    spans: z.array(spanSchema).max(200).optional(),
     schemaUrl: z.string().optional(),
   })
   .strict();
@@ -203,12 +205,13 @@ const resourceSpansSchema = z
  *
  * Hard caps on array lengths prevent a single malformed/malicious batch
  * from assembling an unbounded `rows[]` array in memory before chunking.
- * With max 100 resourceSpans × max 1000 spans each = 100 000 spans max,
- * well within the 500-row chunker's capacity.
+ * With max 50 resourceSpans × max 200 spans each = 10 000 spans max,
+ * which still takes ~20 chunk inserts but stays within the write budget
+ * we can afford per request on Supabase free tier.
  */
 export const exportTraceServiceRequestSchema = z
   .object({
-    resourceSpans: z.array(resourceSpansSchema).max(100).optional(),
+    resourceSpans: z.array(resourceSpansSchema).max(50).optional(),
   })
   .strict();
 

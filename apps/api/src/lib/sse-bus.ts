@@ -17,20 +17,24 @@ import { EventEmitter } from 'node:events';
 import { z } from 'zod';
 import type { Logger } from '../logger';
 
-/** Zod schema for validating incoming /internal/publish payloads. */
+/**
+ * Zod schema for validating incoming /internal/publish payloads.
+ * Every string field is length-capped so a misbehaving (or malicious)
+ * publisher cannot push arbitrarily large frames through every SSE fan-out.
+ */
 export const busEventSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('tx.new'),
-    agentId: z.string().min(1),
-    signature: z.string().min(1),
-    at: z.string().min(1),
+    agentId: z.string().min(1).max(64),
+    signature: z.string().min(1).max(128),
+    at: z.string().min(1).max(64),
   }),
   z.object({
     type: z.literal('alert.new'),
-    agentId: z.string().min(1),
-    alertId: z.string().min(1),
+    agentId: z.string().min(1).max(64),
+    alertId: z.string().min(1).max(64),
     severity: z.enum(['info', 'warning', 'critical']),
-    at: z.string().min(1),
+    at: z.string().min(1).max(64),
   }),
 ]);
 
@@ -70,9 +74,11 @@ export interface SseBus {
  */
 export function createSseBus(logger?: Logger): SseBus {
   const emitter = new EventEmitter();
-  // Each dashboard tab/connection adds a listener — don't spam the
-  // Node warning log if a power user opens a bunch of tabs.
-  emitter.setMaxListeners(0);
+  // Cap at a large-but-finite number: high enough that a power user with
+  // many open tabs won't trip the warning, low enough that a genuine leak
+  // (e.g. handlers that forget to unsubscribe on abort) will surface in logs.
+  // Setting 0 disables the check entirely and hides real bugs.
+  emitter.setMaxListeners(1000);
 
   return {
     subscribe(agentId, handler) {

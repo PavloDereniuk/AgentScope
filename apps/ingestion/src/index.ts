@@ -16,6 +16,7 @@
 
 import { createTelegramSender } from '@agentscope/alerter';
 import type { DefaultThresholds } from '@agentscope/detector';
+import { getKaminoLoadWarnings } from '@agentscope/parser';
 import { loadConfig } from './config';
 import { startCron } from './cron';
 import { getDb } from './db';
@@ -46,6 +47,13 @@ async function main(): Promise<void> {
     },
     'ingestion worker started',
   );
+
+  // Flush any warnings accumulated at parser module load (e.g. Kamino
+  // discriminator collisions) through the structured logger so they show
+  // up in Railway's log search and not just raw stdout.
+  for (const w of getKaminoLoadWarnings()) {
+    logger.warn(w);
+  }
 
   const db = getDb(config);
   const registry = await createWalletRegistry(db, logger);
@@ -114,16 +122,15 @@ async function main(): Promise<void> {
   await stream.reconcileWallets(registry.wallets());
   logger.info({ registeredAgents: registry.size() }, 'subscribed to logs for registered wallets');
 
-  let reconciling = false;
+  let reconciling: Promise<void> | null = null;
   const reconcileTimer = setInterval(() => {
     // Guard against overlapping calls if reconcileWallets takes > 30s.
     if (reconciling) return;
-    reconciling = true;
-    stream
+    reconciling = stream
       .reconcileWallets(registry.wallets())
       .catch((err) => logger.error({ err }, 'wallet reconcile failed'))
       .finally(() => {
-        reconciling = false;
+        reconciling = null;
       });
   }, 30_000);
 
@@ -131,14 +138,17 @@ async function main(): Promise<void> {
   const cron = startCron({ db, logger, defaults: DETECTOR_DEFAULTS });
   logger.info('cron evaluator started');
 
-  // Graceful shutdown handlers.
+  // Graceful shutdown handlers. Wait for any in-flight reconcile so we
+  // don't cut the stream mid-subscribe — otherwise the fresh process
+  // may inherit dangling server-side state on restart.
   const shutdown = (signal: string) => {
     logger.info({ signal }, 'shutting down');
     clearInterval(reconcileTimer);
     cron.stop();
     registry.stop();
-    stream
-      .close()
+    Promise.resolve(reconciling)
+      .catch(() => undefined)
+      .then(() => stream.close())
       .catch((err) => logger.error({ err }, 'stream close failed'))
       .finally(() => process.exit(0));
   };

@@ -38,6 +38,11 @@ export function AlertsPage() {
   const { data, isLoading, error } = useQuery({
     queryKey: ['alerts', filter],
     queryFn: () => apiClient.get<{ alerts: AlertRow[] }>(`/api/alerts${query}`),
+    // The /api/alerts page is global (not tied to a single agent), so we
+    // can't attach the per-agent SSE subscription here. Poll every 15s
+    // so new alerts appear without manual refresh.
+    refetchInterval: 15_000,
+    refetchOnWindowFocus: true,
   });
 
   const alerts = data?.alerts ?? [];

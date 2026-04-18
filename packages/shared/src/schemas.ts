@@ -168,9 +168,20 @@ export const agentTransactionSchema = z.object({
 const TRACE_ID_RE = /^[0-9a-f]{32}$/;
 const SPAN_ID_RE = /^[0-9a-f]{16}$/;
 
+// OTLP AnyValue flattens into scalars, arrays (homogeneous per spec but we
+// tolerate mixed) and nested kvlist objects. The receiver's flattenAnyValue
+// preserves that shape in `reasoning_logs.attributes`, so this schema must
+// accept it when the same row is read back through the shared types.
 export const spanAttributesSchema = z.record(
   z.string(),
-  z.union([z.string(), z.number(), z.boolean(), z.null()]),
+  z.union([
+    z.string(),
+    z.number(),
+    z.boolean(),
+    z.null(),
+    z.array(z.unknown()),
+    z.record(z.string(), z.unknown()),
+  ]),
 );
 
 export const reasoningLogSchema = z.object({

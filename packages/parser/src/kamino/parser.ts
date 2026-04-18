@@ -101,6 +101,7 @@ interface IndexedInstruction {
 }
 
 const discriminatorIndex = new Map<string, IndexedInstruction>();
+const loadWarnings: string[] = [];
 
 for (const ix of idl.instructions) {
   const flat = flattenAccounts(ix.accounts);
@@ -112,12 +113,21 @@ for (const ix of idl.instructions) {
   for (const key of keys) {
     const existing = discriminatorIndex.get(key);
     if (existing && existing.name !== ix.name) {
-      console.warn(
+      loadWarnings.push(
         `[kamino-parser] discriminator collision: key ${key} maps to both "${existing.name}" and "${ix.name}" — latter wins`,
       );
     }
     discriminatorIndex.set(key, indexed);
   }
+}
+
+/**
+ * Warnings accumulated at module-load (discriminator collisions etc).
+ * Exposed so the host app can flush them through its structured logger
+ * on startup — the parser itself does not depend on a logger.
+ */
+export function getKaminoLoadWarnings(): readonly string[] {
+  return loadWarnings;
 }
 
 // ─── Operation aliasing ───────────────────────────────────────────────────

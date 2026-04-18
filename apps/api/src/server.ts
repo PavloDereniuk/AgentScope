@@ -25,6 +25,22 @@ const verifier = createPrivyVerifier(config.PRIVY_APP_ID, config.PRIVY_APP_SECRE
 const sseBus = createSseBus(logger);
 const app = buildApp({ db, verifier, sseBus, internalSecret: config.INTERNAL_SECRET, logger });
 
-serve({ fetch: app.fetch, port: config.PORT }, (info) => {
+const server = serve({ fetch: app.fetch, port: config.PORT }, (info) => {
   logger.info({ port: info.port }, 'agentscope-api listening');
 });
+
+// Graceful shutdown: Railway and most PaaS send SIGTERM before SIGKILL.
+// Close the HTTP server to stop accepting new connections, then drain the
+// Postgres pool so in-flight inserts get a chance to flush.
+const shutdown = (signal: string) => {
+  logger.info({ signal }, 'api shutting down');
+  server.close((err) => {
+    if (err) logger.error({ err }, 'http server close failed');
+    db.$client
+      .end({ timeout: 5 })
+      .catch((e: unknown) => logger.error({ err: e }, 'db pool drain failed'))
+      .finally(() => process.exit(err ? 1 : 0));
+  });
+};
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));

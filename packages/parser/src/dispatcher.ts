@@ -146,7 +146,15 @@ function computeTokenDeltas(
     for (const b of balances) {
       if (b.owner !== ownerPubkey) continue;
       const raw = b.uiTokenAmount.amount;
-      const amount = BigInt(raw);
+      // RPC occasionally returns malformed amount strings (non-numeric,
+      // scientific notation, etc). One bad row should not abort the whole
+      // parse — skip the entry and continue.
+      let amount: bigint;
+      try {
+        amount = BigInt(raw);
+      } catch {
+        continue;
+      }
       const existing = byMint.get(b.mint);
       const decimals = b.uiTokenAmount.decimals;
       if (existing) {
@@ -218,15 +226,22 @@ function computeOwnerMintFlows(
 ): { spent: SolanaPubkey[]; gained: SolanaPubkey[] } {
   const byMint = new Map<string, bigint>();
 
-  // SPL token flows
-  for (const b of tx.meta?.preTokenBalances ?? []) {
-    if (b.owner !== ownerPubkey) continue;
-    byMint.set(b.mint, (byMint.get(b.mint) ?? 0n) - BigInt(b.uiTokenAmount.amount));
+  // SPL token flows. Malformed amount strings are skipped at entry rather
+  // than aborting the whole flow computation.
+  function accumulate(balances: readonly TokenBalance[], sign: 1n | -1n): void {
+    for (const b of balances) {
+      if (b.owner !== ownerPubkey) continue;
+      let amount: bigint;
+      try {
+        amount = BigInt(b.uiTokenAmount.amount);
+      } catch {
+        continue;
+      }
+      byMint.set(b.mint, (byMint.get(b.mint) ?? 0n) + amount * sign);
+    }
   }
-  for (const b of tx.meta?.postTokenBalances ?? []) {
-    if (b.owner !== ownerPubkey) continue;
-    byMint.set(b.mint, (byMint.get(b.mint) ?? 0n) + BigInt(b.uiTokenAmount.amount));
-  }
+  accumulate(tx.meta?.preTokenBalances ?? [], -1n);
+  accumulate(tx.meta?.postTokenBalances ?? [], 1n);
 
   // Native SOL flow (lamport delta of the owner's main account, net of fee).
   // Skip if owner isn't even in the account list.
@@ -238,11 +253,9 @@ function computeOwnerMintFlows(
     if (pre !== undefined && post !== undefined) {
       const lamportDelta = BigInt(post) - BigInt(pre) + BigInt(fee);
       // Threshold: ignore dust (rent adjustments, ATA creation rebates).
+      // Both signs go into the same bucket — the sign is already in lamportDelta.
       const DUST = 10_000n; // 0.00001 SOL
-      if (lamportDelta < -DUST) {
-        // Owner spent SOL beyond fee → wrapped wSOL flowed out
-        byMint.set(WSOL_MINT, (byMint.get(WSOL_MINT) ?? 0n) + lamportDelta);
-      } else if (lamportDelta > DUST) {
+      if (lamportDelta > DUST || lamportDelta < -DUST) {
         byMint.set(WSOL_MINT, (byMint.get(WSOL_MINT) ?? 0n) + lamportDelta);
       }
     }

@@ -167,11 +167,11 @@ describe('elizaos-plugin — integration', () => {
       { agentId: 'agent-003', character: { name: 'SwapBot' } },
       { content: { text: 'Swap USDC→SOL' }, userId: 'user-003' },
       undefined,
-      { 'solana.tx.signature': '5xyzAbcDef1234567890abcdef' },
+      { 'solana.tx.signature': '5xyzAbcDef1234567892abcdefGHJKLM' },
     );
 
     const span = await waitForSpan(mock.bodies, 'SWAP');
     const sigAttr = span.attributes.find((a) => a.key === 'solana.tx.signature');
-    expect(sigAttr?.value.stringValue).toBe('5xyzAbcDef1234567890abcdef');
+    expect(sigAttr?.value.stringValue).toBe('5xyzAbcDef1234567892abcdefGHJKLM');
   });
 });

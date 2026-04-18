@@ -62,6 +62,12 @@ export function nanoToTimestamp(nanos: string): string {
   } catch {
     throw new Error(`invalid nanosecond timestamp: ${nanos}`);
   }
+  // OTLP spec requires nanos >= 0. The schema's uint64 accepts only
+  // non-negative strings, but nanoToTimestamp is exported and reused —
+  // guard at the function boundary so no caller can smuggle a negative.
+  if (big < 0n) {
+    throw new Error(`negative nanosecond timestamp: ${nanos}`);
+  }
   const ms = big / 1_000_000n;
   if (ms > BigInt(Number.MAX_SAFE_INTEGER)) {
     throw new Error(`nanosecond timestamp too large to convert safely: ${nanos}`);

@@ -148,8 +148,19 @@ export interface AgentTransaction {
 
 // ─── Reasoning log (OpenTelemetry span) ───────────────────────────────────────
 
-/** Free-form OTel span attributes (string-keyed, JSON-serializable values). */
-export type SpanAttributes = Record<string, string | number | boolean | null>;
+/**
+ * Free-form OTel span attributes (string-keyed, JSON-serializable values).
+ *
+ * Mirrors what OTLP's AnyValue flattens to after persistence: scalars,
+ * arrays, and nested kvlist objects. The narrower scalars-only shape was
+ * wrong because the OTLP receiver stores arrayValue / kvlistValue variants
+ * verbatim — reading a persisted row back through this type would fail
+ * assignability without the union.
+ */
+export type SpanAttributes = Record<
+  string,
+  string | number | boolean | null | readonly unknown[] | Readonly<Record<string, unknown>>
+>;
 
 export interface ReasoningLog {
   id: UUID;

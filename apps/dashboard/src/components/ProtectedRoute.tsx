@@ -20,7 +20,26 @@ export function ProtectedRoute({ children }: { children: ReactNode }) {
           <p className="text-muted-foreground">Sign in to continue</p>
           <button
             type="button"
-            onClick={login}
+            onClick={() => {
+              // Privy's login may be sync or return a Promise depending on
+              // version — wrap defensively so a rejection surfaces in the
+              // console instead of becoming an unhandled rejection.
+              try {
+                const maybePromise = login() as unknown;
+                if (
+                  maybePromise &&
+                  typeof (maybePromise as { catch?: unknown }).catch === 'function'
+                ) {
+                  (maybePromise as Promise<unknown>).catch((err: unknown) => {
+                    // eslint-disable-next-line no-console
+                    console.error('[auth] Privy login failed', err);
+                  });
+                }
+              } catch (err) {
+                // eslint-disable-next-line no-console
+                console.error('[auth] Privy login threw synchronously', err);
+              }
+            }}
             className="rounded-md bg-primary px-6 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
           >
             Sign In

@@ -67,6 +67,37 @@ export function buildApp(deps: AppDeps) {
   // Internal endpoint for cross-service event publishing (6.15).
   // Protected by a shared secret — the ingestion worker must send
   // X-Internal-Secret matching INTERNAL_SECRET env var.
+  //
+  // Rate limit: token bucket keyed by agentId. The secret is shared
+  // among trusted publishers but if it ever leaks, or a local
+  // ingestion bug spins, this caps the blast radius to ~50 events/s
+  // per agent — still plenty for real tx volume (Solana peaks ~5 tps/agent).
+  const BUCKET_CAPACITY = 50;
+  const BUCKET_REFILL_PER_SEC = 50;
+  type Bucket = { tokens: number; last: number };
+  const buckets = new Map<string, Bucket>();
+  const BUCKETS_MAX = 10_000;
+
+  function take(agentId: string): boolean {
+    const now = Date.now();
+    let b = buckets.get(agentId);
+    if (!b) {
+      if (buckets.size >= BUCKETS_MAX) {
+        // Drop the oldest bucket; insertion order is Map's iteration order.
+        const oldest = buckets.keys().next().value;
+        if (oldest !== undefined) buckets.delete(oldest);
+      }
+      b = { tokens: BUCKET_CAPACITY, last: now };
+      buckets.set(agentId, b);
+    }
+    const elapsedSec = (now - b.last) / 1000;
+    b.tokens = Math.min(BUCKET_CAPACITY, b.tokens + elapsedSec * BUCKET_REFILL_PER_SEC);
+    b.last = now;
+    if (b.tokens < 1) return false;
+    b.tokens -= 1;
+    return true;
+  }
+
   app.post(
     '/internal/publish',
     zValidator('json', busEventSchema, (result) => {
@@ -86,7 +117,11 @@ export function buildApp(deps: AppDeps) {
       if (secretBuf.length !== expectedBuf.length || !timingSafeEqual(secretBuf, expectedBuf)) {
         throw new HTTPException(401, { message: 'unauthorized' });
       }
-      deps.sseBus.publish(c.req.valid('json'));
+      const event = c.req.valid('json');
+      if (!take(event.agentId)) {
+        throw new HTTPException(429, { message: 'rate limited' });
+      }
+      deps.sseBus.publish(event);
       return c.json({ ok: true });
     },
   );

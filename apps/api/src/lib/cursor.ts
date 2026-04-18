@@ -22,21 +22,34 @@ export interface TxCursor {
   i: number;
 }
 
+/** Current cursor payload version. Bump on any shape change. */
+const CURSOR_VERSION = 1;
+
+interface CursorEnvelope {
+  v: number;
+  t: string;
+  i: number;
+}
+
 /**
  * Encode a (block_time, id) pair as an opaque cursor string. Callers
  * should treat the result as entirely opaque — only this module may
  * inspect or generate valid cursor contents.
+ *
+ * The payload is version-tagged so future shape changes (additional
+ * fields, per-tenant scoping) can reject old cursors explicitly instead
+ * of silently misparsing them.
  */
 export function encodeTxCursor(blockTime: string, id: number): string {
-  const payload: TxCursor = { t: blockTime, i: id };
+  const payload: CursorEnvelope = { v: CURSOR_VERSION, t: blockTime, i: id };
   return Buffer.from(JSON.stringify(payload), 'utf-8').toString('base64url');
 }
 
 /**
  * Decode an opaque cursor string back into `{ t, i }`. Returns `null`
  * on any failure (malformed base64, malformed JSON, wrong shape, bad
- * types) so the caller can convert it into a 422 without leaking
- * implementation details.
+ * types, wrong/missing version) so the caller can convert it into a
+ * 422 without leaking implementation details.
  */
 export function decodeTxCursor(cursor: string): TxCursor | null {
   try {
@@ -45,6 +58,7 @@ export function decodeTxCursor(cursor: string): TxCursor | null {
     if (
       typeof parsed !== 'object' ||
       parsed === null ||
+      (parsed as { v?: unknown }).v !== CURSOR_VERSION ||
       typeof (parsed as { t?: unknown }).t !== 'string' ||
       typeof (parsed as { i?: unknown }).i !== 'number' ||
       !Number.isFinite((parsed as { i: number }).i)
@@ -53,10 +67,10 @@ export function decodeTxCursor(cursor: string): TxCursor | null {
     }
     // Validate that t is a parseable ISO date string to prevent injecting
     // invalid strings into Drizzle timestamp conditions.
-    if (Number.isNaN(Date.parse((parsed as TxCursor).t))) {
+    if (Number.isNaN(Date.parse((parsed as CursorEnvelope).t))) {
       return null;
     }
-    return { t: (parsed as TxCursor).t, i: (parsed as TxCursor).i };
+    return { t: (parsed as CursorEnvelope).t, i: (parsed as CursorEnvelope).i };
   } catch {
     return null;
   }

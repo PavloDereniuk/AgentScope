@@ -89,6 +89,26 @@ export async function persistTx(ctx: PersistContext, tx: TxUpdate): Promise<numb
       args: ix.args,
     })) ?? [];
 
+  // Build the parsedArgs payload once and reuse it for both the DB insert
+  // and the detector runner — avoids allocating the `_all` list twice per tx.
+  const parsedArgsPayload = primary ? { ...primary.args, _all: allInstructions } : null;
+
+  // Cap persisted rawLogs. Jupiter swaps routinely emit 500-2000 log lines;
+  // storing them verbatim bloats the jsonb column and makes list queries
+  // slow without adding information for the dashboard (full logs stay
+  // available via RPC). Keep only the first and last slice for diagnostics
+  // on failed txs.
+  const RAW_LOGS_LIMIT = 200;
+  const limitedRawLogs = parsed
+    ? parsed.rawLogs.length <= RAW_LOGS_LIMIT
+      ? [...parsed.rawLogs]
+      : [
+          ...parsed.rawLogs.slice(0, RAW_LOGS_LIMIT / 2),
+          `…truncated ${parsed.rawLogs.length - RAW_LOGS_LIMIT} lines…`,
+          ...parsed.rawLogs.slice(-RAW_LOGS_LIMIT / 2),
+        ]
+    : [];
+
   try {
     const inserted = await ctx.db
       .insert(agentTransactions)
@@ -99,12 +119,12 @@ export async function persistTx(ctx: PersistContext, tx: TxUpdate): Promise<numb
         blockTime: tx.blockTime,
         programId: primary?.programId ?? tx.programIds[0] ?? '',
         instructionName: primary?.name ?? null,
-        parsedArgs: primary ? { ...primary.args, _all: allInstructions } : null,
+        parsedArgs: parsedArgsPayload,
         solDelta: parsed?.solDelta ?? '0',
         tokenDeltas: parsed ? [...parsed.tokenDeltas] : [],
         feeLamports: parsed?.feeLamports ?? 0,
         success: parsed?.success ?? true,
-        rawLogs: parsed ? [...parsed.rawLogs] : [],
+        rawLogs: limitedRawLogs,
       })
       .returning({ id: agentTransactions.id });
 
@@ -136,7 +156,7 @@ export async function persistTx(ctx: PersistContext, tx: TxUpdate): Promise<numb
         const alertCount = await runTxDetector(ctx.detector, agentId, {
           signature: tx.signature,
           instructionName: primary?.name ?? null,
-          parsedArgs: primary ? { ...primary.args, _all: allInstructions } : null,
+          parsedArgs: parsedArgsPayload,
           solDelta: parsed?.solDelta ?? '0',
           feeLamports: parsed?.feeLamports ?? 0,
           success: parsed?.success ?? true,
