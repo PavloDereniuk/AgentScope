@@ -109,7 +109,7 @@ describe('parseTransaction with empty registry', () => {
     expect(result.success).toBe(true);
     expect(result.feeLamports).toBe(5000);
     expect(result.instructions).toHaveLength(1);
-    expect(result.instructions[0]?.name).toBe('1111.unknown');
+    expect(result.instructions[0]?.name).toBe('System');
     expect(result.instructions[0]?.programId).toBe(SYSTEM_PROGRAM);
   });
 

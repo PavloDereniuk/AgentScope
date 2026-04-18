@@ -4,12 +4,21 @@ import { TxTimeline } from '@/components/tx-timeline';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
 import { apiClient } from '@/lib/api-client';
 import { useStream } from '@/lib/use-stream';
-import { useQuery } from '@tanstack/react-query';
-import { Activity, AlertTriangle, ArrowLeft, Clock, DollarSign } from 'lucide-react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Activity, AlertTriangle, ArrowLeft, Clock, DollarSign, Trash2 } from 'lucide-react';
 import { useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 
 interface AgentDetail {
   id: string;
@@ -57,11 +66,22 @@ interface TxListResponse {
 
 export function AgentDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   const [selectedTx, setSelectedTx] = useState<string | null>(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   // Subscribe to SSE for real-time updates (6.16+6.17)
   useStream(id);
+
+  const deleteMutation = useMutation({
+    mutationFn: () => apiClient.delete(`/api/agents/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['agents'] });
+      navigate('/agents');
+    },
+  });
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['agent', id],
@@ -109,20 +129,52 @@ export function AgentDetailPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-4">
-        <Button asChild variant="ghost" size="icon">
-          <Link to="/agents">
-            <ArrowLeft className="h-4 w-4" />
-          </Link>
-        </Button>
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold">{agent.name}</h1>
-            <Badge variant="outline">{agent.framework}</Badge>
-            <Badge variant="secondary">{agent.agentType}</Badge>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <Button asChild variant="ghost" size="icon">
+            <Link to="/agents">
+              <ArrowLeft className="h-4 w-4" />
+            </Link>
+          </Button>
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl font-bold">{agent.name}</h1>
+              <Badge variant="outline">{agent.framework}</Badge>
+              <Badge variant="secondary">{agent.agentType}</Badge>
+            </div>
+            <p className="truncate text-sm text-muted-foreground">{agent.walletPubkey}</p>
           </div>
-          <p className="truncate text-sm text-muted-foreground">{agent.walletPubkey}</p>
         </div>
+
+        <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+          <DialogTrigger asChild>
+            <Button variant="destructive" size="sm">
+              <Trash2 className="mr-2 h-4 w-4" />
+              Delete
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Delete agent</DialogTitle>
+              <DialogDescription>
+                This will permanently delete <strong>{agent.name}</strong> and all its transactions,
+                alerts, and reasoning logs. This action cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant="ghost" onClick={() => setDeleteOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                disabled={deleteMutation.isPending}
+                onClick={() => deleteMutation.mutate()}
+              >
+                {deleteMutation.isPending ? 'Deleting...' : 'Delete'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

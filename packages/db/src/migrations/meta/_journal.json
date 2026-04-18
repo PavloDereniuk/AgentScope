@@ -15,6 +15,13 @@
       "when": 1775559000000,
       "tag": "0001_rls_and_partition",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1776202440000,
+      "tag": "0002_default_partition",
+      "breakpoints": true
     }
   ]
 }

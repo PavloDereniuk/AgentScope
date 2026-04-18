@@ -99,6 +99,11 @@ export function useStream(agentId: string | undefined) {
             }
           }
         }
+      } catch (err) {
+        // AbortError is expected when the component unmounts and the
+        // controller.abort() cleanup fires — swallow it silently.
+        if (controller.signal.aborted) return false;
+        throw err;
       } finally {
         reader.releaseLock();
       }

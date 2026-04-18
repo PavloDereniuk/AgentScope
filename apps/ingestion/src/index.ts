@@ -17,6 +17,7 @@
 import { createTelegramSender } from '@agentscope/alerter';
 import type { DefaultThresholds } from '@agentscope/detector';
 import { getKaminoLoadWarnings } from '@agentscope/parser';
+import { backfillWallet } from './backfill';
 import { loadConfig } from './config';
 import { startCron } from './cron';
 import { getDb } from './db';
@@ -24,6 +25,7 @@ import type { DetectorDeps } from './detector-runner';
 import { createEventPublisher } from './event-publisher';
 import { logger } from './logger';
 import { persistTx } from './persist';
+import type { PersistContext } from './persist';
 import { createWalletRegistry } from './registry';
 import { createWsStream } from './ws-stream';
 
@@ -122,12 +124,50 @@ async function main(): Promise<void> {
   await stream.reconcileWallets(registry.wallets());
   logger.info({ registeredAgents: registry.size() }, 'subscribed to logs for registered wallets');
 
+  // Track wallets that have already been backfilled so we don't re-run
+  // on every 30s reconcile cycle.
+  const backfilledWallets = new Set<string>();
+
+  const persistCtx: PersistContext = {
+    db,
+    registry,
+    logger,
+    detector: detectorDeps,
+    ...(publishEvent ? { publishEvent } : {}),
+  };
+
+  /**
+   * Run backfill for any wallets that haven't been backfilled yet.
+   * Fire-and-forget — errors are logged inside backfillWallet.
+   */
+  async function backfillNewWallets(): Promise<void> {
+    const wallets = registry.wallets();
+    for (const wallet of wallets) {
+      if (backfilledWallets.has(wallet)) continue;
+      backfilledWallets.add(wallet);
+      try {
+        await backfillWallet(
+          wallet,
+          { rpcUrl: config.SOLANA_RPC_URL, maxSignatures: 50 },
+          persistCtx,
+          logger,
+        );
+      } catch (err) {
+        logger.error({ err, wallet }, 'backfill failed for wallet');
+      }
+    }
+  }
+
+  // Backfill existing wallets on startup.
+  void backfillNewWallets();
+
   let reconciling: Promise<void> | null = null;
   const reconcileTimer = setInterval(() => {
     // Guard against overlapping calls if reconcileWallets takes > 30s.
     if (reconciling) return;
     reconciling = stream
       .reconcileWallets(registry.wallets())
+      .then(() => backfillNewWallets())
       .catch((err) => logger.error({ err }, 'wallet reconcile failed'))
       .finally(() => {
         reconciling = null;
