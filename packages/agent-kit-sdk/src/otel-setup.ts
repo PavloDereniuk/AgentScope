@@ -55,6 +55,13 @@ export function initAgentScope(config: AgentScopeConfig): NodeSDK {
       console.error('[agentscope] SDK shutdown failed during reinit:', err);
     });
   }
+  // Auth mechanism: the AgentScope receiver (apps/api/src/otlp/auth.ts) reads
+  // `agent.token` from the Resource attributes and looks up the owning agent
+  // from the DB. Token is sent over TLS to the configured apiUrl.
+  //
+  // Caveat: if the host app adds a `ConsoleSpanExporter` or any span processor
+  // that logs Resource attributes, the token will appear in those logs. Do not
+  // mix this SDK with debug exporters in production.
   _activeSdk = new NodeSDK({
     resource: resourceFromAttributes({ 'agent.token': config.agentToken }),
     traceExporter: new OTLPTraceExporter({

@@ -350,36 +350,26 @@ export function parseTransaction(input: ParseInput): ParsedTx {
  * Well-known Solana program IDs → human-readable names. Used as the
  * namespace prefix for unregistered programs so the UI shows
  * "Compute Budget" instead of "comp.unknown".
+ *
+ * Only IDs verified against each protocol's canonical source (IDL,
+ * deployed program, or on-chain account owner) are included here. If
+ * you add a new entry, cross-reference the protocol's own code or
+ * docs — mis-labelled IDs are worse than no label because the UI
+ * confidently lies.
  */
 const KNOWN_PROGRAMS: ReadonlyMap<string, string> = new Map([
   ['11111111111111111111111111111111', 'System'],
   ['ComputeBudget111111111111111111111111111111', 'Compute Budget'],
-  ['TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA', 'Token'],
+  ['TokenkegQfZFAhUJMRNbSL2vM5qTgaK5TxwQnEKL7aP', 'Token'],
   ['TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb', 'Token-2022'],
-  ['ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL', 'Token Account'],
-  ['MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr', 'Memo'],
+  ['ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL', 'Associated Token'],
   ['Memo1UhkJBfCvE3urwUn9vNyTxWVF2qB2nRF3NsKNFt6', 'Memo'],
-  ['SPoo1Ku8WFXoNDMHPsrGSTSG1Y47rzgn41SLUNakuHy', 'Stake Pool'],
+  ['MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr', 'Memo'],
   ['Stake11111111111111111111111111111111111111', 'Stake'],
   ['Vote111111111111111111111111111111111111111', 'Vote'],
-  ['SysvarRent111111111111111111111111111111111', 'Rent'],
-  ['JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN', 'Jupiter v6'],
-  ['jup3YeL8QhtSx1e253b2FDvsMNC87fDrgQZivbrndc9', 'Jupiter v3'],
-  ['JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4', 'Jupiter v4'],
-  ['JUP4Fb2cqiRUcaTHdrPC8h2gNsA2ETXiPDD33WcGuJB', 'Jupiter Limit'],
-  ['DCA265Vj8a9CEuX1eb1LWRnDT7uK6q1xMipnNyatn23', 'Jupiter DCA'],
-  ['KLend2g3cP87ber41GH3CaD7Ncz8AWKTtQ5Yk4cRGUd', 'Kamino Lend'],
-  ['kvauTFR8qm1dhniz6pYuBZkuene3Hfrs1VQhVRgCNrr', 'Kamino Vault'],
-  ['whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc', 'Orca Whirlpool'],
-  ['675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8', 'Raydium AMM'],
-  ['CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK', 'Raydium CLMM'],
-  ['PhoeNiXZ8ByJGLkxNfZRnkUfjvmuYqLR89jjFHGqdXY', 'Phoenix'],
-  ['M2mx93ekt1fmXSVkTrUL9xVFHkmME8HTUi5Cyc5aF7K', 'Magic Eden'],
-  ['TSWAPaqyCSx2KABk68Shruf4rp7CZNUi7i1g1t38Dv', 'Tensor Swap'],
-  ['bn1dUNRecofQLxcGp895mGmKEVtFLMjdvjxBjFqhFU7', 'Bonfida'],
+  // Jupiter v6 — verified against packages/parser/src/jupiter/idl.json (address field)
+  // and the constant in jupiter/parser.ts.
+  ['JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4', 'Jupiter v6'],
+  // Kamino Lend — verified against packages/parser/src/kamino/parser.ts:KAMINO_LEND_PROGRAM_ID.
+  ['KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD', 'Kamino Lend'],
 ]);
-
-/** Fallback namespace for unregistered programs. */
-function truncatedNamespace(programId: SolanaPubkey): string {
-  return KNOWN_PROGRAMS.get(programId) ?? programId.slice(0, 4).toLowerCase();
-}

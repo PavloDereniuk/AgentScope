@@ -79,6 +79,12 @@ function SpanNode({ node, depth }: { node: TreeNode; depth: number }) {
       <button
         type="button"
         onClick={() => setExpanded(!expanded)}
+        aria-label={
+          children.length > 0
+            ? `${expanded ? 'Collapse' : 'Expand'} span ${span.spanName}`
+            : `Span ${span.spanName}`
+        }
+        aria-expanded={children.length > 0 ? expanded : undefined}
         className="flex w-full items-center gap-1 rounded px-1 py-1 text-left text-sm hover:bg-accent/40"
         style={{ paddingLeft: `${depth * 16 + 4}px` }}
       >

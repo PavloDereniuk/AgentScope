@@ -79,6 +79,7 @@ export function AgentDetailPage() {
     mutationFn: () => apiClient.delete(`/api/agents/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['agents'] });
+      queryClient.invalidateQueries({ queryKey: ['agent', id] });
       navigate('/agents');
     },
   });
@@ -161,8 +162,19 @@ export function AgentDetailPage() {
                 alerts, and reasoning logs. This action cannot be undone.
               </DialogDescription>
             </DialogHeader>
+            {deleteMutation.isError && (
+              <p className="text-sm text-destructive">
+                {(deleteMutation.error as Error).message || 'Failed to delete agent'}
+              </p>
+            )}
             <DialogFooter>
-              <Button variant="ghost" onClick={() => setDeleteOpen(false)}>
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  deleteMutation.reset();
+                  setDeleteOpen(false);
+                }}
+              >
                 Cancel
               </Button>
               <Button
@@ -170,7 +182,11 @@ export function AgentDetailPage() {
                 disabled={deleteMutation.isPending}
                 onClick={() => deleteMutation.mutate()}
               >
-                {deleteMutation.isPending ? 'Deleting...' : 'Delete'}
+                {deleteMutation.isPending
+                  ? 'Deleting...'
+                  : deleteMutation.isError
+                    ? 'Retry delete'
+                    : 'Delete'}
               </Button>
             </DialogFooter>
           </DialogContent>

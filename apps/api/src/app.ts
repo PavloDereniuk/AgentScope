@@ -82,10 +82,13 @@ export function buildApp(deps: AppDeps) {
     const now = Date.now();
     let b = buckets.get(agentId);
     if (!b) {
-      if (buckets.size >= BUCKETS_MAX) {
-        // Drop the oldest bucket; insertion order is Map's iteration order.
+      // Loop the eviction so a burst of unique agentIds can't temporarily
+      // push `buckets.size` past BUCKETS_MAX. Map iteration order = insertion
+      // order, so `.keys().next().value` is the oldest inserted entry.
+      while (buckets.size >= BUCKETS_MAX) {
         const oldest = buckets.keys().next().value;
-        if (oldest !== undefined) buckets.delete(oldest);
+        if (oldest === undefined) break;
+        buckets.delete(oldest);
       }
       b = { tokens: BUCKET_CAPACITY, last: now };
       buckets.set(agentId, b);

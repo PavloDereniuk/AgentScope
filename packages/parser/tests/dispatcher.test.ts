@@ -241,6 +241,66 @@ describe('parseTransaction with registered parser', () => {
   });
 });
 
+// ─── KNOWN_PROGRAMS fallback ───────────────────────────────────────────────
+
+describe('parseTransaction unregistered known programs', () => {
+  // These assertions double as a spec-level check that the program IDs in
+  // KNOWN_PROGRAMS (dispatcher.ts) agree with the constants the per-program
+  // parsers themselves use. A typo in KNOWN_PROGRAMS would silently confuse
+  // the UI — catching it here avoids misleading "Jupiter v4"-style labels.
+
+  it('maps System Program to "System" friendly name', () => {
+    const result = parseTransaction(
+      makeFixture({
+        accountKeys: [OWNER, SYSTEM_PROGRAM],
+        instructions: [{ programIdIndex: 1, accountIndexes: [0], data: new Uint8Array([0]) }],
+        preLamports: [1, 1],
+        postLamports: [1, 1],
+      }),
+    );
+    expect(result.instructions[0]?.name).toBe('System');
+  });
+
+  it('maps Jupiter v6 program id to "Jupiter v6"', () => {
+    const JUP_V6 = 'JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4';
+    const result = parseTransaction(
+      makeFixture({
+        accountKeys: [OWNER, JUP_V6],
+        instructions: [{ programIdIndex: 1, accountIndexes: [0], data: new Uint8Array([0]) }],
+        preLamports: [1, 1],
+        postLamports: [1, 1],
+      }),
+    );
+    expect(result.instructions[0]?.name).toBe('Jupiter v6');
+  });
+
+  it('maps Kamino Lend program id to "Kamino Lend"', () => {
+    const KAMINO = 'KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD';
+    const result = parseTransaction(
+      makeFixture({
+        accountKeys: [OWNER, KAMINO],
+        instructions: [{ programIdIndex: 1, accountIndexes: [0], data: new Uint8Array([0]) }],
+        preLamports: [1, 1],
+        postLamports: [1, 1],
+      }),
+    );
+    expect(result.instructions[0]?.name).toBe('Kamino Lend');
+  });
+
+  it('falls back to <prefix>.unknown for truly unknown programs', () => {
+    const OTHER_PROG = 'XyZ1234567891234567891234567891234567891234';
+    const result = parseTransaction(
+      makeFixture({
+        accountKeys: [OWNER, OTHER_PROG],
+        instructions: [{ programIdIndex: 1, accountIndexes: [0], data: new Uint8Array([0]) }],
+        preLamports: [1, 1],
+        postLamports: [1, 1],
+      }),
+    );
+    expect(result.instructions[0]?.name).toBe('xyz1.unknown');
+  });
+});
+
 // ─── Failed transactions ───────────────────────────────────────────────────
 
 describe('parseTransaction failed tx', () => {

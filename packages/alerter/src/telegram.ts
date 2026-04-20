@@ -55,6 +55,8 @@ export function formatTelegramMessage(msg: AlertMessage): string {
 const MAX_RETRIES = 3;
 /** Cap how long we honour Telegram's retry_after to avoid blocking indefinitely. */
 const MAX_RETRY_AFTER_SEC = 60;
+/** Per-request timeout — Telegram normally responds in <1s; 10s covers slow networks. */
+const TELEGRAM_FETCH_TIMEOUT_MS = 10_000;
 
 /**
  * Create a Telegram sender. The returned `send` function posts to the
@@ -92,6 +94,10 @@ export function createTelegramSender(config: TelegramConfig) {
               text,
               parse_mode: 'HTML',
             }),
+            // Bound individual calls so a hung Telegram connection cannot
+            // pin this send() — the detector-runner delivers via Promise.all,
+            // so one stuck send would delay every other delivery too.
+            signal: AbortSignal.timeout(TELEGRAM_FETCH_TIMEOUT_MS),
           });
 
           if (res.status === 429) {
@@ -100,9 +106,10 @@ export function createTelegramSender(config: TelegramConfig) {
             } | null;
             const waitSec = Math.min(body?.parameters?.retry_after ?? 5, MAX_RETRY_AFTER_SEC);
             await new Promise((r) => setTimeout(r, waitSec * 1000));
-            // Increment attempt so 429s count toward MAX_RETRIES and the loop
-            // cannot spin forever when Telegram throttles all requests.
-            attempt++;
+            // The for-loop's post-increment runs on `continue`, so 429s
+            // already count toward MAX_RETRIES — don't increment manually
+            // (that would double-advance the counter and halve the retry
+            // budget on sustained throttling).
             continue;
           }
 

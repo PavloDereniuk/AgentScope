@@ -28,6 +28,12 @@ export interface BackfillOptions {
 }
 
 const DEFAULT_MAX_SIGNATURES = 50;
+/**
+ * Millisecond delay between sequential getTransaction calls.
+ * Helius free tier caps at ~10–20 req/s; 100ms spacing keeps us
+ * comfortably below that while still backfilling 50 tx in ~5s.
+ */
+const BACKFILL_FETCH_DELAY_MS = 100;
 
 /**
  * Backfill recent transactions for a single wallet. Returns the count
@@ -70,9 +76,16 @@ export async function backfillWallet(
 
   let persisted = 0;
 
-  // Process sequentially to avoid hammering the RPC. Free-tier Helius
-  // has fairly aggressive rate limits.
-  for (const sig of signatures) {
+  // Process sequentially with a small delay between calls. Free-tier Helius
+  // has fairly aggressive rate limits and this loop runs at agent-registration
+  // time — a new agent doesn't need millisecond-level backfill latency, but
+  // being rate-limited mid-run and silently skipping tx is worse.
+  for (let i = 0; i < signatures.length; i++) {
+    const sig = signatures[i];
+    if (!sig) continue;
+    if (i > 0) {
+      await new Promise((r) => setTimeout(r, BACKFILL_FETCH_DELAY_MS));
+    }
     let tx: VersionedTransactionResponse | null;
     try {
       tx = await connection.getTransaction(sig.signature, {
@@ -118,11 +131,11 @@ export async function backfillWallet(
       const id = await persistTx(ctx, update);
       if (id !== null) persisted++;
     } catch (err) {
-      // Unique constraint violations are expected for duplicate sigs — skip silently.
-      const msg = err instanceof Error ? err.message : String(err);
-      if (msg.includes('duplicate') || msg.includes('unique')) {
-        continue;
-      }
+      // Backfill is best-effort; log and move on. (Historical versions of
+      // this code tried to detect duplicates by error-message substring,
+      // but there's no unique constraint on (agent_id, signature) yet —
+      // see review #12 — so that heuristic never fired. Once the unique
+      // constraint lands, switch to persistTx returning null on conflict.)
       logger.warn({ err, sig: sig.signature }, 'backfill: persist failed, skipping');
     }
   }

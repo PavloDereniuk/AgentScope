@@ -55,12 +55,14 @@ export function SettingsPage() {
 
   // Clear any previous mutation/validation error when the user switches agents —
   // otherwise the old error message would stick to the new form until the
-  // next submission. `selectedId` is read below so this effect re-runs on change.
+  // next submission. `selectedId` is the only value we care about; `mutation.reset`
+  // is stable across renders, so we intentionally exclude it from the dep array.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally only depend on selectedId
   useEffect(() => {
     if (!selectedId) return;
     setWebhookError(null);
     mutation.reset();
-  }, [selectedId, mutation.reset]);
+  }, [selectedId]);
 
   function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
