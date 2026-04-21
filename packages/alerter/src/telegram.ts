@@ -6,6 +6,12 @@
  */
 
 import type { AlertSeverity } from '@agentscope/shared';
+import {
+  formatAlertDetails,
+  formatAlertSummary,
+  formatRuleTitle,
+  isOnChainSignature,
+} from '@agentscope/shared';
 import type { AlertMessage, DeliveryResult } from './types';
 
 export interface TelegramConfig {
@@ -29,26 +35,47 @@ function escHtml(s: string): string {
     .replace(/"/g, '&quot;');
 }
 
+/** Render triggeredAt as "YYYY-MM-DD HH:mm:ss UTC" — stable, locale-independent. */
+function formatTimestamp(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return (
+    `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ` +
+    `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())} UTC`
+  );
+}
+
 /** Format an alert into a human-readable Telegram message. */
 export function formatTelegramMessage(msg: AlertMessage): string {
   const icon = SEVERITY_ICON[msg.severity] ?? '📢';
+  const title = formatRuleTitle(msg.ruleName);
+  const summary = formatAlertSummary(msg.ruleName, msg.payload);
+  const details = formatAlertDetails(msg.ruleName, msg.payload);
+
   const lines = [
-    `${icon} <b>${escHtml(msg.ruleName.replace(/_/g, ' ').toUpperCase())}</b>`,
+    `${icon} <b>${escHtml(title)}</b> · ${escHtml(msg.severity)}`,
     `Agent: <code>${escHtml(msg.agentName)}</code>`,
-    `Severity: ${escHtml(msg.severity)}`,
+    '',
+    escHtml(summary),
     '',
   ];
 
-  // Add key payload fields — all values are HTML-escaped to prevent injection.
-  for (const [key, value] of Object.entries(msg.payload)) {
-    if (key === 'signature') {
-      lines.push(`Tx: <code>${escHtml(String(value).slice(0, 20))}...</code>`);
+  for (const row of details) {
+    lines.push(`• ${escHtml(row.label)}: <b>${escHtml(row.value)}</b>`);
+  }
+
+  const sig = msg.payload.signature;
+  if (typeof sig === 'string' && sig.length > 0) {
+    if (isOnChainSignature(sig)) {
+      const url = `https://solscan.io/tx/${encodeURIComponent(sig)}`;
+      lines.push(`• Tx: <a href="${escHtml(url)}">${escHtml(sig.slice(0, 16))}...</a>`);
     } else {
-      lines.push(`${escHtml(key)}: <b>${escHtml(String(value))}</b>`);
+      lines.push(`• Tx: <code>${escHtml(sig.slice(0, 16))}...</code> (demo)`);
     }
   }
 
-  lines.push('', `<i>${escHtml(msg.triggeredAt)}</i>`);
+  lines.push('', `<i>${escHtml(formatTimestamp(msg.triggeredAt))}</i>`);
   return lines.join('\n');
 }
 

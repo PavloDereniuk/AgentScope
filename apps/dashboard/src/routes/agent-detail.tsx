@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/dialog';
 import { apiClient } from '@/lib/api-client';
 import { useStream } from '@/lib/use-stream';
+import { formatAlertSummary, formatRuleTitle } from '@agentscope/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Activity, AlertTriangle, ArrowLeft, Clock, DollarSign, Trash2 } from 'lucide-react';
 import { useState } from 'react';
@@ -38,7 +39,7 @@ interface AlertRow {
   id: string;
   severity: string;
   ruleName: string;
-  message: string;
+  payload: Record<string, unknown>;
   triggeredAt: string;
 }
 
@@ -233,7 +234,10 @@ export function AgentDetailPage() {
           <CardContent>
             {lastAlert ? (
               <>
-                <p className="text-sm font-medium">{lastAlert.ruleName}</p>
+                <p className="text-sm font-medium">{formatRuleTitle(lastAlert.ruleName)}</p>
+                <p className="truncate text-xs text-foreground/80">
+                  {formatAlertSummary(lastAlert.ruleName, lastAlert.payload)}
+                </p>
                 <p className="text-xs text-muted-foreground">
                   {new Date(lastAlert.triggeredAt).toLocaleString()}
                 </p>

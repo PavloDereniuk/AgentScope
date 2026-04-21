@@ -21,19 +21,35 @@ const sampleAlert: AlertMessage = {
 };
 
 describe('formatTelegramMessage', () => {
-  it('formats an alert with severity icon and payload fields', () => {
+  it('formats an alert with severity icon, human title, summary and detail rows', () => {
     const text = formatTelegramMessage(sampleAlert);
     expect(text).toContain('⚠️');
-    expect(text).toContain('SLIPPAGE SPIKE');
+    expect(text).toContain('Slippage Spike');
     expect(text).toContain('Trading Bot');
-    expect(text).toContain('actualPct');
-    expect(text).toContain('12');
+    // Summary line with human metric
+    expect(text).toContain('Swap slipped 12%');
+    // Detail rows use human labels, not raw payload keys
+    expect(text).toContain('Actual slippage');
+    expect(text).toContain('12%');
+    expect(text).not.toContain('actualPct');
+    // Severity is in the title line; no separate "Severity:" row
+    expect(text).not.toMatch(/^Severity: /m);
   });
 
   it('uses critical icon for critical severity', () => {
     const critical = { ...sampleAlert, severity: 'critical' as const };
     const text = formatTelegramMessage(critical);
     expect(text).toContain('🚨');
+  });
+
+  it('marks non-base58 signatures as demo (no link)', () => {
+    const demo = {
+      ...sampleAlert,
+      payload: { ...sampleAlert.payload, signature: 'demo-abc_xyz-not-on-chain' },
+    };
+    const text = formatTelegramMessage(demo);
+    expect(text).toContain('(demo)');
+    expect(text).not.toContain('solscan.io');
   });
 });
 

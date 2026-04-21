@@ -68,14 +68,16 @@ export function createAlertsRouter(db: Database) {
       if (to) where.push(lte(alerts.triggeredAt, to));
 
       const rows = await db
-        .select({ alert: alerts })
+        .select({ alert: alerts, agentName: agents.name })
         .from(alerts)
         .innerJoin(agents, eq(alerts.agentId, agents.id))
         .where(and(...where))
         .orderBy(desc(alerts.triggeredAt))
         .limit(MAX_ALERTS_PAGE);
 
-      return c.json({ alerts: rows.map((r) => r.alert) });
+      return c.json({
+        alerts: rows.map((r) => ({ ...r.alert, agentName: r.agentName })),
+      });
     },
   );
 
