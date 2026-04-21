@@ -7,9 +7,10 @@
  * 5.9 will invoke the detector after each persist.
  */
 
-import { type Database, agentTransactions } from '@agentscope/db';
+import { type Database, agentTransactions, agents } from '@agentscope/db';
 import { type ParseInput, type ParsedTx, parseTransaction } from '@agentscope/parser';
 import type { ISOTimestamp, SolanaPubkey, SolanaSignature } from '@agentscope/shared';
+import { eq, sql } from 'drizzle-orm';
 import { type DetectorDeps, runTxDetector } from './detector-runner';
 import type { TxUpdate } from './grpc-client';
 import type { Logger } from './logger';
@@ -79,6 +80,23 @@ export async function persistTx(ctx: PersistContext, tx: TxUpdate): Promise<numb
   });
   if (!matchedWallet || !agentId) return null;
 
+  // Bump last_seen_at and flip status to 'live' whenever we observe a tx
+  // for a registered agent. GREATEST guards backfill (which feeds historical
+  // tx on startup) from overwriting a fresher value set by the live WS
+  // stream. Runs before the insert so duplicate-tx inserts (on restart /
+  // re-backfill) still refresh the agent's freshness state.
+  try {
+    await ctx.db
+      .update(agents)
+      .set({
+        lastSeenAt: sql`GREATEST(COALESCE(${agents.lastSeenAt}, 'epoch'::timestamptz), ${tx.blockTime}::timestamptz)`,
+        status: 'live',
+      })
+      .where(eq(agents.id, agentId));
+  } catch (err) {
+    ctx.logger.warn({ err, agentId }, 'failed to bump last_seen_at');
+  }
+
   // Parse if we have the raw tx; otherwise insert minimal row.
   let parsed: ParsedTx | null = null;
   if (tx.rawTx) {
@@ -126,6 +144,12 @@ export async function persistTx(ctx: PersistContext, tx: TxUpdate): Promise<numb
     : [];
 
   try {
+    // Idempotent insert: the (agent_id, signature, block_time) unique index
+    // (migration 0003) swallows duplicates silently. Without this, every
+    // ingestion restart would re-insert the backfilled history, producing
+    // N× copies of each tx. When the row already exists, `returning` comes
+    // back empty and we bail out before running the detector — re-running
+    // rules on historical rows would spam the alerts feed.
     const inserted = await ctx.db
       .insert(agentTransactions)
       .values({
@@ -141,6 +165,13 @@ export async function persistTx(ctx: PersistContext, tx: TxUpdate): Promise<numb
         feeLamports: parsed?.feeLamports ?? 0,
         success: parsed?.success ?? true,
         rawLogs: limitedRawLogs,
+      })
+      .onConflictDoNothing({
+        target: [
+          agentTransactions.agentId,
+          agentTransactions.signature,
+          agentTransactions.blockTime,
+        ],
       })
       .returning({ id: agentTransactions.id });
 

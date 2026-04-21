@@ -9,8 +9,10 @@
  * dashboard isn't empty on first load.
  *
  * Designed to be called once per wallet (at registration time or via
- * an explicit trigger). Duplicate signatures are silently skipped by
- * the DB's unique constraint on `(agent_id, signature)`.
+ * an explicit trigger). Duplicate signatures are silently skipped via
+ * the unique index on `(agent_id, signature, block_time)` combined with
+ * `ON CONFLICT DO NOTHING` in persistTx — so repeated backfill passes
+ * (e.g. on every ingestion restart) are safe.
  */
 
 import { Connection, PublicKey, type VersionedTransactionResponse } from '@solana/web3.js';
@@ -129,13 +131,10 @@ export async function backfillWallet(
 
     try {
       const id = await persistTx(ctx, update);
+      // persistTx returns null for ON CONFLICT DO NOTHING — count only
+      // truly new rows, so `persisted` reflects fresh ingest, not retries.
       if (id !== null) persisted++;
     } catch (err) {
-      // Backfill is best-effort; log and move on. (Historical versions of
-      // this code tried to detect duplicates by error-message substring,
-      // but there's no unique constraint on (agent_id, signature) yet —
-      // see review #12 — so that heuristic never fired. Once the unique
-      // constraint lands, switch to persistTx returning null on conflict.)
       logger.warn({ err, sig: sig.signature }, 'backfill: persist failed, skipping');
     }
   }

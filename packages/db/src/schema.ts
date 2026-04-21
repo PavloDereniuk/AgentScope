@@ -155,6 +155,15 @@ export const agentTransactions = pgTable(
   (t) => ({
     pk: primaryKey({ columns: [t.id, t.blockTime] }),
     agentTimeIdx: index('tx_agent_time_idx').on(t.agentId, t.blockTime),
+    // Enforces idempotent ingestion: re-inserting the same (agent, signature)
+    // returns ON CONFLICT DO NOTHING instead of duplicating the row.
+    // block_time is included because partitioned-table unique indexes MUST
+    // cover the partition key. See migration 0003.
+    agentSignatureTimeUnique: uniqueIndex('tx_agent_signature_time_unique').on(
+      t.agentId,
+      t.signature,
+      t.blockTime,
+    ),
     signatureIdx: index('tx_signature_idx').on(t.signature),
     instructionIdx: index('tx_instruction_idx').on(t.instructionName),
   }),
