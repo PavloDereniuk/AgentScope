@@ -175,7 +175,15 @@ async function main(): Promise<void> {
   }, 30_000);
 
   // Start periodic cron for time-based rules (drawdown, error_rate, stale_agent).
-  const cron = startCron({ db, logger, defaults: DETECTOR_DEFAULTS });
+  // Pass alerter + publishEvent so cron-triggered alerts reach Telegram and
+  // the dashboard SSE bus — same channels the tx-triggered detector uses.
+  const cron = startCron({
+    db,
+    logger,
+    defaults: DETECTOR_DEFAULTS,
+    ...(telegramSender ? { alerter: { telegram: telegramSender } } : {}),
+    ...(publishEvent ? { publishEvent } : {}),
+  });
   logger.info('cron evaluator started');
 
   // Graceful shutdown handlers. Wait for any in-flight reconcile so we

@@ -3,12 +3,14 @@
  *
  * Every `intervalMs` (default 60s), fetches all agents and evaluates
  * cron-triggered rules (drawdown, error_rate, stale_agent) for each.
- * Alerts are inserted into the DB for any rules that fire.
+ * Alerts are inserted into the DB, published on the SSE bus, and
+ * delivered via the configured alerter (mirrors detector-runner.ts).
  *
  * The cron runs in the same process as the ingestion worker — no
  * separate deployment needed for MVP.
  */
 
+import type { AlertMessage, DeliverDeps } from '@agentscope/alerter';
 import { type Database, agents, alerts } from '@agentscope/db';
 import {
   type CronRuleDef,
@@ -29,6 +31,10 @@ export interface CronDeps {
   logger: EvalLogger;
   defaults: DefaultThresholds;
   intervalMs?: number;
+  /** When set, alerts are delivered via the alerter after DB insert. */
+  alerter?: DeliverDeps;
+  /** Optional callback to publish SSE events to the API (6.15). */
+  publishEvent?: (event: { type: string; agentId: string; [key: string]: unknown }) => void;
 }
 
 /**
@@ -36,7 +42,7 @@ export interface CronDeps {
  */
 export async function runCronCycle(deps: CronDeps): Promise<number> {
   const allAgents = await deps.db
-    .select({ id: agents.id, alertRules: agents.alertRules })
+    .select({ id: agents.id, name: agents.name, alertRules: agents.alertRules })
     .from(agents);
 
   const now = new Date();
@@ -56,34 +62,106 @@ export async function runCronCycle(deps: CronDeps): Promise<number> {
       deps.logger,
     );
 
-    if (results.length > 0) {
-      // onConflictDoNothing prevents alert storms: if the same dedupeKey
-      // fires on every 60s cycle (e.g. persistent drawdown), only the
-      // first insert goes through — subsequent cycles are no-ops.
-      const inserted = await deps.db
-        .insert(alerts)
-        .values(
-          results.map((r) => ({
-            agentId: agent.id,
-            ruleName: r.ruleName,
-            severity: r.severity,
-            payload: r.payload,
-            dedupeKey: r.dedupeKey ?? null,
-          })),
-        )
-        .onConflictDoNothing()
-        .returning({ id: alerts.id });
-      totalAlerts += inserted.length;
+    if (results.length === 0) continue;
 
-      // Mirror the stale_agent rule into agents.status so the dashboard
-      // list view ("stale" badge) matches alert state. The inverse
-      // transition (stale → live) is handled in persistTx when a fresh
-      // tx arrives. Checked against evaluateCron results (not `inserted`)
-      // so the flip still happens on cycles where the dedupe key already
-      // exists but the underlying condition is ongoing.
-      if (results.some((r) => r.ruleName === 'stale_agent')) {
-        await deps.db.update(agents).set({ status: 'stale' }).where(eq(agents.id, agent.id));
-      }
+    // onConflictDoNothing prevents alert storms: if the same dedupeKey
+    // fires on every 60s cycle (e.g. persistent drawdown), only the
+    // first insert goes through — subsequent cycles are no-ops.
+    const inserted = await deps.db
+      .insert(alerts)
+      .values(
+        results.map((r) => ({
+          agentId: agent.id,
+          ruleName: r.ruleName,
+          severity: r.severity,
+          payload: r.payload,
+          dedupeKey: r.dedupeKey ?? null,
+        })),
+      )
+      .onConflictDoNothing()
+      // Return dedupeKey so we can correlate inserted rows back to their
+      // RuleResult by key instead of relying on array-index order, which
+      // is not guaranteed stable when onConflictDoNothing skips rows.
+      .returning({ id: alerts.id, triggeredAt: alerts.triggeredAt, dedupeKey: alerts.dedupeKey });
+
+    totalAlerts += inserted.length;
+
+    // Mirror the stale_agent rule into agents.status so the dashboard
+    // list view ("stale" badge) matches alert state. The inverse
+    // transition (stale → live) is handled in persistTx when a fresh
+    // tx arrives. Checked against evaluateCron results (not `inserted`)
+    // so the flip still happens on cycles where the dedupe key already
+    // exists but the underlying condition is ongoing.
+    if (results.some((r) => r.ruleName === 'stale_agent')) {
+      await deps.db.update(agents).set({ status: 'stale' }).where(eq(agents.id, agent.id));
+    }
+
+    // Skip publish + deliver for rows that were deduped (already exist).
+    if (inserted.length === 0) continue;
+
+    const insertedByKey = new Map(inserted.map((row) => [row.dedupeKey, row]));
+
+    // Publish alert.new on the SSE bus so dashboards refresh live.
+    for (const result of results) {
+      const row = insertedByKey.get(result.dedupeKey ?? null);
+      if (!row) continue;
+      deps.publishEvent?.({
+        type: 'alert.new',
+        agentId: agent.id,
+        alertId: row.id,
+        severity: result.severity,
+        at: row.triggeredAt,
+      });
+    }
+
+    // Deliver via configured channels (Telegram for MVP). Each delivery
+    // is isolated — one channel failure must not block others. Mirrors
+    // the pattern used in detector-runner.ts for tx-triggered rules.
+    if (deps.alerter) {
+      const alerter = deps.alerter;
+      const agentName = agent.name;
+      const { deliver } = await import('@agentscope/alerter');
+
+      await Promise.all(
+        results.map(async (result) => {
+          const row = insertedByKey.get(result.dedupeKey ?? null);
+          if (!row) return;
+
+          const msg: AlertMessage = {
+            id: row.id,
+            agentId: agent.id,
+            agentName,
+            ruleName: result.ruleName,
+            severity: result.severity,
+            payload: result.payload,
+            triggeredAt: row.triggeredAt,
+          };
+
+          try {
+            const delivery = await deliver(alerter, msg, 'telegram');
+            if (delivery.success) {
+              await deps.db
+                .update(alerts)
+                .set({
+                  deliveredAt: new Date().toISOString(),
+                  deliveryChannel: 'telegram',
+                  deliveryStatus: 'delivered',
+                })
+                .where(eq(alerts.id, row.id));
+            } else {
+              await deps.db
+                .update(alerts)
+                .set({
+                  deliveryStatus: 'failed',
+                  deliveryError: delivery.error ?? 'unknown',
+                })
+                .where(eq(alerts.id, row.id));
+            }
+          } catch (err) {
+            deps.logger.error({ err, alertId: row.id }, 'cron alert delivery failed');
+          }
+        }),
+      );
     }
   }
 

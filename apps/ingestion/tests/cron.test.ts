@@ -8,6 +8,7 @@
 import { readFile, readdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { AlertMessage, ChannelSender } from '@agentscope/alerter';
 import { type Database, agentTransactions, agents, alerts, users } from '@agentscope/db';
 import type { DefaultThresholds } from '@agentscope/detector';
 import { PGlite } from '@electric-sql/pglite';
@@ -148,6 +149,75 @@ describe('cron cycle', () => {
       const activeAlerts = await db.select().from(alerts).where(eq(alerts.agentId, activeAgentId));
       const activeStale = activeAlerts.find((a) => a.ruleName === 'stale_agent');
       expect(activeStale).toBeUndefined();
+    } finally {
+      globalThis.Date = realDate;
+    }
+  });
+
+  it('delivers cron alerts via alerter and publishes SSE events', async () => {
+    // Fresh state: clear previous alerts and bump the stale agent's last tx
+    // back to 11:29 so evaluateCron picks it up again against our fake clock.
+    await db.delete(alerts).where(eq(alerts.agentId, staleAgentId));
+    await db.delete(alerts).where(eq(alerts.agentId, activeAgentId));
+    await db
+      .update(agentTransactions)
+      .set({ blockTime: '2026-04-09T11:29:00Z' })
+      .where(eq(agentTransactions.agentId, staleAgentId));
+
+    const telegramCalls: AlertMessage[] = [];
+    const telegram: ChannelSender = {
+      async send(msg) {
+        telegramCalls.push(msg);
+        return { success: true, channel: 'telegram' };
+      },
+    };
+
+    type PublishedEvent = { type: string; agentId: string; [key: string]: unknown };
+    const published: PublishedEvent[] = [];
+
+    const realDate = globalThis.Date;
+    const fakeNow = new Date('2026-04-09T12:00:00Z');
+    globalThis.Date = class extends realDate {
+      constructor(...args: unknown[]) {
+        if (args.length === 0) {
+          super(fakeNow.getTime());
+        } else {
+          // @ts-expect-error — spread into Date ctor
+          super(...args);
+        }
+      }
+
+      static override now() {
+        return fakeNow.getTime();
+      }
+    } as DateConstructor;
+
+    try {
+      await runCronCycle({
+        db,
+        logger: silentLogger,
+        defaults,
+        alerter: { telegram },
+        publishEvent: (event) => published.push(event),
+      });
+
+      // Telegram must have received at least the stale_agent alert.
+      const staleMsg = telegramCalls.find((m) => m.ruleName === 'stale_agent');
+      expect(staleMsg).toBeDefined();
+      expect(staleMsg?.agentName).toBe('Stale Cron Agent');
+
+      // Alert row should flip pending → delivered after the sender returns success.
+      const staleRow = (
+        await db.select().from(alerts).where(eq(alerts.agentId, staleAgentId))
+      ).find((a) => a.ruleName === 'stale_agent');
+      expect(staleRow?.deliveryStatus).toBe('delivered');
+      expect(staleRow?.deliveryChannel).toBe('telegram');
+      expect(staleRow?.deliveredAt).not.toBeNull();
+
+      // SSE bus must have seen alert.new for this agent.
+      const sseEvent = published.find((e) => e.type === 'alert.new' && e.agentId === staleAgentId);
+      expect(sseEvent).toBeDefined();
+      expect(sseEvent?.alertId).toBe(staleRow?.id);
     } finally {
       globalThis.Date = realDate;
     }
