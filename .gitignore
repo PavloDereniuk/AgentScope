@@ -38,6 +38,8 @@ npm-debug.log*
 .claude/settings.local.json
 .claude/projects/
 .claude/.cache/
+claude-session.jsonl
+claude-session-*.jsonl
 
 # OS
 .DS_Store
