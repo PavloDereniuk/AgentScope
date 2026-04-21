@@ -81,9 +81,13 @@ export async function runTxDetector(
         dedupeKey: r.dedupeKey ?? null,
       })),
     )
+    // Dedupe at the DB level: slippage/gas rules key on tx signature, so a
+    // replayed tx (e.g. WS redelivery) must not produce a duplicate alert.
+    // `target` must match the UNIQUE index from migration 0004.
+    .onConflictDoNothing({ target: [alerts.agentId, alerts.ruleName, alerts.dedupeKey] })
     // Include dedupeKey in RETURNING so we can correlate inserted rows back to
     // their RuleResult by key instead of relying on array-index order (which is
-    // not guaranteed to be stable if onConflictDoNothing ever skips rows).
+    // not guaranteed to be stable when onConflictDoNothing skips rows).
     .returning({ id: alerts.id, triggeredAt: alerts.triggeredAt, dedupeKey: alerts.dedupeKey });
 
   // Build a lookup map: dedupeKey → inserted row (null key falls back to index).

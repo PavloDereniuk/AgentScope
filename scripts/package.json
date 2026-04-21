@@ -10,7 +10,15 @@
     "demo-yield": "tsx --env-file=../.env demo-yield.ts",
     "demo-nft": "tsx --env-file=../.env demo-nft.ts",
     "trigger-anomaly": "tsx --env-file=../.env trigger-anomaly.ts",
-    "seed-anomaly-alert": "tsx --env-file=../.env seed-anomaly-alert.ts"
+    "seed-anomaly-alert": "tsx --env-file=../.env seed-anomaly-alert.ts",
+    "seed-stale-test-agent": "tsx --env-file=../.env seed-stale-test-agent.ts",
+    "cleanup-stale-test-agent": "tsx --env-file=../.env cleanup-stale-test-agent.ts",
+    "backdate-last-seen": "tsx --env-file=../.env backdate-last-seen.ts",
+    "check-stale-buckets": "tsx --env-file=../.env check-stale-buckets.ts",
+    "inspect-stale-alert": "tsx --env-file=../.env inspect-stale-alert.ts",
+    "inspect-trader-tx": "tsx --env-file=../.env inspect-trader-tx.ts",
+    "inspect-alerts-duplicates": "tsx --env-file=../.env inspect-alerts-duplicates.ts",
+    "verify-alerts-dedupe-index": "tsx --env-file=../.env verify-alerts-dedupe-index.ts"
   },
   "dependencies": {
     "@agentscope/agent-kit-sdk": "workspace:*",

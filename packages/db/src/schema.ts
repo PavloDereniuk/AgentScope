@@ -233,7 +233,7 @@ export const alerts = pgTable(
   (t) => ({
     agentTimeIdx: index('alerts_agent_time_idx').on(t.agentId, t.triggeredAt),
     ruleIdx: index('alerts_rule_idx').on(t.ruleName, t.triggeredAt),
-    dedupeIdx: index('alerts_dedupe_idx').on(t.agentId, t.ruleName, t.dedupeKey),
+    dedupeUnique: uniqueIndex('alerts_dedupe_unique').on(t.agentId, t.ruleName, t.dedupeKey),
   }),
 );
 

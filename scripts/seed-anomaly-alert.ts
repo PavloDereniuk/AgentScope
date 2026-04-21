@@ -178,7 +178,8 @@ if (results.length === 0) {
   process.exit(1);
 }
 
-// Insert alert row.
+// Insert alert row. Mirror ingestion's dedupe path so repeated runs with
+// the same (freshly-generated) signature behave consistently.
 const inserted = await db
   .insert(alerts)
   .values(
@@ -191,6 +192,7 @@ const inserted = await db
       dedupeKey: r.dedupeKey ?? null,
     })),
   )
+  .onConflictDoNothing({ target: [alerts.agentId, alerts.ruleName, alerts.dedupeKey] })
   .returning({ id: alerts.id, triggeredAt: alerts.triggeredAt });
 
 console.info(`Inserted ${inserted.length} alert row(s)`);

@@ -66,7 +66,10 @@ export async function runCronCycle(deps: CronDeps): Promise<number> {
 
     // onConflictDoNothing prevents alert storms: if the same dedupeKey
     // fires on every 60s cycle (e.g. persistent drawdown), only the
-    // first insert goes through — subsequent cycles are no-ops.
+    // first insert goes through — subsequent cycles are no-ops. The
+    // `target` must match the UNIQUE index on (agent_id, rule_name,
+    // dedupe_key) from migration 0004; without it Postgres has no
+    // constraint to match and every tick inserts a duplicate row.
     const inserted = await deps.db
       .insert(alerts)
       .values(
@@ -78,7 +81,7 @@ export async function runCronCycle(deps: CronDeps): Promise<number> {
           dedupeKey: r.dedupeKey ?? null,
         })),
       )
-      .onConflictDoNothing()
+      .onConflictDoNothing({ target: [alerts.agentId, alerts.ruleName, alerts.dedupeKey] })
       // Return dedupeKey so we can correlate inserted rows back to their
       // RuleResult by key instead of relying on array-index order, which
       // is not guaranteed stable when onConflictDoNothing skips rows.
