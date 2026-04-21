@@ -15,6 +15,10 @@
  *   TELEGRAM_DEFAULT_CHAT_ID
  *   AGENTSCOPE_AGENT_TOKEN_TRADER   (used to locate the target agent)
  *   AGENTSCOPE_SLIPPAGE_PCT_THRESHOLD  (optional override, default 5)
+ *   INTERNAL_SECRET                 (optional — if set, publishes SSE tx.new + alert.new
+ *                                    so the dashboard refreshes live without manual F5)
+ *   AGENTSCOPE_API_URL              (optional, default http://localhost:3000 — API base
+ *                                    for /internal/publish when INTERNAL_SECRET is set)
  */
 
 import { randomUUID, randomBytes } from 'node:crypto';
@@ -34,11 +38,46 @@ const DATABASE_URL = process.env['DATABASE_URL'];
 const TELEGRAM_BOT_TOKEN = process.env['TELEGRAM_BOT_TOKEN'];
 const TELEGRAM_DEFAULT_CHAT_ID = process.env['TELEGRAM_DEFAULT_CHAT_ID'];
 const AGENT_TOKEN = process.env['AGENTSCOPE_AGENT_TOKEN_TRADER'];
+const INTERNAL_SECRET = process.env['INTERNAL_SECRET'];
+const API_URL = (process.env['AGENTSCOPE_API_URL'] ?? 'http://localhost:3000').replace(/\/$/, '');
 
 if (!DATABASE_URL) throw new Error('DATABASE_URL is required');
 if (!TELEGRAM_BOT_TOKEN) throw new Error('TELEGRAM_BOT_TOKEN is required');
 if (!TELEGRAM_DEFAULT_CHAT_ID) throw new Error('TELEGRAM_DEFAULT_CHAT_ID is required');
 if (!AGENT_TOKEN) throw new Error('AGENTSCOPE_AGENT_TOKEN_TRADER is required');
+
+/**
+ * Publish a bus event to the API's /internal/publish endpoint so SSE
+ * subscribers (the dashboard) see the new tx/alert without a page
+ * refresh. Mirrors apps/ingestion/src/event-publisher.ts — same shape,
+ * same header, same secret. Silent no-op when INTERNAL_SECRET is absent
+ * so the script still works for headless demos.
+ */
+async function publishBusEvent(
+  event:
+    | { type: 'tx.new'; agentId: string; signature: string; at: string }
+    | { type: 'alert.new'; agentId: string; alertId: string; severity: string; at: string },
+): Promise<void> {
+  if (!INTERNAL_SECRET) return;
+  try {
+    const res = await fetch(`${API_URL}/internal/publish`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Internal-Secret': INTERNAL_SECRET,
+      },
+      body: JSON.stringify(event),
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (!res.ok) {
+      console.warn(`SSE publish ${event.type} returned ${res.status}`);
+    } else {
+      console.info(`↪ SSE ${event.type} published`);
+    }
+  } catch (err) {
+    console.warn(`SSE publish ${event.type} failed:`, err);
+  }
+}
 
 const defaults: DefaultThresholds = {
   slippagePct: Number(process.env['AGENTSCOPE_SLIPPAGE_PCT_THRESHOLD'] ?? '5'),
@@ -92,6 +131,13 @@ await db.insert(agentTransactions).values({
 });
 
 console.info(`Inserted fake jupiter.swap tx: ${signature}`);
+
+await publishBusEvent({
+  type: 'tx.new',
+  agentId: agent.id,
+  signature,
+  at: new Date().toISOString(),
+});
 
 // Run the real detector — same call as ingestion's detector-runner.
 const txSnapshot: TxSnapshot = {
@@ -169,6 +215,14 @@ for (let i = 0; i < results.length; i++) {
     payload: result.payload,
     triggeredAt: row.triggeredAt,
   };
+
+  await publishBusEvent({
+    type: 'alert.new',
+    agentId: agent.id,
+    alertId: row.id,
+    severity: result.severity,
+    at: new Date(row.triggeredAt).toISOString(),
+  });
 
   const delivery = await deliver({ telegram }, msg, 'telegram');
 
