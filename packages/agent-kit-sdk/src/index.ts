@@ -22,3 +22,8 @@ export type { AgentScopeConfig } from './otel-setup.js';
 
 export { traced } from './trace-decorator.js';
 export type { SpanAttributes } from './trace-decorator.js';
+
+// Re-export the OTel trace API so consumers can enrich the currently-active
+// span (e.g. attach an on-chain signature after a tx confirms) without
+// adding @opentelemetry/api as a direct dependency.
+export { trace } from '@opentelemetry/api';

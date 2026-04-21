@@ -66,12 +66,12 @@ async function main(): Promise<void> {
       ? createEventPublisher(config.API_INTERNAL_URL, config.INTERNAL_SECRET, logger)
       : undefined;
 
-  // Set up optional Telegram alerter (requires TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID).
+  // Set up optional Telegram alerter (requires TELEGRAM_BOT_TOKEN + TELEGRAM_DEFAULT_CHAT_ID).
   const telegramSender =
-    config.TELEGRAM_BOT_TOKEN && config.TELEGRAM_CHAT_ID
+    config.TELEGRAM_BOT_TOKEN && config.TELEGRAM_DEFAULT_CHAT_ID
       ? createTelegramSender({
           botToken: config.TELEGRAM_BOT_TOKEN,
-          chatId: config.TELEGRAM_CHAT_ID,
+          chatId: config.TELEGRAM_DEFAULT_CHAT_ID,
         })
       : undefined;
 

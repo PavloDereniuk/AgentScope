@@ -20,6 +20,7 @@ import {
 } from '@agentscope/detector';
 import type { EvalLogger } from '@agentscope/detector';
 import type { AlertRuleThresholds } from '@agentscope/shared';
+import { eq } from 'drizzle-orm';
 
 const CRON_RULES: readonly CronRuleDef[] = [drawdownRule, errorRateRule, staleRule];
 
@@ -73,6 +74,16 @@ export async function runCronCycle(deps: CronDeps): Promise<number> {
         .onConflictDoNothing()
         .returning({ id: alerts.id });
       totalAlerts += inserted.length;
+
+      // Mirror the stale_agent rule into agents.status so the dashboard
+      // list view ("stale" badge) matches alert state. The inverse
+      // transition (stale → live) is handled in persistTx when a fresh
+      // tx arrives. Checked against evaluateCron results (not `inserted`)
+      // so the flip still happens on cycles where the dedupe key already
+      // exists but the underlying condition is ongoing.
+      if (results.some((r) => r.ruleName === 'stale_agent')) {
+        await deps.db.update(agents).set({ status: 'stale' }).where(eq(agents.id, agent.id));
+      }
     }
   }
 

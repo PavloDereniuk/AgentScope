@@ -31,7 +31,7 @@ const envSchema = z.object({
   /** Telegram bot token (BotFather). Required to deliver alerts via Telegram. */
   TELEGRAM_BOT_TOKEN: z.string().min(1).optional(),
   /** Telegram chat ID to send alerts to (user, group, or channel). */
-  TELEGRAM_CHAT_ID: z.string().min(1).optional(),
+  TELEGRAM_DEFAULT_CHAT_ID: z.string().min(1).optional(),
 });
 
 export type Config = z.infer<typeof envSchema>;

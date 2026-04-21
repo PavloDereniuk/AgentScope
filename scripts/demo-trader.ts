@@ -26,7 +26,7 @@ import {
   sendAndConfirmTransaction,
 } from '@solana/web3.js';
 import { readFileSync } from 'node:fs';
-import { initAgentScope, traced } from '@agentscope/agent-kit-sdk';
+import { initAgentScope, trace, traced } from '@agentscope/agent-kit-sdk';
 
 const RPC_URL = process.env['SOLANA_RPC_URL'] ?? 'https://api.mainnet-beta.solana.com';
 const API_URL = process.env['AGENTSCOPE_API_URL'] ?? 'http://localhost:3000';
@@ -101,6 +101,9 @@ async function runTradingCycle(cycle: number): Promise<void> {
           }),
         );
         const signature = await sendAndConfirmTransaction(connection, tx, [wallet]);
+        // Correlate this span (and its whole trace) with the on-chain tx
+        // so the dashboard's reasoning drill-down can join by signature.
+        trace.getActiveSpan()?.setAttribute('solana.tx.signature', signature);
         console.info(`[cycle ${cycle}] swap tx: ${signature}`);
         return signature;
       },
