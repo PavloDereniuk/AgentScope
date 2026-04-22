@@ -1,7 +1,6 @@
+import { useAuthActions } from '@/lib/auth-actions';
 import { cn } from '@/lib/utils';
-import { usePrivy } from '@privy-io/react-auth';
 import { Activity, AlertTriangle, Bot, LogOut, Settings } from 'lucide-react';
-import { useState } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 
 const navItems = [
@@ -11,8 +10,7 @@ const navItems = [
 ];
 
 export function Layout() {
-  const { logout } = usePrivy();
-  const [loggingOut, setLoggingOut] = useState(false);
+  const { signOut, isSigningOut } = useAuthActions();
 
   return (
     <div className="flex min-h-screen">
@@ -45,22 +43,12 @@ export function Layout() {
         <div className="border-t p-2">
           <button
             type="button"
-            disabled={loggingOut}
-            onClick={() => {
-              setLoggingOut(true);
-              logout()
-                .catch((err) => {
-                  // eslint-disable-next-line no-console
-                  console.error('[auth] Privy logout failed', err);
-                })
-                .finally(() => {
-                  setLoggingOut(false);
-                });
-            }}
+            disabled={isSigningOut}
+            onClick={signOut}
             className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
           >
             <LogOut className="h-4 w-4" />
-            {loggingOut ? 'Signing out…' : 'Sign Out'}
+            {isSigningOut ? 'Signing out…' : 'Sign Out'}
           </button>
         </div>
       </aside>
