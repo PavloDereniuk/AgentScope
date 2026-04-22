@@ -4,17 +4,29 @@ import { createDb } from '../src/client';
 const url = process.env['DATABASE_URL'];
 if (!url) throw new Error('DATABASE_URL is required');
 
+// Full-table scans on `agent_transactions` (partitioned by block_time) are
+// expensive on Supabase free tier — one full-table count across 12 partitions
+// can blow through the 30s statement_timeout. Default to a 7-day window and
+// let operators opt into a full scan explicitly.
+const WINDOW_DAYS_ENV = process.env['INSPECT_WINDOW_DAYS'];
+const WINDOW_DAYS = WINDOW_DAYS_ENV === 'all' ? null : Number(WINDOW_DAYS_ENV ?? 7);
+if (WINDOW_DAYS !== null && !Number.isInteger(WINDOW_DAYS)) {
+  throw new Error('INSPECT_WINDOW_DAYS must be an integer or "all"');
+}
+const windowFilter = WINDOW_DAYS === null ? sql`TRUE` : sql`block_time > now() - interval '${sql.raw(`${WINDOW_DAYS} days`)}'`;
+console.log(`Scanning agent_transactions — window: ${WINDOW_DAYS === null ? 'ALL' : `last ${WINDOW_DAYS} days`}`);
+
 const db = createDb({ connectionString: url });
 
 const total = await db.execute<{ n: number }>(
-  sql`SELECT count(*)::int AS n FROM agent_transactions`,
+  sql`SELECT count(*)::int AS n FROM agent_transactions WHERE ${windowFilter}`,
 );
-console.log('agent_transactions total rows:', total[0]?.n);
+console.log('agent_transactions rows in window:', total[0]?.n);
 
 const distinct = await db.execute<{ n: number }>(
-  sql`SELECT count(DISTINCT signature)::int AS n FROM agent_transactions`,
+  sql`SELECT count(DISTINCT signature)::int AS n FROM agent_transactions WHERE ${windowFilter}`,
 );
-console.log('distinct signatures:', distinct[0]?.n);
+console.log('distinct signatures in window:', distinct[0]?.n);
 
 const dupes = await db.execute<{
   signature: string;
@@ -27,6 +39,7 @@ const dupes = await db.execute<{
          string_agg(DISTINCT agent_id::text, ',') AS agent_ids,
          string_agg(DISTINCT block_time::text, ' | ') AS block_times
   FROM agent_transactions
+  WHERE ${windowFilter}
   GROUP BY signature
   HAVING count(*) > 1
   ORDER BY count(*) DESC, max(block_time) DESC

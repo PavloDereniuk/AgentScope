@@ -1,6 +1,5 @@
 import { Kpi, KpiRow } from '@/components/Kpi';
 import { LiveTicker, type TickerItem, type TickerKind } from '@/components/LiveTicker';
-import { Sparkline } from '@/components/Sparkline';
 import { apiClient } from '@/lib/api-client';
 import { cn } from '@/lib/utils';
 import type { Alert } from '@agentscope/shared';
@@ -222,25 +221,19 @@ export function OverviewPage() {
         </Card>
       </div>
 
-      <Card title="Pipeline Health" meta="24h rolling · trend">
+      <Card title="Pipeline Health" meta="24h rolling · snapshot">
         <div className="grid grid-cols-3 gap-6 px-5 py-4 max-[760px]:grid-cols-1">
           <MiniStat
             label="Live / Stale / Failed"
             value={`${liveCount} · ${staleCount} · ${failedCount}`}
-            spark={[liveCount, liveCount, liveCount, liveCount]}
           />
           <MiniStat
             label="Alert severities"
             value={`${criticalAlerts.length}·${warningAlerts.length}·${
               alerts.length - criticalAlerts.length - warningAlerts.length
             }`}
-            spark={[alerts.length, alerts.length, alerts.length, alerts.length]}
           />
-          <MiniStat
-            label="Registered agents"
-            value={agents.length}
-            spark={[agents.length, agents.length, agents.length, agents.length]}
-          />
+          <MiniStat label="Registered agents" value={agents.length} />
         </div>
       </Card>
     </div>
@@ -297,18 +290,14 @@ function StatusBadge({ status }: { status: 'live' | 'stale' | 'failed' }) {
   );
 }
 
-function MiniStat({
-  label,
-  value,
-  spark,
-}: { label: string; value: React.ReactNode; spark: number[] }) {
+function MiniStat({ label, value }: { label: string; value: React.ReactNode }) {
+  // No sparkline until the backend exposes a real 24h time series for these
+  // KPIs — rendering a flat line from a single snapshot would misrepresent
+  // the data in a live demo.
   return (
     <div>
       <div className="font-mono text-[10px] uppercase tracking-[0.1em] text-fg-3">{label}</div>
-      <div className="mt-2 flex items-baseline gap-2 font-mono text-lg">
-        <span>{value}</span>
-        <Sparkline points={spark} width={48} height={18} />
-      </div>
+      <div className="mt-2 font-mono text-lg">{value}</div>
     </div>
   );
 }

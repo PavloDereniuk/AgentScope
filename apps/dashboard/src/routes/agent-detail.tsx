@@ -17,7 +17,7 @@ import { cn } from '@/lib/utils';
 import { formatAlertSummary, formatRuleTitle } from '@agentscope/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Copy, Trash2 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 
 interface AgentDetail {
@@ -78,6 +78,13 @@ export function AgentDetailPage() {
 
   const [selectedTx, setSelectedTx] = useState<string | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [walletCopyState, setWalletCopyState] = useState<'idle' | 'copied' | 'error'>('idle');
+
+  useEffect(() => {
+    if (walletCopyState === 'idle') return;
+    const t = window.setTimeout(() => setWalletCopyState('idle'), 1500);
+    return () => window.clearTimeout(t);
+  }, [walletCopyState]);
 
   useStream(id);
 
@@ -166,11 +173,22 @@ export function AgentDetailPage() {
         <div className="flex gap-2">
           <button
             type="button"
-            onClick={() => navigator.clipboard.writeText(agent.walletPubkey)}
+            onClick={async () => {
+              try {
+                await navigator.clipboard.writeText(agent.walletPubkey);
+                setWalletCopyState('copied');
+              } catch {
+                setWalletCopyState('error');
+              }
+            }}
             className={btnGhost}
           >
             <Copy className="h-3.5 w-3.5" />
-            Copy wallet
+            {walletCopyState === 'copied'
+              ? 'Copied'
+              : walletCopyState === 'error'
+                ? 'Copy failed'
+                : 'Copy wallet'}
           </button>
           <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
             <DialogTrigger asChild>

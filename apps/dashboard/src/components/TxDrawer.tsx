@@ -1,8 +1,9 @@
 import { apiClient } from '@/lib/api-client';
 import { cn } from '@/lib/utils';
+import { SOLANA_SIGNATURE_RE } from '@agentscope/shared';
 import { useQuery } from '@tanstack/react-query';
 import { Copy, Download, X } from 'lucide-react';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 interface SpanRow {
   id: string;
@@ -36,7 +37,6 @@ interface TxDrawerProps {
 }
 
 const SOLSCAN_BASE = 'https://solscan.io/tx';
-const SIGNATURE_RE = /^[1-9A-HJ-NP-Za-km-z]{43,88}$/;
 
 /**
  * Slide-in drawer showing full tx details + span tree + signature
@@ -67,15 +67,32 @@ export function TxDrawer({ signature, onClose }: TxDrawerProps) {
     enabled: open,
   });
 
+  // `copyState` tracks the last clipboard attempt so the UI can confirm
+  // success/failure — bare `navigator.clipboard.writeText` rejects silently
+  // in insecure contexts and Firefox.
+  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'error'>('idle');
+  useEffect(() => {
+    if (copyState === 'idle') return;
+    const id = window.setTimeout(() => setCopyState('idle'), 1500);
+    return () => window.clearTimeout(id);
+  }, [copyState]);
+
   if (!open) return null;
 
   const tx = data?.transaction;
   const spans = data?.reasoningLogs ?? [];
-  const isOnChain = signature ? SIGNATURE_RE.test(signature) : false;
+  const isOnChain = signature ? SOLANA_SIGNATURE_RE.test(signature) : false;
+  const rawDelta = tx ? Number(tx.solDelta) : Number.NaN;
+  const solDelta = Number.isFinite(rawDelta) ? rawDelta : null;
 
   async function handleCopy() {
     if (!signature) return;
-    await navigator.clipboard.writeText(signature);
+    try {
+      await navigator.clipboard.writeText(signature);
+      setCopyState('copied');
+    } catch {
+      setCopyState('error');
+    }
   }
 
   function handleDownload() {
@@ -147,11 +164,10 @@ export function TxDrawer({ signature, onClose }: TxDrawerProps) {
                   <span
                     className={cn(
                       'font-mono text-[13px] tabular-nums',
-                      Number(tx.solDelta) >= 0 ? 'text-accent' : 'text-crit',
+                      solDelta === null ? 'text-fg-3' : solDelta >= 0 ? 'text-accent' : 'text-crit',
                     )}
                   >
-                    {Number(tx.solDelta) >= 0 ? '+' : ''}
-                    {Number(tx.solDelta).toFixed(4)}
+                    {solDelta === null ? '—' : `${solDelta >= 0 ? '+' : ''}${solDelta.toFixed(4)}`}
                   </span>
                 </Field>
                 <Field label="Fee (lamports)">
@@ -168,7 +184,11 @@ export function TxDrawer({ signature, onClose }: TxDrawerProps) {
                   className="inline-flex items-center gap-1.5 rounded-[5px] border border-line bg-surface px-2.5 py-1.5 font-mono text-[11px] text-fg-2 hover:text-fg hover:border-fg-3"
                 >
                   <Copy className="h-3 w-3" />
-                  Copy signature
+                  {copyState === 'copied'
+                    ? 'Copied'
+                    : copyState === 'error'
+                      ? 'Copy failed'
+                      : 'Copy signature'}
                 </button>
                 <button
                   type="button"

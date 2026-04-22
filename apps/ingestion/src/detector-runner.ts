@@ -9,7 +9,7 @@
  * by the evaluator — they never crash the ingestion pipeline.
  */
 
-import type { AlertMessage, DeliverDeps } from '@agentscope/alerter';
+import { type AlertMessage, type DeliverDeps, deliver } from '@agentscope/alerter';
 import { type Database, agents, alerts } from '@agentscope/db';
 import {
   type DefaultThresholds,
@@ -25,6 +25,16 @@ import { eq } from 'drizzle-orm';
 
 /** All tx-triggered rules, evaluated after each persist. */
 const TX_RULES: readonly TxRuleDef[] = [slippageRule, gasRule];
+
+/**
+ * Stable composite key for RuleResult ↔ inserted-row correlation.
+ * Null dedupeKey is legal for rules that opt out of dedupe; without the
+ * rule-name prefix, two different rules both emitting null collide into
+ * a single Map slot and the second result steals the first's row.
+ */
+function correlationKey(ruleName: string, dedupeKey: string | null): string {
+  return `${ruleName}:${dedupeKey ?? ''}`;
+}
 
 export interface DetectorDeps {
   db: Database;
@@ -85,17 +95,25 @@ export async function runTxDetector(
     // replayed tx (e.g. WS redelivery) must not produce a duplicate alert.
     // `target` must match the UNIQUE index from migration 0004.
     .onConflictDoNothing({ target: [alerts.agentId, alerts.ruleName, alerts.dedupeKey] })
-    // Include dedupeKey in RETURNING so we can correlate inserted rows back to
-    // their RuleResult by key instead of relying on array-index order (which is
-    // not guaranteed to be stable when onConflictDoNothing skips rows).
-    .returning({ id: alerts.id, triggeredAt: alerts.triggeredAt, dedupeKey: alerts.dedupeKey });
+    // Include ruleName + dedupeKey in RETURNING so we can correlate inserted
+    // rows back to their RuleResult by a composite key instead of relying on
+    // array-index order (which is not guaranteed to be stable when
+    // onConflictDoNothing skips rows). Keying on dedupeKey alone collapses
+    // two different rules that both emit a null key into the same slot.
+    .returning({
+      id: alerts.id,
+      triggeredAt: alerts.triggeredAt,
+      ruleName: alerts.ruleName,
+      dedupeKey: alerts.dedupeKey,
+    });
 
-  // Build a lookup map: dedupeKey → inserted row (null key falls back to index).
-  const insertedByKey = new Map(inserted.map((row) => [row.dedupeKey, row]));
+  const insertedByKey = new Map(
+    inserted.map((row) => [correlationKey(row.ruleName, row.dedupeKey), row]),
+  );
 
   // Publish alert.new events for SSE (6.15).
   for (const result of results) {
-    const row = insertedByKey.get(result.dedupeKey ?? null);
+    const row = insertedByKey.get(correlationKey(result.ruleName, result.dedupeKey ?? null));
     if (!row) continue;
     deps.publishEvent?.({
       type: 'alert.new',
@@ -113,11 +131,10 @@ export async function runTxDetector(
   // completes before the function returns (no orphaned pending writes).
   if (deps.alerter) {
     const alerter = deps.alerter;
-    const { deliver } = await import('@agentscope/alerter');
 
     await Promise.all(
       results.map(async (result) => {
-        const row = insertedByKey.get(result.dedupeKey ?? null);
+        const row = insertedByKey.get(correlationKey(result.ruleName, result.dedupeKey ?? null));
         if (!row) return;
 
         const msg: AlertMessage = {

@@ -16,6 +16,7 @@
  */
 
 import { type Database, reasoningLogs } from '@agentscope/db';
+import { SOLANA_SIGNATURE_RE } from '@agentscope/shared';
 import type { AnyValueInput, ExportTraceServiceRequest, KeyValue } from './schema';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -78,14 +79,9 @@ export function nanoToTimestamp(nanos: string): string {
 /** Span attribute key for on-chain transaction correlation (4.5). */
 export const TX_SIGNATURE_KEY = 'solana.tx.signature';
 
-/**
- * Base58 Solana signature guard. Real ed25519 signatures are 64 bytes
- * → 86-88 base58 chars, but test fixtures and edge cases (leading zero
- * bytes) can encode shorter. 32-88 covers all valid encodings while
- * rejecting empty strings, spaces, and non-base58 content (SQL, paths,
- * UUIDs with dashes, etc.).
- */
-const SOLANA_SIG_RE = /^[1-9A-HJ-NP-Za-km-z]{32,88}$/;
+// Canonical signature guard lives in `@agentscope/shared/signature`; we
+// re-alias here to keep call sites readable.
+const SOLANA_SIG_RE = SOLANA_SIGNATURE_RE;
 
 // ── persist ──────────────────────────────────────────────────────────────────
 

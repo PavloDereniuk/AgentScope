@@ -4,10 +4,10 @@ import type { Action, ActionHandler } from './types.js';
 const TRACER_NAME = '@agentscope/elizaos-plugin';
 
 /**
- * Base58 Solana signature format. Mirrors the regex the API's OTLP
- * receiver uses before persisting `solana.tx.signature` attributes —
- * rejecting obvious garbage at the SDK boundary spares the receiver
- * work and makes "my signature didn't show up" easier to debug.
+ * Base58 Solana signature format. Kept in sync with `SOLANA_SIGNATURE_RE`
+ * in `@agentscope/shared/signature` — duplicated here (not imported) so
+ * the published ElizaOS plugin has zero workspace runtime dependencies.
+ * If you change either, change both.
  */
 const SOLANA_SIG_RE = /^[1-9A-HJ-NP-Za-km-z]{32,88}$/;
 

@@ -145,9 +145,12 @@ export function ReasoningPage() {
                       {agentNameById.get(trace.agentId) ?? trace.agentId.slice(0, 8)}
                     </Td>
                     <Td className="font-mono text-fg">
-                      <Link to={`/agents/${trace.agentId}?traceId=${trace.traceId}`}>
-                        {trace.traceId.slice(0, 10)}…
-                      </Link>
+                      {/* Deep-link lands on the agent page — the agent-detail view
+                          does not yet read a traceId query param, so we navigate
+                          without one to avoid advertising a feature that silently
+                          no-ops. Wire the param up on both sides before adding it
+                          back here. */}
+                      <Link to={`/agents/${trace.agentId}`}>{trace.traceId.slice(0, 10)}…</Link>
                     </Td>
                     <Td className="font-mono text-fg-2">{trace.rootSpanName}</Td>
                     <Td className="text-right font-mono tabular-nums text-fg-2">

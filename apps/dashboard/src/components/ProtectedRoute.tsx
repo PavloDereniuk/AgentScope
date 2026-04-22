@@ -4,7 +4,29 @@ import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } fro
 
 // Fallback to localhost landing for dev. In production set VITE_LANDING_URL
 // to the deployed landing domain so sign-out exits the app cleanly.
-const LANDING_URL = import.meta.env.VITE_LANDING_URL ?? 'http://localhost:4321';
+// Validated at module load so a bad value (`javascript:`, `data:`) fails
+// fast instead of becoming an arbitrary-URL vulnerability on sign-out.
+const LANDING_URL = resolveLandingUrl(import.meta.env.VITE_LANDING_URL);
+
+function resolveLandingUrl(raw: string | undefined): string {
+  const fallback = 'http://localhost:4321';
+  if (!raw) return fallback;
+  try {
+    const u = new URL(raw);
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[auth] VITE_LANDING_URL must use http(s); got ${u.protocol}. Using ${fallback}.`,
+      );
+      return fallback;
+    }
+    return u.toString();
+  } catch {
+    // eslint-disable-next-line no-console
+    console.warn(`[auth] VITE_LANDING_URL is not a valid URL; using ${fallback}.`);
+    return fallback;
+  }
+}
 
 export function ProtectedRoute({ children }: { children: ReactNode }) {
   const { ready, authenticated, login, logout } = usePrivy();

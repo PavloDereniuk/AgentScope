@@ -4,15 +4,26 @@ import { createDb } from '../src/client';
 const url = process.env['DATABASE_URL'];
 if (!url) throw new Error('DATABASE_URL is required');
 
+// reasoning_logs is a single (non-partitioned) table but grows per-span;
+// scope by default to avoid full-table scans on large prod data.
+const WINDOW_DAYS_ENV = process.env['INSPECT_WINDOW_DAYS'];
+const WINDOW_DAYS = WINDOW_DAYS_ENV === 'all' ? null : Number(WINDOW_DAYS_ENV ?? 7);
+if (WINDOW_DAYS !== null && !Number.isInteger(WINDOW_DAYS)) {
+  throw new Error('INSPECT_WINDOW_DAYS must be an integer or "all"');
+}
+const windowFilter =
+  WINDOW_DAYS === null ? sql`TRUE` : sql`start_time > now() - interval '${sql.raw(`${WINDOW_DAYS} days`)}'`;
+console.log(`Scanning reasoning_logs — window: ${WINDOW_DAYS === null ? 'ALL' : `last ${WINDOW_DAYS} days`}`);
+
 const db = createDb({ connectionString: url });
 
 const totals = await db.execute<{ n: number }>(
-  sql`SELECT count(*)::int AS n FROM reasoning_logs`,
+  sql`SELECT count(*)::int AS n FROM reasoning_logs WHERE ${windowFilter}`,
 );
-console.log('reasoning_logs total:', totals[0]?.n);
+console.log('reasoning_logs rows in window:', totals[0]?.n);
 
 const withSig = await db.execute<{ n: number }>(
-  sql`SELECT count(DISTINCT tx_signature)::int AS n FROM reasoning_logs WHERE tx_signature IS NOT NULL`,
+  sql`SELECT count(DISTINCT tx_signature)::int AS n FROM reasoning_logs WHERE tx_signature IS NOT NULL AND ${windowFilter}`,
 );
 console.log('distinct tx_signatures with spans:', withSig[0]?.n);
 

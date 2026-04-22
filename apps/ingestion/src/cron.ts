@@ -10,7 +10,7 @@
  * separate deployment needed for MVP.
  */
 
-import type { AlertMessage, DeliverDeps } from '@agentscope/alerter';
+import { type AlertMessage, type DeliverDeps, deliver } from '@agentscope/alerter';
 import { type Database, agents, alerts } from '@agentscope/db';
 import {
   type CronRuleDef,
@@ -22,7 +22,17 @@ import {
 } from '@agentscope/detector';
 import type { EvalLogger } from '@agentscope/detector';
 import type { AlertRuleThresholds } from '@agentscope/shared';
-import { eq } from 'drizzle-orm';
+import { and, eq, ne } from 'drizzle-orm';
+
+/**
+ * Stable composite key for RuleResult ↔ inserted-row correlation.
+ * Null dedupeKey is legal for rules that opt out of dedupe; without the
+ * rule-name prefix, two different rules both emitting null collide into
+ * a single Map slot and the second result steals the first's row.
+ */
+function correlationKey(ruleName: string, dedupeKey: string | null): string {
+  return `${ruleName}:${dedupeKey ?? ''}`;
+}
 
 const CRON_RULES: readonly CronRuleDef[] = [drawdownRule, errorRateRule, staleRule];
 
@@ -82,10 +92,16 @@ export async function runCronCycle(deps: CronDeps): Promise<number> {
         })),
       )
       .onConflictDoNothing({ target: [alerts.agentId, alerts.ruleName, alerts.dedupeKey] })
-      // Return dedupeKey so we can correlate inserted rows back to their
-      // RuleResult by key instead of relying on array-index order, which
-      // is not guaranteed stable when onConflictDoNothing skips rows.
-      .returning({ id: alerts.id, triggeredAt: alerts.triggeredAt, dedupeKey: alerts.dedupeKey });
+      // Return ruleName + dedupeKey so we can correlate inserted rows back to
+      // their RuleResult via a composite key instead of relying on
+      // array-index order (unstable under onConflictDoNothing) or on
+      // dedupeKey alone (null keys from two different rules collide).
+      .returning({
+        id: alerts.id,
+        triggeredAt: alerts.triggeredAt,
+        ruleName: alerts.ruleName,
+        dedupeKey: alerts.dedupeKey,
+      });
 
     totalAlerts += inserted.length;
 
@@ -95,18 +111,25 @@ export async function runCronCycle(deps: CronDeps): Promise<number> {
     // tx arrives. Checked against evaluateCron results (not `inserted`)
     // so the flip still happens on cycles where the dedupe key already
     // exists but the underlying condition is ongoing.
+    // Guard with `status != 'stale'` so an already-stale agent does
+    // not re-write the row (and touch updated_at triggers) every tick.
     if (results.some((r) => r.ruleName === 'stale_agent')) {
-      await deps.db.update(agents).set({ status: 'stale' }).where(eq(agents.id, agent.id));
+      await deps.db
+        .update(agents)
+        .set({ status: 'stale' })
+        .where(and(eq(agents.id, agent.id), ne(agents.status, 'stale')));
     }
 
     // Skip publish + deliver for rows that were deduped (already exist).
     if (inserted.length === 0) continue;
 
-    const insertedByKey = new Map(inserted.map((row) => [row.dedupeKey, row]));
+    const insertedByKey = new Map(
+      inserted.map((row) => [correlationKey(row.ruleName, row.dedupeKey), row]),
+    );
 
     // Publish alert.new on the SSE bus so dashboards refresh live.
     for (const result of results) {
-      const row = insertedByKey.get(result.dedupeKey ?? null);
+      const row = insertedByKey.get(correlationKey(result.ruleName, result.dedupeKey ?? null));
       if (!row) continue;
       deps.publishEvent?.({
         type: 'alert.new',
@@ -123,11 +146,10 @@ export async function runCronCycle(deps: CronDeps): Promise<number> {
     if (deps.alerter) {
       const alerter = deps.alerter;
       const agentName = agent.name;
-      const { deliver } = await import('@agentscope/alerter');
 
       await Promise.all(
         results.map(async (result) => {
-          const row = insertedByKey.get(result.dedupeKey ?? null);
+          const row = insertedByKey.get(correlationKey(result.ruleName, result.dedupeKey ?? null));
           if (!row) return;
 
           const msg: AlertMessage = {

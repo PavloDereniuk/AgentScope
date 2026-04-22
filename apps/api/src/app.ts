@@ -67,6 +67,10 @@ export function buildApp(deps: AppDeps) {
   // via `ensureUser` without touching headers directly.
   const api = new Hono<ApiEnv>();
   api.use('*', requireAuth(deps.verifier, log));
+  // Authenticated heartbeat for the dashboard's live-pill. Cheaper than
+  // GET /api/agents and confirms end-to-end pipe + valid token — the
+  // anonymous /health above only tells us the process is up.
+  api.get('/health', (c) => c.json({ ok: true }));
   api.route('/agents', createAgentsRouter(deps.db, deps.sseBus, deps.alerter));
   api.route('/transactions', createTransactionsRouter(deps.db));
   api.route('/alerts', createAlertsRouter(deps.db));

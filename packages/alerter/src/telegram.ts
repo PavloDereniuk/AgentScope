@@ -76,7 +76,24 @@ export function formatTelegramMessage(msg: AlertMessage): string {
   }
 
   lines.push('', `<i>${escHtml(formatTimestamp(msg.triggeredAt))}</i>`);
-  return lines.join('\n');
+  return truncateForTelegram(lines.join('\n'));
+}
+
+/**
+ * Telegram's sendMessage rejects any `text` longer than 4096 UTF-16 code
+ * units with HTTP 400. We keep a small safety margin so the trailing
+ * truncation marker itself does not push us over. Alerts should almost
+ * always fit; this guards against long `drawdown`/`error_rate` payloads
+ * with many `default`-branch detail rows and prevents an entire alert
+ * from being dropped.
+ */
+const TELEGRAM_MAX_CHARS = 4096;
+const TELEGRAM_SAFE_CHARS = 4000;
+
+function truncateForTelegram(text: string): string {
+  if (text.length <= TELEGRAM_MAX_CHARS) return text;
+  const marker = '\n…[truncated]';
+  return text.slice(0, TELEGRAM_SAFE_CHARS - marker.length) + marker;
 }
 
 const MAX_RETRIES = 3;

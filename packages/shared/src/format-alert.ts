@@ -10,6 +10,7 @@
  *   - formatAlertDetails  → structured key/value rows for rich UIs
  */
 
+import { SOLANA_SIGNATURE_RE } from './signature';
 import type { AlertRuleName } from './types';
 
 export interface AlertDetailRow {
@@ -190,10 +191,10 @@ export function formatAlertDetails(
 }
 
 /**
- * Solana tx signatures are base58 (~64–88 chars, no '-' or '_').
- * Demo/seed data uses base64url-style strings that would 404 on Solscan.
+ * Thin alias over the shared SOLANA_SIGNATURE_RE for the alerter's
+ * "real tx vs demo seed" branching. Kept as a named helper so call sites
+ * read intent-first rather than regex-first.
  */
-const BASE58_RE = /^[1-9A-HJ-NP-Za-km-z]{64,90}$/;
 export function isOnChainSignature(sig: string): boolean {
-  return BASE58_RE.test(sig);
+  return SOLANA_SIGNATURE_RE.test(sig);
 }

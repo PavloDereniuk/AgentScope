@@ -42,42 +42,45 @@ export function createStatsRouter(db: Database) {
     const user = await ensureUser(db, privyDid);
     const since = new Date(Date.now() - STATS_WINDOW_MS).toISOString();
 
-    // tx aggregates in one query: total count, sum of sol_delta, successful count.
-    // Scope via INNER JOIN so foreign rows drop before the aggregation runs.
-    const [txRow] = await db
-      .select({
-        tx24h: sql<number>`cast(count(*) as int)`,
-        // coalesce(sum(...), 0) keeps the shape stable when a user has no tx
-        solDelta24h: sql<string>`coalesce(sum(${agentTransactions.solDelta}), 0)::text`,
-        successCount: sql<number>`cast(count(*) filter (where ${agentTransactions.success}) as int)`,
-      })
-      .from(agentTransactions)
-      .innerJoin(agents, eq(agentTransactions.agentId, agents.id))
-      .where(and(eq(agents.userId, user.id), gte(agentTransactions.blockTime, since)));
+    // Three independent aggregates run in parallel — latency becomes the
+    // slowest of the three round-trips instead of their sum. Scoped via
+    // INNER JOIN so foreign rows drop before each aggregation runs.
+    // `sum()` in drizzle `numeric` mode already returns string, so the
+    // `::text` cast is dropped — it was a no-op that just confused readers.
+    const [txRows, activeRows, alertRows] = await Promise.all([
+      db
+        .select({
+          tx24h: sql<number>`cast(count(*) as int)`,
+          solDelta24h: sql<string>`coalesce(sum(${agentTransactions.solDelta}), 0)`,
+          successCount: sql<number>`cast(count(*) filter (where ${agentTransactions.success}) as int)`,
+        })
+        .from(agentTransactions)
+        .innerJoin(agents, eq(agentTransactions.agentId, agents.id))
+        .where(and(eq(agents.userId, user.id), gte(agentTransactions.blockTime, since))),
+      db
+        .select({ count: sql<number>`cast(count(*) as int)` })
+        .from(agents)
+        .where(and(eq(agents.userId, user.id), eq(agents.status, 'live'))),
+      db
+        .select({ count: sql<number>`cast(count(*) as int)` })
+        .from(alerts)
+        .innerJoin(agents, eq(alerts.agentId, agents.id))
+        .where(
+          and(
+            eq(agents.userId, user.id),
+            eq(alerts.severity, 'critical'),
+            gte(alerts.triggeredAt, since),
+          ),
+        ),
+    ]);
 
+    const txRow = txRows[0];
     const tx24h = txRow?.tx24h ?? 0;
     const successCount = txRow?.successCount ?? 0;
     const solDelta24h = txRow?.solDelta24h ?? '0';
     const successRate24h = tx24h > 0 ? successCount / tx24h : null;
-
-    const [activeRow] = await db
-      .select({ count: sql<number>`cast(count(*) as int)` })
-      .from(agents)
-      .where(and(eq(agents.userId, user.id), eq(agents.status, 'live')));
-    const activeAgents = activeRow?.count ?? 0;
-
-    const [alertRow] = await db
-      .select({ count: sql<number>`cast(count(*) as int)` })
-      .from(alerts)
-      .innerJoin(agents, eq(alerts.agentId, agents.id))
-      .where(
-        and(
-          eq(agents.userId, user.id),
-          eq(alerts.severity, 'critical'),
-          gte(alerts.triggeredAt, since),
-        ),
-      );
-    const criticalAlerts = alertRow?.count ?? 0;
+    const activeAgents = activeRows[0]?.count ?? 0;
+    const criticalAlerts = alertRows[0]?.count ?? 0;
 
     return c.json({
       tx24h,

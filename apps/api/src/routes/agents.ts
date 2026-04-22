@@ -16,7 +16,6 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { type AlertMessage, type DeliverDeps, deliver } from '@agentscope/alerter';
 import { type Database, agentTransactions, agents, alerts, reasoningLogs } from '@agentscope/db';
-import type { AlertRuleName } from '@agentscope/shared';
 import { createAgentInputSchema, updateAgentInputSchema } from '@agentscope/shared';
 import { zValidator } from '@hono/zod-validator';
 import { and, asc, desc, eq, gte, lt, lte, or, sql } from 'drizzle-orm';
@@ -445,22 +444,27 @@ export function createAgentsRouter(db: Database, sseBus: SseBus, alerter?: Deliv
       }
 
       if (!alerter) {
-        return c.json({
-          ok: false,
-          delivered: false,
-          error: 'alerter not configured on server',
+        // 503 — server is up but the feature's dependency (Telegram
+        // creds) is missing. HTTPException runs through the global
+        // error handler so the body matches the canonical `{ error:
+        // { code, message } }` envelope other routes use.
+        throw new HTTPException(503, {
+          message: 'alerter not configured on server',
         });
       }
 
-      // 'test_alert' is not in the AlertRuleName enum (that would require a DB
-      // migration for a smoke-test feature). The formatters in @agentscope/shared
-      // accept an untyped string and fall back to Title Case ("Test Alert"), so
-      // we widen the ruleName here via cast — ephemeral message, no DB write.
-      const msg: AlertMessage = {
+      // 'test_alert' is intentionally not in the AlertRuleName union —
+      // adding it there would ripple through persistence code for a
+      // value that is never written to the `alerts` table. We build a
+      // widened-ruleName local type (Omit + re-add as string) so the
+      // pseudo-rule passes through without a blind enum cast; TypeScript
+      // still checks every other AlertMessage field against its real type.
+      type TestAlertMessage = Omit<AlertMessage, 'ruleName'> & { ruleName: string };
+      const msg: TestAlertMessage = {
         id: randomUUID(),
         agentId: agent.id,
         agentName: agent.name,
-        ruleName: 'test_alert' as AlertRuleName,
+        ruleName: 'test_alert',
         severity: 'info',
         payload: {
           isTest: true,
@@ -469,11 +473,16 @@ export function createAgentsRouter(db: Database, sseBus: SseBus, alerter?: Deliv
         triggeredAt: new Date().toISOString(),
       };
 
-      const result = await deliver(alerter, msg, 'telegram');
-      if (result.error) {
-        return c.json({ ok: result.success, delivered: result.success, error: result.error });
+      const result = await deliver(alerter, msg as AlertMessage, 'telegram');
+      if (!result.success) {
+        // 502 — downstream channel (Telegram) rejected the send. The
+        // message is the verbatim sender error so ops can act (invalid
+        // chat id, revoked bot token, etc.).
+        throw new HTTPException(502, {
+          message: result.error ?? 'delivery failed',
+        });
       }
-      return c.json({ ok: result.success, delivered: result.success });
+      return c.json({ ok: true, delivered: true });
     },
   );
 

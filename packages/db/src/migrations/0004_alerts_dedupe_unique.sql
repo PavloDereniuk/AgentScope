@@ -42,6 +42,6 @@ DROP INDEX IF EXISTS "alerts_dedupe_idx";
 
 -- Step 3: enforce uniqueness going forward. Default NULLS DISTINCT semantics
 -- mean rows with NULL dedupe_key are always allowed (they do not conflict
--- with each other).
-CREATE UNIQUE INDEX "alerts_dedupe_unique"
+-- with each other). `IF NOT EXISTS` keeps the migration re-runnable.
+CREATE UNIQUE INDEX IF NOT EXISTS "alerts_dedupe_unique"
   ON "alerts" ("agent_id", "rule_name", "dedupe_key");

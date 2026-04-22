@@ -91,16 +91,15 @@ export function SettingsPage() {
   // credentials work and the bot can reach this chat".
   const testAlertMutation = useMutation({
     mutationFn: () =>
-      apiClient.post<{ ok: boolean; delivered: boolean; error?: string }>(
+      apiClient.post<{ ok: boolean; delivered: boolean }>(
         `/api/agents/${selectedId}/test-alert`,
         {},
       ),
-    onSuccess: (data) => {
-      if (data.ok) {
-        toast.success('Test alert sent — check your Telegram.');
-      } else {
-        toast.error(`Failed: ${data.error ?? 'unknown error'}`);
-      }
+    onSuccess: () => {
+      // Non-2xx (503 unconfigured / 502 downstream failure) throws
+      // ApiError and flows into onError below — this branch only fires
+      // when the backend actually handed the message to Telegram.
+      toast.success('Test alert sent — check your Telegram.');
     },
     onError: (err) => {
       toast.error(`Failed: ${(err as Error).message}`);

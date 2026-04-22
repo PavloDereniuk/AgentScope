@@ -135,7 +135,7 @@ describe('POST /api/agents/:id/test-alert', () => {
     });
   });
 
-  it('passes through the error when the sender reports failure', async () => {
+  it('returns 502 when the sender reports a downstream failure', async () => {
     const failing = await setup({ sendResult: { success: false, error: 'chat not found' } });
     const agentId = await createAgent(
       failing,
@@ -143,13 +143,13 @@ describe('POST /api/agents/:id/test-alert', () => {
       'So11111111111111111111111111111111111111112',
     );
     const res = await post(failing, agentId);
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { ok: boolean; delivered: boolean; error?: string };
-    expect(body).toEqual({ ok: false, delivered: false, error: 'chat not found' });
+    expect(res.status).toBe(502);
+    const body = (await res.json()) as { error: { code: string; message: string } };
+    expect(body.error.message).toBe('chat not found');
     await failing.testDb.close();
   });
 
-  it('returns ok:false when no alerter is configured on the server', async () => {
+  it('returns 503 when no alerter is configured on the server', async () => {
     const noAlerter = await setup({ withAlerter: false });
     const agentId = await createAgent(
       noAlerter,
@@ -157,11 +157,9 @@ describe('POST /api/agents/:id/test-alert', () => {
       'So11111111111111111111111111111111111111112',
     );
     const res = await post(noAlerter, agentId);
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { ok: boolean; delivered: boolean; error?: string };
-    expect(body.ok).toBe(false);
-    expect(body.delivered).toBe(false);
-    expect(body.error).toMatch(/not configured/i);
+    expect(res.status).toBe(503);
+    const body = (await res.json()) as { error: { code: string; message: string } };
+    expect(body.error.message).toMatch(/not configured/i);
     await noAlerter.testDb.close();
   });
 

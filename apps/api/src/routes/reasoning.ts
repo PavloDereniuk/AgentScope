@@ -77,7 +77,12 @@ export function createReasoningRouter(db: Database) {
             max(${reasoningLogs.spanName}) filter (where ${reasoningLogs.parentSpanId} is null),
             max(${reasoningLogs.spanName})
           )`,
-          hasError: sql<boolean>`coalesce(bool_or((${reasoningLogs.attributes}->>'otel.status_code')::int = 2), false)`,
+          // Compare as text rather than casting to int — a malformed
+          // attribute (e.g. stringified object) on a single span would
+          // otherwise raise `invalid input syntax` and fail the whole
+          // aggregate. OTLP spans always persist `otel.status_code` as a
+          // number, which JSON->text renders as '0' / '1' / '2'.
+          hasError: sql<boolean>`coalesce(bool_or((${reasoningLogs.attributes}->>'otel.status_code') = '2'), false)`,
           // A trace belongs to a single agent, so any value in the group is
           // the same. PG's MIN/MAX don't accept uuid directly, so we cast
           // through text; the uuid shape is preserved at the bytes level.

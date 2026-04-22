@@ -1,29 +1,25 @@
-import {
-  DENSITIES,
-  type Density,
-  FONTS,
-  type Font,
-  PALETTES,
-  type Palette,
-  useTweaks,
-} from '@/hooks/use-tweaks';
+import { DENSITIES, FONTS, type Font, PALETTES, type Palette, useTweaks } from '@/hooks/use-tweaks';
 import { cn } from '@/lib/utils';
 import { Sliders, X } from 'lucide-react';
 import { useState } from 'react';
 
-const PALETTE_SWATCH: Record<Palette, string> = {
+// `satisfies Record<X, string>` makes TypeScript error if a future
+// Palette/Font variant is added without a matching entry here —
+// same compile-time guarantee as the old `_typeGuard` helper, with
+// zero runtime footprint and no "unused" warnings.
+const PALETTE_SWATCH = {
   green: 'oklch(82% 0.18 135)',
   violet: 'oklch(72% 0.2 295)',
   cyan: 'oklch(82% 0.15 210)',
   amber: 'oklch(82% 0.16 75)',
   mono: 'oklch(96% 0.005 260)',
-};
+} satisfies Record<Palette, string>;
 
-const FONT_LABEL: Record<Font, string> = {
+const FONT_LABEL = {
   geist: 'Geist',
   ibm: 'IBM',
   inter: 'Inter',
-};
+} satisfies Record<Font, string>;
 
 /**
  * Floating tweaks panel — runtime theme switcher pinned to the bottom-right.
@@ -154,10 +150,3 @@ function Group({ label, children }: { label: string; children: React.ReactNode }
     </div>
   );
 }
-
-function _typeGuard(density: Density, font: Font, palette: Palette) {
-  // Compile-time exhaustiveness — helps catch missing swatches if the
-  // enum literal unions expand. Not called at runtime.
-  return { density, font, palette };
-}
-void _typeGuard;

@@ -15,17 +15,21 @@ interface SparklineProps {
  * Falls back to a flat line if all points share a value.
  */
 export function Sparkline({ points, width = 60, height = 24, className, stroke }: SparklineProps) {
-  if (points.length < 2) {
+  // Filter non-finite values so a single NaN in the input (e.g. a
+  // numeric cast from missing data) does not poison Math.min/max and
+  // produce `MNaN,NaN` paths that silently hide the chart.
+  const finitePoints = points.filter(Number.isFinite);
+  if (finitePoints.length < 2) {
     return null;
   }
 
-  const min = Math.min(...points);
-  const max = Math.max(...points);
+  const min = Math.min(...finitePoints);
+  const max = Math.max(...finitePoints);
   const range = max - min || 1;
 
-  const path = points
+  const path = finitePoints
     .map((p, i) => {
-      const x = (i / (points.length - 1)) * width;
+      const x = (i / (finitePoints.length - 1)) * width;
       const y = height - ((p - min) / range) * height;
       return `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
     })
