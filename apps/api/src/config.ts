@@ -18,6 +18,14 @@ const envSchema = z.object({
   PRIVY_APP_SECRET: z.string().min(1, 'PRIVY_APP_SECRET is required'),
   /** Shared secret for cross-service /internal/* endpoints. */
   INTERNAL_SECRET: z.string().min(32, 'INTERNAL_SECRET must be at least 32 chars'),
+  /**
+   * Telegram credentials used by POST /api/agents/:id/test-alert (task 13.7).
+   * Both optional — the endpoint returns `{ok: false, error: '...'}` if either
+   * is missing, so the API stays bootable in environments that don't need
+   * alert delivery (tests, local dev without Telegram).
+   */
+  TELEGRAM_BOT_TOKEN: z.string().optional(),
+  TELEGRAM_DEFAULT_CHAT_ID: z.string().optional(),
 });
 
 export type Config = z.infer<typeof envSchema>;

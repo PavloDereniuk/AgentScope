@@ -4,6 +4,7 @@
  * import `buildApp` without triggering env loading or port binding.
  */
 
+import { type DeliverDeps, createTelegramSender } from '@agentscope/alerter';
 import { createDb } from '@agentscope/db';
 import { serve } from '@hono/node-server';
 import { buildApp } from './app';
@@ -23,7 +24,26 @@ const db = createDb({
 
 const verifier = createPrivyVerifier(config.PRIVY_APP_ID, config.PRIVY_APP_SECRET);
 const sseBus = createSseBus(logger);
-const app = buildApp({ db, verifier, sseBus, internalSecret: config.INTERNAL_SECRET, logger });
+
+// Optional Telegram sender — only wired when creds are present. Used by the
+// POST /api/agents/:id/test-alert endpoint (task 13.7). Missing creds →
+// route returns `{ok: false, error: '...'}` instead of failing startup.
+const alerter: DeliverDeps = {};
+if (config.TELEGRAM_BOT_TOKEN && config.TELEGRAM_DEFAULT_CHAT_ID) {
+  alerter.telegram = createTelegramSender({
+    botToken: config.TELEGRAM_BOT_TOKEN,
+    chatId: config.TELEGRAM_DEFAULT_CHAT_ID,
+  });
+}
+
+const app = buildApp({
+  db,
+  verifier,
+  sseBus,
+  internalSecret: config.INTERNAL_SECRET,
+  alerter,
+  logger,
+});
 
 const server = serve({ fetch: app.fetch, port: config.PORT }, (info) => {
   logger.info({ port: info.port }, 'agentscope-api listening');

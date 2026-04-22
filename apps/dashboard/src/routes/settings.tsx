@@ -11,10 +11,11 @@ import {
 import { apiClient } from '@/lib/api-client';
 import { cn } from '@/lib/utils';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Copy, Loader2, Save, Trash2 } from 'lucide-react';
+import { Bell, Copy, Loader2, Save, Trash2 } from 'lucide-react';
 import type { FormEvent } from 'react';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
 
 interface AgentRow {
   id: string;
@@ -29,6 +30,9 @@ interface AgentRow {
     errorRatePctThreshold?: number;
     staleMinutesThreshold?: number;
   } | null;
+  recentTxCount24h?: number;
+  solDelta24h?: string;
+  successRate24h?: number | null;
 }
 
 interface AgentDetailResponse {
@@ -78,6 +82,28 @@ export function SettingsPage() {
       queryClient.invalidateQueries({ queryKey: ['agents'] });
       setDeleteOpen(false);
       navigate('/agents');
+    },
+  });
+
+  // 13.8 — Smoke-test the notification pipeline. Posts to the test-alert
+  // endpoint and reports the result via sonner toast. Delivery runs through
+  // the same router the detector uses so a green toast means "Telegram
+  // credentials work and the bot can reach this chat".
+  const testAlertMutation = useMutation({
+    mutationFn: () =>
+      apiClient.post<{ ok: boolean; delivered: boolean; error?: string }>(
+        `/api/agents/${selectedId}/test-alert`,
+        {},
+      ),
+    onSuccess: (data) => {
+      if (data.ok) {
+        toast.success('Test alert sent — check your Telegram.');
+      } else {
+        toast.error(`Failed: ${data.error ?? 'unknown error'}`);
+      }
+    },
+    onError: (err) => {
+      toast.error(`Failed: ${(err as Error).message}`);
     },
   });
 
@@ -263,6 +289,32 @@ export function SettingsPage() {
 
             <Card title="Notifications" meta="delivery channels">
               <div className="grid gap-3.5 px-4 py-4">
+                <div>
+                  <div className="mb-1.5 flex items-center justify-between">
+                    <FieldLabel>Telegram</FieldLabel>
+                    <button
+                      type="button"
+                      onClick={() => testAlertMutation.mutate()}
+                      disabled={!selectedId || testAlertMutation.isPending}
+                      className={cn(
+                        'inline-flex h-6 items-center gap-1.5 rounded-sm border border-line px-2',
+                        'font-mono text-[10.5px] text-fg-2 hover:border-fg-3 hover:text-fg',
+                        'disabled:opacity-50 disabled:cursor-not-allowed',
+                      )}
+                    >
+                      {testAlertMutation.isPending ? (
+                        <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                      ) : (
+                        <Bell className="h-2.5 w-2.5" />
+                      )}
+                      Send test alert
+                    </button>
+                  </div>
+                  <p className="font-mono text-[11px] text-fg-3">
+                    Delivery bot configured server-side via{' '}
+                    <span className="text-fg-2">TELEGRAM_BOT_TOKEN</span>.
+                  </p>
+                </div>
                 <div>
                   <FieldLabel>Webhook URL</FieldLabel>
                   <div className="flex items-center rounded-[5px] border border-line bg-surface-2 px-2.5 py-1.5">

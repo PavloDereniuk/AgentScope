@@ -18,10 +18,21 @@ interface AgentRow {
   status: 'live' | 'stale' | 'failed';
   lastSeenAt: string | null;
   createdAt: string;
+  recentTxCount24h: number;
+  solDelta24h: string;
+  successRate24h: number | null;
 }
 
 interface AlertRow extends Alert {
   agentName?: string | null;
+}
+
+interface OverviewStats {
+  tx24h: number;
+  solDelta24h: string;
+  successRate24h: number | null;
+  activeAgents: number;
+  criticalAlerts: number;
 }
 
 const ALERT_LIMIT = 20;
@@ -45,8 +56,15 @@ export function OverviewPage() {
     refetchInterval: 30_000,
   });
 
+  const statsQuery = useQuery({
+    queryKey: ['stats', 'overview'],
+    queryFn: () => apiClient.get<OverviewStats>('/api/stats/overview'),
+    refetchInterval: 30_000,
+  });
+
   const agents = agentsQuery.data?.agents ?? [];
   const alerts = alertsQuery.data?.alerts ?? [];
+  const stats = statsQuery.data;
 
   const liveCount = agents.filter((a) => a.status === 'live').length;
   const staleCount = agents.filter((a) => a.status === 'stale').length;
@@ -54,6 +72,14 @@ export function OverviewPage() {
 
   const criticalAlerts = alerts.filter((a) => a.severity === 'critical');
   const warningAlerts = alerts.filter((a) => a.severity === 'warning');
+
+  const pnl24h = stats ? Number.parseFloat(stats.solDelta24h) : 0;
+  const pnlKind: 'pos' | 'neg' | 'dim' = pnl24h > 0 ? 'pos' : pnl24h < 0 ? 'neg' : 'dim';
+  const pnlDelta = stats
+    ? stats.successRate24h != null
+      ? `${Math.round(stats.successRate24h * 100)}% success`
+      : 'no tx in 24h'
+    : '…';
 
   const tickerItems = useMemo<TickerItem[]>(() => {
     return alerts.slice(0, 8).map((alert) => {
@@ -80,8 +106,13 @@ export function OverviewPage() {
     });
   }, [alerts]);
 
+  // Rank by 24h activity (task 13.4). Ties broken by lastSeenAt so idle
+  // agents still order deterministically under an all-zero window.
   const topAgents = [...agents]
     .sort((a, b) => {
+      if (b.recentTxCount24h !== a.recentTxCount24h) {
+        return b.recentTxCount24h - a.recentTxCount24h;
+      }
       const aTime = a.lastSeenAt ? new Date(a.lastSeenAt).getTime() : 0;
       const bTime = b.lastSeenAt ? new Date(b.lastSeenAt).getTime() : 0;
       return bTime - aTime;
@@ -113,28 +144,30 @@ export function OverviewPage() {
 
       <KpiRow>
         <Kpi
+          label="Tx · 24h"
+          value={stats ? stats.tx24h : '…'}
+          delta={stats ? `${agents.length} agents tracked` : 'loading'}
+          deltaKind="dim"
+        />
+        <Kpi
+          label="Cumulative PnL"
+          value={stats ? formatSol(pnl24h) : '…'}
+          delta={pnlDelta}
+          deltaKind={pnlKind}
+        />
+        <Kpi
           label="Active Agents"
-          value={`${liveCount}/${agents.length}`}
+          value={stats ? `${stats.activeAgents}/${agents.length}` : `${liveCount}/${agents.length}`}
           delta={staleCount + failedCount > 0 ? `${staleCount + failedCount} idle` : 'all healthy'}
           deltaKind={staleCount + failedCount > 0 ? 'dim' : 'pos'}
         />
         <Kpi
-          label="Alerts · 24h"
-          value={alerts.length}
-          delta={criticalAlerts.length > 0 ? `${criticalAlerts.length} critical` : 'none critical'}
-          deltaKind={criticalAlerts.length > 0 ? 'neg' : 'pos'}
-        />
-        <Kpi
-          label="Critical"
-          value={criticalAlerts.length}
-          delta={criticalAlerts.length > 0 ? 'unresolved' : 'all clear'}
-          deltaKind={criticalAlerts.length > 0 ? 'neg' : 'pos'}
-        />
-        <Kpi
-          label="Warnings"
-          value={warningAlerts.length}
-          delta={warningAlerts.length > 0 ? 'watching' : 'quiet'}
-          deltaKind={warningAlerts.length > 0 ? 'dim' : 'pos'}
+          label="Critical Alerts"
+          value={stats ? stats.criticalAlerts : criticalAlerts.length}
+          delta={
+            (stats?.criticalAlerts ?? criticalAlerts.length) > 0 ? 'unresolved · 24h' : 'all clear'
+          }
+          deltaKind={(stats?.criticalAlerts ?? criticalAlerts.length) > 0 ? 'neg' : 'pos'}
         />
       </KpiRow>
 
@@ -165,7 +198,12 @@ export function OverviewPage() {
                       {agent.walletPubkey}
                     </div>
                   </div>
-                  <span className="font-mono text-[11px] text-fg-3">{agent.framework}</span>
+                  <span
+                    className="font-mono text-[11px] text-fg-2"
+                    title="Transactions in last 24h"
+                  >
+                    {agent.recentTxCount24h} tx·24h
+                  </span>
                   <span className="font-mono text-[11px] text-fg-3">
                     {agent.lastSeenAt ? relativeTime(agent.lastSeenAt) : 'never'}
                   </span>
@@ -298,6 +336,13 @@ const btnGhost = cn(
   'inline-flex h-7 items-center gap-1.5 rounded-[5px] border border-line bg-surface-2 px-2.5',
   'font-mono text-[11.5px] font-medium tracking-tight text-fg-2 hover:text-fg hover:border-fg-3 hover:bg-surface-3 transition-colors',
 );
+
+function formatSol(value: number): string {
+  const sign = value > 0 ? '+' : value < 0 ? '' : '';
+  // 3 fractional digits feel right for a KPI glance — lamport precision is
+  // overkill and a raw signed number with 9 decimals looks like noise.
+  return `${sign}${value.toFixed(3)} SOL`;
+}
 
 function relativeTime(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();

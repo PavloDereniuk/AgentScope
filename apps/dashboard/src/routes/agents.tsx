@@ -29,6 +29,9 @@ interface AgentRow {
   status: 'live' | 'stale' | 'failed';
   lastSeenAt: string | null;
   createdAt: string;
+  recentTxCount24h: number;
+  solDelta24h: string;
+  successRate24h: number | null;
 }
 
 type Filter = 'all' | 'live' | 'stale' | 'failed';
@@ -150,19 +153,21 @@ export function AgentsPage() {
 
       {filtered.length > 0 ? (
         <div className="overflow-x-auto rounded-md border border-line bg-surface-2">
-          <div className="grid min-w-[720px] grid-cols-[28px_minmax(180px,1.6fr)_minmax(140px,1.2fr)_80px_90px_90px] gap-3 border-b border-line px-4 py-2.5 font-mono text-[10px] uppercase tracking-[0.08em] text-fg-3">
+          <div className="grid min-w-[880px] grid-cols-[28px_minmax(180px,1.6fr)_minmax(140px,1.2fr)_80px_70px_80px_90px_80px] gap-3 border-b border-line px-4 py-2.5 font-mono text-[10px] uppercase tracking-[0.08em] text-fg-3">
             <span>#</span>
             <span>agent</span>
             <span>wallet</span>
             <span className="text-right">framework</span>
-            <span className="text-right">type</span>
+            <span className="text-right">tx · 24h</span>
+            <span className="text-right">sol · Δ</span>
+            <span className="text-right">success</span>
             <span className="text-right">last seen</span>
           </div>
           {filtered.map((agent, i) => (
             <Link
               key={agent.id}
               to={`/agents/${agent.id}`}
-              className="grid min-w-[720px] cursor-pointer grid-cols-[28px_minmax(180px,1.6fr)_minmax(140px,1.2fr)_80px_90px_90px] items-center gap-3 border-b border-line-soft px-4 py-3 transition-colors last:border-b-0 hover:bg-surface-3"
+              className="grid min-w-[880px] cursor-pointer grid-cols-[28px_minmax(180px,1.6fr)_minmax(140px,1.2fr)_80px_70px_80px_90px_80px] items-center gap-3 border-b border-line-soft px-4 py-3 transition-colors last:border-b-0 hover:bg-surface-3"
             >
               <span className="font-mono text-[10px] text-fg-3">
                 {String(i + 1).padStart(2, '0')}
@@ -178,8 +183,10 @@ export function AgentsPage() {
                 {agent.framework}
               </span>
               <span className="text-right font-mono text-[11.5px] text-fg-2">
-                {agent.agentType}
+                {agent.recentTxCount24h}
               </span>
+              <SolDeltaCell value={agent.solDelta24h} />
+              <SuccessRateCell rate={agent.successRate24h} />
               <span className="text-right font-mono text-[11px] text-fg-3">
                 {agent.lastSeenAt ? relativeTime(agent.lastSeenAt) : 'never'}
               </span>
@@ -189,6 +196,26 @@ export function AgentsPage() {
       ) : null}
     </div>
   );
+}
+
+function SolDeltaCell({ value }: { value: string }) {
+  const n = Number.parseFloat(value);
+  const tone = n > 0 ? 'text-accent' : n < 0 ? 'text-crit' : 'text-fg-3';
+  const sign = n > 0 ? '+' : '';
+  return (
+    <span className={cn('text-right font-mono text-[11.5px]', tone)}>
+      {Number.isFinite(n) ? `${sign}${n.toFixed(3)}` : '—'}
+    </span>
+  );
+}
+
+function SuccessRateCell({ rate }: { rate: number | null }) {
+  if (rate == null) {
+    return <span className="text-right font-mono text-[11.5px] text-fg-3">—</span>;
+  }
+  const pct = Math.round(rate * 100);
+  const tone = pct >= 95 ? 'text-accent' : pct >= 80 ? 'text-fg-2' : 'text-warn';
+  return <span className={cn('text-right font-mono text-[11.5px]', tone)}>{pct}%</span>;
 }
 
 function StatusBadge({ status }: { status: 'live' | 'stale' | 'failed' }) {

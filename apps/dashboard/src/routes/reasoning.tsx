@@ -1,5 +1,5 @@
 import { apiClient } from '@/lib/api-client';
-import { type TraceSummary, summarizeTraces } from '@/lib/trace-summaries';
+import type { TraceSummary } from '@/lib/trace-summaries';
 import { cn } from '@/lib/utils';
 import { useQuery } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
@@ -11,27 +11,16 @@ interface AgentRow {
   status: 'live' | 'stale' | 'failed';
 }
 
-interface ReasoningLogRow {
-  id: string;
-  traceId: string;
-  spanId: string;
-  parentSpanId: string | null;
-  agentId: string;
-  spanName: string;
-  startTime: string;
-  endTime: string | null;
-  attributes: Record<string, unknown> | null;
-  txSignature: string | null;
-}
-
-const TRACE_ID_PATTERN = /^[0-9a-f]{32}$/;
+const ALL_AGENTS = '__all__';
 
 /**
- * Global reasoning explorer. The backend exposes reasoning logs only
- * per-agent (`/api/agents/:id/reasoning`), so this page scopes the
- * trace list to the selected agent. Switching agents reuses the same
- * query surface — post-MVP we'll add a cross-agent `/api/reasoning`
- * endpoint so the dropdown becomes "all agents" by default.
+ * Global reasoning explorer. Backed by the cross-agent `/api/reasoning/traces`
+ * endpoint added in task 13.5 — the agent dropdown is now an optional filter
+ * that defaults to "all agents", matching the Claude Design prototype.
+ *
+ * `summarizeTraces` from `lib/trace-summaries.ts` is still used on the
+ * per-agent-detail page to collapse raw spans; we no longer need it here
+ * because the server already returns summarised rows.
  */
 export function ReasoningPage() {
   const agentsQuery = useQuery({
@@ -40,34 +29,37 @@ export function ReasoningPage() {
   });
 
   const agents = agentsQuery.data?.agents ?? [];
-  const [selectedAgent, setSelectedAgent] = useState<string>('');
+  const [agentFilter, setAgentFilter] = useState<string>(ALL_AGENTS);
   const [traceFilter, setTraceFilter] = useState('');
 
-  const activeAgentId = selectedAgent || agents[0]?.id || '';
-  const trimmedFilter = traceFilter.trim().toLowerCase();
-  const isValidTraceFilter = trimmedFilter === '' || TRACE_ID_PATTERN.test(trimmedFilter);
-
-  const reasoningQuery = useQuery({
-    queryKey: [
-      'reasoning',
-      activeAgentId,
-      isValidTraceFilter && trimmedFilter ? trimmedFilter : null,
-    ],
+  const tracesQuery = useQuery({
+    queryKey: ['reasoning', 'traces', agentFilter],
     queryFn: () => {
       const params = new URLSearchParams();
-      if (isValidTraceFilter && trimmedFilter) params.set('traceId', trimmedFilter);
+      if (agentFilter !== ALL_AGENTS) params.set('agentId', agentFilter);
       const qs = params.toString();
-      return apiClient.get<{ reasoningLogs: ReasoningLogRow[] }>(
-        `/api/agents/${activeAgentId}/reasoning${qs ? `?${qs}` : ''}`,
+      return apiClient.get<{ traces: TraceSummary[] }>(
+        `/api/reasoning/traces${qs ? `?${qs}` : ''}`,
       );
     },
-    enabled: Boolean(activeAgentId) && isValidTraceFilter,
   });
 
-  const traces = useMemo<TraceSummary[]>(() => {
-    const logs = reasoningQuery.data?.reasoningLogs ?? [];
-    return summarizeTraces(logs);
-  }, [reasoningQuery.data]);
+  const traces = tracesQuery.data?.traces ?? [];
+
+  const agentNameById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const a of agents) m.set(a.id, a.name);
+    return m;
+  }, [agents]);
+
+  // Trace ID is free-form substring match now (client-side). No 32-hex regex
+  // gate — if the user types a prefix, they probably want to find a trace
+  // that starts with those characters.
+  const trimmed = traceFilter.trim().toLowerCase();
+  const visibleTraces = useMemo(
+    () => (trimmed ? traces.filter((t) => t.traceId.includes(trimmed)) : traces),
+    [traces, trimmed],
+  );
 
   return (
     <div className="p-7">
@@ -75,7 +67,7 @@ export function ReasoningPage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Reasoning Explorer</h1>
           <p className="mt-1.5 text-[13px] text-fg-3">
-            Trace spans emitted via OTLP. Parent-child nesting, resource attrs, tx correlation.
+            Trace spans emitted via OTLP across every agent you own — filter by agent or trace ID.
           </p>
         </div>
       </div>
@@ -83,11 +75,11 @@ export function ReasoningPage() {
       <div className="mb-5 grid grid-cols-[320px_1fr] gap-3 max-[760px]:grid-cols-1">
         <Field label="Agent">
           <select
-            value={activeAgentId}
-            onChange={(e) => setSelectedAgent(e.target.value)}
+            value={agentFilter}
+            onChange={(e) => setAgentFilter(e.target.value)}
             className="w-full cursor-pointer bg-transparent font-mono text-[12.5px] text-fg outline-none"
           >
-            {agents.length === 0 ? <option value="">no agents</option> : null}
+            <option value={ALL_AGENTS}>all agents</option>
             {agents.map((agent) => (
               <option key={agent.id} value={agent.id}>
                 {agent.name} · {agent.status}
@@ -95,14 +87,11 @@ export function ReasoningPage() {
             ))}
           </select>
         </Field>
-        <Field
-          label="Trace ID filter"
-          {...(!isValidTraceFilter ? { hint: 'expects 32 lowercase hex chars' } : {})}
-        >
+        <Field label="Trace ID filter">
           <input
             value={traceFilter}
             onChange={(e) => setTraceFilter(e.target.value)}
-            placeholder="e.g. 83e2b4a1c0d5f6e7b8a9c0d1e2f3a4b5"
+            placeholder="type a prefix to filter…"
             className="w-full bg-transparent font-mono text-[12.5px] text-fg outline-none placeholder:text-fg-3"
           />
         </Field>
@@ -114,21 +103,28 @@ export function ReasoningPage() {
             Traces
           </span>
           <span className="font-mono text-[10.5px] text-fg-3">
-            {reasoningQuery.isFetching ? 'loading…' : `${traces.length} shown`}
+            {tracesQuery.isFetching ? 'loading…' : `${visibleTraces.length} shown`}
           </span>
         </div>
-        {!activeAgentId ? (
-          <EmptyMessage text="Register an agent to see reasoning traces." />
-        ) : reasoningQuery.isLoading ? (
+        {tracesQuery.isLoading ? (
           <EmptyMessage text="Loading traces…" />
-        ) : traces.length === 0 ? (
-          <EmptyMessage text="No spans recorded yet. Send OTLP traces via agent.token to populate." />
+        ) : tracesQuery.error ? (
+          <EmptyMessage text={`Failed to load: ${(tracesQuery.error as Error).message}`} />
+        ) : visibleTraces.length === 0 ? (
+          <EmptyMessage
+            text={
+              traces.length === 0
+                ? 'No spans recorded yet. Send OTLP traces via agent.token to populate.'
+                : 'No traces match the current filter.'
+            }
+          />
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[720px] border-collapse text-[13px]">
+            <table className="w-full min-w-[820px] border-collapse text-[13px]">
               <thead>
                 <tr>
                   <Th>Time</Th>
+                  <Th>Agent</Th>
                   <Th>Trace ID</Th>
                   <Th>Root Span</Th>
                   <Th className="text-right">Spans</Th>
@@ -137,13 +133,16 @@ export function ReasoningPage() {
                 </tr>
               </thead>
               <tbody>
-                {traces.map((trace) => (
+                {visibleTraces.map((trace) => (
                   <tr
                     key={trace.traceId}
                     className="cursor-pointer border-b border-line-soft transition-colors last:border-b-0 hover:bg-surface-3"
                   >
                     <Td className="font-mono text-fg-3">
                       {new Date(trace.startTime).toLocaleTimeString()}
+                    </Td>
+                    <Td className="font-mono text-fg-2">
+                      {agentNameById.get(trace.agentId) ?? trace.agentId.slice(0, 8)}
                     </Td>
                     <Td className="font-mono text-fg">
                       <Link to={`/agents/${trace.agentId}?traceId=${trace.traceId}`}>

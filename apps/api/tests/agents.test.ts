@@ -337,6 +337,80 @@ describe('GET /api/agents', () => {
     expect(aliceBody.agents).toHaveLength(1);
     expect(aliceBody.agents[0]?.name).toBe('Alice agent');
   });
+
+  it('attaches 24h aggregates to each row (task 13.3)', async () => {
+    const busy = await createAgent({
+      walletPubkey: 'So11111111111111111111111111111111111111112',
+      name: 'Busy',
+      framework: 'custom',
+      agentType: 'other',
+    });
+    const quiet = await createAgent({
+      walletPubkey: 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
+      name: 'Quiet',
+      framework: 'custom',
+      agentType: 'other',
+    });
+
+    const now = new Date();
+    const inside1 = new Date(now.getTime() - 1 * 60 * 60 * 1000).toISOString();
+    const inside2 = new Date(now.getTime() - 5 * 60 * 60 * 1000).toISOString();
+    const outside = new Date(now.getTime() - 48 * 60 * 60 * 1000).toISOString();
+
+    await ctx.testDb.db.insert(agentTransactions).values([
+      {
+        agentId: busy.agent.id,
+        signature: 'busy-1',
+        slot: 1,
+        blockTime: inside1,
+        programId: '11111111111111111111111111111111',
+        solDelta: '0.500000000',
+        success: true,
+      },
+      {
+        agentId: busy.agent.id,
+        signature: 'busy-2',
+        slot: 2,
+        blockTime: inside2,
+        programId: '11111111111111111111111111111111',
+        solDelta: '-0.125000000',
+        success: false,
+      },
+      {
+        agentId: busy.agent.id,
+        signature: 'busy-old',
+        slot: 3,
+        blockTime: outside,
+        programId: '11111111111111111111111111111111',
+        solDelta: '99.000000000',
+        success: true,
+      },
+    ]);
+
+    const res = await ctx.app.request('/api/agents', {
+      headers: { Authorization: BEARER },
+    });
+    const body = (await res.json()) as {
+      agents: Array<{
+        id: string;
+        recentTxCount24h: number;
+        solDelta24h: string;
+        successRate24h: number | null;
+      }>;
+    };
+
+    const busyRow = body.agents.find((a) => a.id === busy.agent.id);
+    expect(busyRow).toBeDefined();
+    expect(busyRow?.recentTxCount24h).toBe(2);
+    expect(Number.parseFloat(busyRow?.solDelta24h ?? '0')).toBeCloseTo(0.375, 9);
+    expect(busyRow?.successRate24h).toBeCloseTo(0.5, 6);
+
+    const quietRow = body.agents.find((a) => a.id === quiet.agent.id);
+    expect(quietRow).toBeDefined();
+    expect(quietRow?.recentTxCount24h).toBe(0);
+    expect(quietRow?.solDelta24h).toBe('0');
+    expect(quietRow?.successRate24h).toBeNull();
+  });
 });
 
 describe('GET /api/agents/:id', () => {

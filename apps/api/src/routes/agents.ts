@@ -13,8 +13,10 @@
  * row is taken from the token, never from the request body.
  */
 
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
+import { type AlertMessage, type DeliverDeps, deliver } from '@agentscope/alerter';
 import { type Database, agentTransactions, agents, alerts, reasoningLogs } from '@agentscope/db';
+import type { AlertRuleName } from '@agentscope/shared';
 import { createAgentInputSchema, updateAgentInputSchema } from '@agentscope/shared';
 import { zValidator } from '@hono/zod-validator';
 import { and, asc, desc, eq, gte, lt, lte, or, sql } from 'drizzle-orm';
@@ -63,7 +65,7 @@ const txListQuerySchema = z
     path: ['from'],
   });
 
-export function createAgentsRouter(db: Database, sseBus: SseBus) {
+export function createAgentsRouter(db: Database, sseBus: SseBus, alerter?: DeliverDeps) {
   const router = new Hono<ApiEnv>();
 
   router.post(
@@ -107,6 +109,12 @@ export function createAgentsRouter(db: Database, sseBus: SseBus) {
   // 3.6 — List all agents owned by the authenticated user, newest first.
   // ingestToken is intentionally omitted — it is only needed when
   // configuring the OTel exporter, not for the list view.
+  //
+  // 13.3 enriched each row with 24h aggregates so the dashboard can show
+  // per-agent tx count, PnL and success rate without a round-trip per row.
+  // The stats query runs once with GROUP BY agent_id over all of the user's
+  // agents — cheaper and simpler than correlated subqueries or LEFT JOIN
+  // LATERAL.
   router.get('/', async (c) => {
     const privyDid = c.get('userId');
     const user = await ensureUser(db, privyDid);
@@ -131,7 +139,34 @@ export function createAgentsRouter(db: Database, sseBus: SseBus) {
       .orderBy(desc(agents.createdAt))
       .limit(200); // safety cap; cursor pagination post-MVP
 
-    return c.json({ agents: rows });
+    const since = new Date(Date.now() - RECENT_TX_WINDOW_MS).toISOString();
+    const statsRows = await db
+      .select({
+        agentId: agentTransactions.agentId,
+        recentTxCount24h: sql<number>`cast(count(*) as int)`,
+        solDelta24h: sql<string>`coalesce(sum(${agentTransactions.solDelta}), 0)::text`,
+        successCount24h: sql<number>`cast(count(*) filter (where ${agentTransactions.success}) as int)`,
+      })
+      .from(agentTransactions)
+      .innerJoin(agents, eq(agentTransactions.agentId, agents.id))
+      .where(and(eq(agents.userId, user.id), gte(agentTransactions.blockTime, since)))
+      .groupBy(agentTransactions.agentId);
+
+    const statsByAgent = new Map(statsRows.map((s) => [s.agentId, s]));
+
+    const enriched = rows.map((row) => {
+      const s = statsByAgent.get(row.id);
+      const txCount = s?.recentTxCount24h ?? 0;
+      const successCount = s?.successCount24h ?? 0;
+      return {
+        ...row,
+        recentTxCount24h: txCount,
+        solDelta24h: s?.solDelta24h ?? '0',
+        successRate24h: txCount > 0 ? successCount / txCount : null,
+      };
+    });
+
+    return c.json({ agents: enriched });
   });
 
   // 3.7 — Single agent + recent_tx_count (24h window) + last_alert.
@@ -381,6 +416,64 @@ export function createAgentsRouter(db: Database, sseBus: SseBus) {
         .limit(limit);
 
       return c.json({ reasoningLogs: logs });
+    },
+  );
+
+  // 13.7 — Smoke-test the notification pipeline end-to-end. Builds an
+  // ephemeral AlertMessage and pushes it through the same `deliver()`
+  // router the detector uses. Does NOT write to the alerts table — we
+  // don't want a "send test alert" click to pollute the user's feed.
+  router.post(
+    '/:id/test-alert',
+    zValidator('param', agentIdParamSchema, (result) => {
+      if (!result.success) {
+        throw new HTTPException(422, { message: 'invalid agent id (expected uuid)' });
+      }
+    }),
+    async (c) => {
+      const privyDid = c.get('userId');
+      const { id: agentId } = c.req.valid('param');
+
+      const user = await ensureUser(db, privyDid);
+      const [agent] = await db
+        .select({ id: agents.id, name: agents.name })
+        .from(agents)
+        .where(and(eq(agents.id, agentId), eq(agents.userId, user.id)))
+        .limit(1);
+      if (!agent) {
+        throw new HTTPException(404, { message: 'agent not found' });
+      }
+
+      if (!alerter) {
+        return c.json({
+          ok: false,
+          delivered: false,
+          error: 'alerter not configured on server',
+        });
+      }
+
+      // 'test_alert' is not in the AlertRuleName enum (that would require a DB
+      // migration for a smoke-test feature). The formatters in @agentscope/shared
+      // accept an untyped string and fall back to Title Case ("Test Alert"), so
+      // we widen the ruleName here via cast — ephemeral message, no DB write.
+      const msg: AlertMessage = {
+        id: randomUUID(),
+        agentId: agent.id,
+        agentName: agent.name,
+        ruleName: 'test_alert' as AlertRuleName,
+        severity: 'info',
+        payload: {
+          isTest: true,
+          source: 'dashboard smoke test',
+        },
+        triggeredAt: new Date().toISOString(),
+      };
+
+      const result = await deliver(alerter, msg, 'telegram');
+      if (result.error) {
+        return c.json({ ok: result.success, delivered: result.success, error: result.error });
+      }
+      return c.json({ ok: result.success, delivered: result.success });
     },
   );
 

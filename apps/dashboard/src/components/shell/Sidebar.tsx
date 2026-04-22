@@ -18,6 +18,9 @@ interface AgentRow {
   id: string;
   name: string;
   status: string;
+  recentTxCount24h: number;
+  solDelta24h: string;
+  successRate24h: number | null;
 }
 
 interface AlertRow {

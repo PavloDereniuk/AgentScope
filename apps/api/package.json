@@ -15,6 +15,7 @@
     "clean": "rm -rf dist .turbo"
   },
   "dependencies": {
+    "@agentscope/alerter": "workspace:^",
     "@agentscope/db": "workspace:^",
     "@agentscope/shared": "workspace:^",
     "@hono/node-server": "^1.13.7",

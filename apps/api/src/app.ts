@@ -10,6 +10,7 @@
  */
 
 import { timingSafeEqual } from 'node:crypto';
+import type { DeliverDeps } from '@agentscope/alerter';
 import type { Database } from '@agentscope/db';
 import { zValidator } from '@hono/zod-validator';
 import { Hono } from 'hono';
@@ -22,6 +23,8 @@ import { registerErrorHandlers } from './middleware/error';
 import { createAgentsRouter } from './routes/agents';
 import { createAlertsRouter } from './routes/alerts';
 import { createOtlpRouter } from './routes/otlp';
+import { createReasoningRouter } from './routes/reasoning';
+import { createStatsRouter } from './routes/stats';
 import { createTransactionsRouter } from './routes/transactions';
 
 export interface AppDeps {
@@ -34,6 +37,12 @@ export interface AppDeps {
    * Tests may omit it — the endpoint will reject all requests in that case.
    */
   internalSecret?: string;
+  /**
+   * Optional delivery channels for POST /api/agents/:id/test-alert (13.7).
+   * When undefined, the endpoint returns `{ok: false, error: 'telegram sender
+   * not configured'}` so environments without Telegram creds stay bootable.
+   */
+  alerter?: DeliverDeps;
   logger?: Logger;
 }
 
@@ -58,9 +67,11 @@ export function buildApp(deps: AppDeps) {
   // via `ensureUser` without touching headers directly.
   const api = new Hono<ApiEnv>();
   api.use('*', requireAuth(deps.verifier, log));
-  api.route('/agents', createAgentsRouter(deps.db, deps.sseBus));
+  api.route('/agents', createAgentsRouter(deps.db, deps.sseBus, deps.alerter));
   api.route('/transactions', createTransactionsRouter(deps.db));
   api.route('/alerts', createAlertsRouter(deps.db));
+  api.route('/stats', createStatsRouter(deps.db));
+  api.route('/reasoning', createReasoningRouter(deps.db));
 
   app.route('/api', api);
 
