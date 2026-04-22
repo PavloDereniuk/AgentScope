@@ -1,4 +1,3 @@
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useMemo } from 'react';
 import {
   Area,
@@ -21,15 +20,25 @@ interface DataPoint {
   cumulative: number;
 }
 
-export function PnlChart({ transactions }: { transactions: TxRow[] }) {
+interface PnlChartProps {
+  transactions: TxRow[];
+  height?: number;
+  /** Hide axes/tooltip for compact placements (e.g. overview aggregate card). */
+  compact?: boolean;
+}
+
+/**
+ * Cumulative SOL PnL area chart. Uses OKLCH accent via CSS variables
+ * so palette swaps (Tweaks panel) recolour the gradient + stroke at
+ * runtime without re-rendering the chart data.
+ */
+export function PnlChart({ transactions, height = 200, compact = false }: PnlChartProps) {
   const data = useMemo(() => {
     const sorted = [...transactions].sort(
       (a, b) => new Date(a.blockTime).getTime() - new Date(b.blockTime).getTime(),
     );
     let cumulative = 0;
     return sorted.map<DataPoint>((tx) => {
-      // A single NaN (e.g. null/empty solDelta) poisons the accumulator and
-      // renders the entire chart as NaN, so guard each increment.
       const delta = Number(tx.solDelta);
       if (Number.isFinite(delta)) cumulative += delta;
       return {
@@ -45,54 +54,89 @@ export function PnlChart({ transactions }: { transactions: TxRow[] }) {
   }, [transactions]);
 
   if (data.length === 0) {
-    return null;
+    return (
+      <div
+        className="flex items-center justify-center font-mono text-xs text-fg-3"
+        style={{ height }}
+      >
+        no transactions yet
+      </div>
+    );
   }
 
+  const last = data[data.length - 1];
+
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">Cumulative SOL PnL</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <ResponsiveContainer width="100%" height={240}>
-          <AreaChart data={data}>
-            <defs>
-              <linearGradient id="pnlGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.3} />
-                <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+    <div style={{ height }}>
+      <ResponsiveContainer width="100%" height="100%">
+        <AreaChart data={data} margin={{ top: 8, right: 12, left: 0, bottom: 4 }}>
+          <defs>
+            <linearGradient id="pnl-gradient" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="var(--accent)" stopOpacity={0.35} />
+              <stop offset="100%" stopColor="var(--accent)" stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid
+            strokeDasharray="2 4"
+            stroke="var(--line-soft)"
+            strokeOpacity={compact ? 0 : 1}
+            vertical={false}
+          />
+          {!compact && (
             <XAxis
               dataKey="time"
-              tick={{ fontSize: 10 }}
-              className="fill-muted-foreground"
+              tick={{ fontSize: 10, fill: 'var(--fg-3)', fontFamily: 'var(--font-mono)' }}
               tickLine={false}
+              axisLine={false}
+              minTickGap={40}
             />
+          )}
+          {!compact && (
             <YAxis
-              tick={{ fontSize: 10 }}
-              className="fill-muted-foreground"
+              tick={{ fontSize: 10, fill: 'var(--fg-3)', fontFamily: 'var(--font-mono)' }}
               tickLine={false}
+              axisLine={false}
               tickFormatter={(v: number) => `${v} SOL`}
+              width={60}
             />
+          )}
+          {!compact && (
             <Tooltip
+              cursor={{ stroke: 'var(--line)' }}
               contentStyle={{
-                background: 'hsl(var(--card))',
-                border: '1px solid hsl(var(--border))',
-                borderRadius: 8,
-                fontSize: 12,
+                background: 'var(--bg-2)',
+                border: '1px solid var(--line)',
+                borderRadius: 6,
+                fontFamily: 'var(--font-mono)',
+                fontSize: 11,
+                color: 'var(--fg)',
               }}
+              labelStyle={{ color: 'var(--fg-3)' }}
+              formatter={(v) => [`${Number(v).toFixed(4)} SOL`, 'Cumulative']}
             />
-            <Area
-              type="monotone"
-              dataKey="cumulative"
-              stroke="hsl(var(--primary))"
-              fill="url(#pnlGrad)"
-              strokeWidth={2}
-            />
-          </AreaChart>
-        </ResponsiveContainer>
-      </CardContent>
-    </Card>
+          )}
+          <Area
+            type="monotone"
+            dataKey="cumulative"
+            stroke="var(--accent)"
+            strokeWidth={1.5}
+            fill="url(#pnl-gradient)"
+            activeDot={{
+              r: 4,
+              stroke: 'var(--accent)',
+              fill: 'var(--accent)',
+              strokeOpacity: 0.3,
+              strokeWidth: 6,
+            }}
+          />
+        </AreaChart>
+      </ResponsiveContainer>
+      {last ? (
+        <div className="mt-2 flex justify-between font-mono text-[10px] tracking-[0.04em] text-fg-3">
+          <span>{data[0]?.time ?? ''}</span>
+          <span>{last.time}</span>
+        </div>
+      ) : null}
+    </div>
   );
 }

@@ -1,6 +1,5 @@
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
+import { cn } from '@/lib/utils';
 import {
   formatAlertDetails,
   formatAlertSummary,
@@ -8,8 +7,8 @@ import {
   isOnChainSignature,
 } from '@agentscope/shared';
 import { useQuery } from '@tanstack/react-query';
-import { AlertTriangle, Bell, ChevronDown, ChevronRight, ExternalLink, Info } from 'lucide-react';
-import { useState } from 'react';
+import { ChevronDown, ChevronRight, ExternalLink } from 'lucide-react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 
 type Severity = 'info' | 'warning' | 'critical';
@@ -30,19 +29,6 @@ interface AlertRow {
 
 const SEVERITIES: Severity[] = ['info', 'warning', 'critical'];
 
-const severityVariant: Record<Severity, 'default' | 'secondary' | 'destructive'> = {
-  info: 'secondary',
-  warning: 'default',
-  critical: 'destructive',
-};
-
-const SeverityIcon = ({ severity }: { severity: Severity }) => {
-  if (severity === 'critical') return <AlertTriangle className="h-4 w-4 text-destructive" />;
-  if (severity === 'warning') return <Bell className="h-4 w-4 text-yellow-500" />;
-  return <Info className="h-4 w-4 text-muted-foreground" />;
-};
-
-/** "2h ago" / "just now" — coarse relative time for alert list subtitles. */
 function formatRelative(iso: string, now: number = Date.now()): string {
   const diffMs = now - new Date(iso).getTime();
   const sec = Math.round(diffMs / 1000);
@@ -62,173 +48,281 @@ function getSignature(payload: Record<string, unknown>): string | null {
   return typeof sig === 'string' && sig.length > 0 ? sig : null;
 }
 
-function AlertDetails({ alert }: { alert: AlertRow }) {
-  const rows = formatAlertDetails(alert.ruleName, alert.payload);
-  const signature = getSignature(alert.payload);
-
-  return (
-    <div className="border-t border-border bg-muted/30 px-4 py-3">
-      <dl className="grid grid-cols-1 gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
-        {rows.map((row) => (
-          <div key={row.label} className="flex justify-between gap-2">
-            <dt className="text-muted-foreground">{row.label}</dt>
-            <dd className="font-medium text-right">{row.value}</dd>
-          </div>
-        ))}
-      </dl>
-
-      <div className="mt-3 flex flex-wrap items-center gap-3 text-xs">
-        <Link
-          to={`/agents/${alert.agentId}`}
-          className="text-primary underline-offset-2 hover:underline"
-        >
-          View {alert.agentName} →
-        </Link>
-        {signature &&
-          (isOnChainSignature(signature) ? (
-            <a
-              href={`https://solscan.io/tx/${signature}`}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1 text-primary underline-offset-2 hover:underline"
-            >
-              <span className="font-mono">{signature.slice(0, 12)}...</span>
-              <ExternalLink className="h-3 w-3" />
-            </a>
-          ) : (
-            <span
-              className="inline-flex items-center gap-1 text-muted-foreground"
-              title="Synthetic signature — not on-chain"
-            >
-              <span className="font-mono">{signature.slice(0, 12)}...</span>
-              <span className="text-[10px] uppercase tracking-wide">demo</span>
-            </span>
-          ))}
-      </div>
-
-      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-        <span>
-          Delivery: <span className="font-medium text-foreground">{alert.deliveryStatus}</span>
-          {alert.deliveryChannel ? ` via ${alert.deliveryChannel}` : ''}
-        </span>
-        {alert.deliveredAt && (
-          <span>Delivered: {new Date(alert.deliveredAt).toLocaleString()}</span>
-        )}
-      </div>
-
-      {alert.deliveryError && (
-        <p className="mt-2 break-all text-xs text-destructive">Error: {alert.deliveryError}</p>
-      )}
-    </div>
-  );
-}
-
 export function AlertsPage() {
-  const [filter, setFilter] = useState<Severity | 'all'>('all');
+  const [severity, setSeverity] = useState<Severity | 'all'>('all');
+  const [ruleFilter, setRuleFilter] = useState<string>('all');
+  const [agentFilter, setAgentFilter] = useState<string>('all');
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  const query = filter === 'all' ? '' : `?severity=${filter}`;
   const { data, isLoading, error } = useQuery({
-    queryKey: ['alerts', filter],
-    queryFn: () => apiClient.get<{ alerts: AlertRow[] }>(`/api/alerts${query}`),
-    // The /api/alerts page is global (not tied to a single agent), so we
-    // can't attach the per-agent SSE subscription here. Poll every 15s
-    // so new alerts appear without manual refresh.
+    queryKey: ['alerts', severity],
+    queryFn: () =>
+      apiClient.get<{ alerts: AlertRow[] }>(
+        `/api/alerts${severity === 'all' ? '' : `?severity=${severity}`}`,
+      ),
     refetchInterval: 15_000,
     refetchOnWindowFocus: true,
   });
 
   const alerts = data?.alerts ?? [];
 
+  const ruleOptions = useMemo(() => {
+    const set = new Set(alerts.map((a) => a.ruleName));
+    return ['all', ...Array.from(set).sort()];
+  }, [alerts]);
+  const agentOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const a of alerts) map.set(a.agentId, a.agentName);
+    return [
+      { id: 'all', name: 'all agents' },
+      ...Array.from(map.entries()).map(([id, name]) => ({ id, name })),
+    ];
+  }, [alerts]);
+
+  const filtered = alerts.filter((a) => {
+    if (ruleFilter !== 'all' && a.ruleName !== ruleFilter) return false;
+    if (agentFilter !== 'all' && a.agentId !== agentFilter) return false;
+    return true;
+  });
+
+  const counts: Record<Severity | 'all', number> = {
+    all: alerts.length,
+    info: alerts.filter((a) => a.severity === 'info').length,
+    warning: alerts.filter((a) => a.severity === 'warning').length,
+    critical: alerts.filter((a) => a.severity === 'critical').length,
+  };
+
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Alerts</h1>
-        <div className="flex gap-1">
-          <button
-            type="button"
-            onClick={() => setFilter('all')}
-            className={`rounded-md px-3 py-1 text-sm ${filter === 'all' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}
-          >
-            All
-          </button>
-          {SEVERITIES.map((s) => (
-            <button
-              type="button"
-              key={s}
-              onClick={() => setFilter(s)}
-              className={`rounded-md px-3 py-1 text-sm capitalize ${filter === s ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}
-            >
-              {s}
-            </button>
-          ))}
+    <div className="p-7">
+      <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Alerts</h1>
+          <p className="mt-1.5 text-[13px] text-fg-3">
+            Global feed across all agents · {counts.critical} critical · streaming
+          </p>
         </div>
       </div>
 
-      {isLoading && <p className="text-muted-foreground">Loading alerts...</p>}
+      <div className="mb-5 grid grid-cols-[260px_1fr] gap-4 max-[960px]:grid-cols-1">
+        <aside className="flex flex-col gap-4">
+          <FilterBlock label="Severity">
+            <SeverityButton
+              active={severity === 'all'}
+              onClick={() => setSeverity('all')}
+              label="all"
+              count={counts.all}
+            />
+            {SEVERITIES.map((s) => (
+              <SeverityButton
+                key={s}
+                kind={s}
+                active={severity === s}
+                onClick={() => setSeverity(s)}
+                label={s}
+                count={counts[s]}
+              />
+            ))}
+          </FilterBlock>
 
-      {error && (
-        <p className="text-destructive">Failed to load alerts: {(error as Error).message}</p>
-      )}
+          <FilterBlock label="Rule">
+            <select
+              value={ruleFilter}
+              onChange={(e) => setRuleFilter(e.target.value)}
+              className="w-full cursor-pointer bg-transparent font-mono text-[12.5px] text-fg outline-none"
+            >
+              {ruleOptions.map((r) => (
+                <option key={r} value={r}>
+                  {r === 'all' ? 'all rules' : formatRuleTitle(r)}
+                </option>
+              ))}
+            </select>
+          </FilterBlock>
 
-      {!isLoading && alerts.length === 0 && (
-        <Card>
-          <CardContent className="flex flex-col items-center gap-2 py-12">
-            <Bell className="h-12 w-12 text-muted-foreground" />
-            <p className="text-muted-foreground">No alerts to show.</p>
-          </CardContent>
-        </Card>
-      )}
+          <FilterBlock label="Agent">
+            <select
+              value={agentFilter}
+              onChange={(e) => setAgentFilter(e.target.value)}
+              className="w-full cursor-pointer bg-transparent font-mono text-[12.5px] text-fg outline-none"
+            >
+              {agentOptions.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))}
+            </select>
+          </FilterBlock>
+        </aside>
 
-      <div className="space-y-2">
-        {alerts.map((alert) => {
-          const isOpen = expandedId === alert.id;
-          const triggered = new Date(alert.triggeredAt);
-          return (
-            <Card key={alert.id} className="overflow-hidden">
-              <button
-                type="button"
-                onClick={() => setExpandedId(isOpen ? null : alert.id)}
-                aria-expanded={isOpen}
-                aria-controls={`alert-details-${alert.id}`}
-                className="block w-full text-left transition-colors hover:bg-muted/40"
-              >
-                <CardContent className="flex items-center gap-3 p-4">
-                  {isOpen ? (
-                    <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
-                  ) : (
-                    <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-                  )}
-                  <SeverityIcon severity={alert.severity} />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-medium">{formatRuleTitle(alert.ruleName)}</span>
-                      <Badge variant={severityVariant[alert.severity]}>{alert.severity}</Badge>
-                      <span className="truncate text-xs text-muted-foreground">
-                        · {alert.agentName}
+        <section>
+          {isLoading ? (
+            <p className="font-mono text-xs text-fg-3">Loading alerts…</p>
+          ) : error ? (
+            <p className="font-mono text-xs text-crit">
+              Failed to load alerts: {(error as Error).message}
+            </p>
+          ) : filtered.length === 0 ? (
+            <div className="rounded-md border border-line bg-surface-2 px-8 py-16 text-center font-mono text-[12px] text-fg-3">
+              No alerts match the current filters.
+            </div>
+          ) : (
+            <div className="overflow-hidden rounded-md border border-line bg-surface-2">
+              {filtered.map((alert) => {
+                const isOpen = expandedId === alert.id;
+                return (
+                  <div key={alert.id} className="border-b border-line-soft last:border-b-0">
+                    <button
+                      type="button"
+                      onClick={() => setExpandedId(isOpen ? null : alert.id)}
+                      aria-expanded={isOpen}
+                      className={cn(
+                        'grid w-full grid-cols-[16px_10px_160px_1fr_auto_auto] items-center gap-3.5 px-4 py-3 text-left text-[13px] transition-colors',
+                        'hover:bg-surface-3',
+                      )}
+                    >
+                      {isOpen ? (
+                        <ChevronDown className="h-3.5 w-3.5 text-fg-3" />
+                      ) : (
+                        <ChevronRight className="h-3.5 w-3.5 text-fg-3" />
+                      )}
+                      <SevDot severity={alert.severity} />
+                      <span className="font-mono text-[10.5px] uppercase tracking-[0.06em] text-fg-2">
+                        {alert.ruleName.replace(/_/g, '·')}
                       </span>
-                    </div>
-                    <p className="truncate text-sm text-foreground/80">
-                      {formatAlertSummary(alert.ruleName, alert.payload)}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {formatRelative(alert.triggeredAt)} · {triggered.toLocaleString()}
-                    </p>
+                      <span className="min-w-0 truncate text-fg-2">
+                        <span className="text-fg">
+                          {formatAlertSummary(alert.ruleName, alert.payload)}
+                        </span>
+                      </span>
+                      <span className="font-mono text-[11px] text-fg-3">{alert.agentName}</span>
+                      <span className="font-mono text-[11px] text-fg-3">
+                        {formatRelative(alert.triggeredAt)}
+                      </span>
+                    </button>
+                    {isOpen ? <AlertDetails alert={alert} /> : null}
                   </div>
-                  <Badge variant="outline" className="text-xs">
-                    {alert.deliveryStatus}
-                  </Badge>
-                </CardContent>
-              </button>
-              {isOpen && (
-                <div id={`alert-details-${alert.id}`}>
-                  <AlertDetails alert={alert} />
-                </div>
-              )}
-            </Card>
-          );
-        })}
+                );
+              })}
+            </div>
+          )}
+        </section>
       </div>
+    </div>
+  );
+}
+
+function FilterBlock({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <div className="mb-1.5 font-mono text-[10.5px] uppercase tracking-[0.08em] text-fg-3">
+        {label}
+      </div>
+      <div className="flex flex-col gap-1 rounded-md border border-line bg-surface-2 p-2">
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function SeverityButton({
+  kind,
+  active,
+  onClick,
+  label,
+  count,
+}: {
+  kind?: Severity;
+  active: boolean;
+  onClick: () => void;
+  label: string;
+  count: number;
+}) {
+  const dotStyle =
+    kind === 'critical'
+      ? 'bg-crit'
+      : kind === 'warning'
+        ? 'bg-warn'
+        : kind === 'info'
+          ? 'bg-info'
+          : 'bg-fg-3';
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'flex items-center gap-2 rounded-[5px] px-2 py-1.5 font-mono text-[11.5px] transition-colors',
+        active ? 'bg-surface-3 text-fg' : 'text-fg-2 hover:bg-surface-3',
+      )}
+    >
+      <span className={cn('h-1.5 w-1.5 rounded-full', dotStyle)} />
+      <span className="lowercase">{label}</span>
+      <span className="ml-auto text-[10.5px] text-fg-3">{count}</span>
+    </button>
+  );
+}
+
+function SevDot({ severity }: { severity: Severity }) {
+  const style =
+    severity === 'critical'
+      ? 'bg-crit shadow-[0_0_0_3px_color-mix(in_oklch,var(--crit)_25%,transparent)]'
+      : severity === 'warning'
+        ? 'bg-warn'
+        : 'bg-info';
+  return <span aria-hidden className={cn('h-2 w-2 rounded-full', style)} />;
+}
+
+function AlertDetails({ alert }: { alert: AlertRow }) {
+  const rows = formatAlertDetails(alert.ruleName, alert.payload);
+  const signature = getSignature(alert.payload);
+
+  return (
+    <div className="border-t border-line-soft bg-surface px-12 py-3.5 font-mono text-[12px]">
+      <dl className="grid grid-cols-1 gap-x-8 gap-y-1 sm:grid-cols-2">
+        {rows.map((row) => (
+          <div key={row.label} className="flex justify-between gap-2">
+            <dt className="text-fg-3">{row.label}</dt>
+            <dd className="text-right text-fg-2">{row.value}</dd>
+          </div>
+        ))}
+      </dl>
+
+      <div className="mt-3 flex flex-wrap items-center gap-3 text-[11px]">
+        <Link to={`/agents/${alert.agentId}`} className="text-accent hover:underline">
+          View {alert.agentName} →
+        </Link>
+        {signature ? (
+          isOnChainSignature(signature) ? (
+            <a
+              href={`https://solscan.io/tx/${signature}`}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 text-accent hover:underline"
+            >
+              <span>{signature.slice(0, 12)}…</span>
+              <ExternalLink className="h-2.5 w-2.5" />
+            </a>
+          ) : (
+            <span className="inline-flex items-center gap-1 text-fg-3" title="Synthetic">
+              <span>{signature.slice(0, 12)}…</span>
+              <span className="text-[10px] uppercase tracking-wider">demo</span>
+            </span>
+          )
+        ) : null}
+      </div>
+
+      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-0.5 text-[10.5px] text-fg-3">
+        <span>
+          Delivery: <span className="text-fg-2">{alert.deliveryStatus}</span>
+          {alert.deliveryChannel ? ` via ${alert.deliveryChannel}` : ''}
+        </span>
+        {alert.deliveredAt ? (
+          <span>Delivered: {new Date(alert.deliveredAt).toLocaleString()}</span>
+        ) : null}
+      </div>
+
+      {alert.deliveryError ? (
+        <p className="mt-2 break-all text-[11px] text-crit">Error: {alert.deliveryError}</p>
+      ) : null}
     </div>
   );
 }

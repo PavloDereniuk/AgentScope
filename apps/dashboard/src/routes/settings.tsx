@@ -1,16 +1,27 @@
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
 import { apiClient } from '@/lib/api-client';
+import { cn } from '@/lib/utils';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Save } from 'lucide-react';
+import { Copy, Loader2, Save, Trash2 } from 'lucide-react';
 import type { FormEvent } from 'react';
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 interface AgentRow {
   id: string;
   name: string;
+  walletPubkey: string;
   webhookUrl: string | null;
+  ingestToken?: string;
   alertRules: {
     slippagePctThreshold?: number;
     gasMultThreshold?: number;
@@ -20,43 +31,56 @@ interface AgentRow {
   } | null;
 }
 
-interface AgentListResponse {
-  agents: AgentRow[];
+interface AgentDetailResponse {
+  agent: AgentRow;
 }
 
 export function SettingsPage() {
   const [selectedId, setSelectedId] = useState<string>('');
+  const [webhookError, setWebhookError] = useState<string | null>(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
 
-  const { data } = useQuery({
+  const { data: list } = useQuery({
     queryKey: ['agents'],
-    queryFn: () => apiClient.get<AgentListResponse>('/api/agents'),
+    queryFn: () => apiClient.get<{ agents: AgentRow[] }>('/api/agents'),
   });
-  const agents = data?.agents ?? [];
+  const agents = list?.agents ?? [];
 
-  // Auto-select first agent
   useEffect(() => {
     if (!selectedId && agents.length > 0 && agents[0]) {
       setSelectedId(agents[0].id);
     }
   }, [agents, selectedId]);
 
-  const selected = agents.find((a) => a.id === selectedId);
+  // Detail fetch brings the ingestToken into the page cache.
+  const { data: detail } = useQuery({
+    queryKey: ['agent', selectedId],
+    queryFn: () => apiClient.get<AgentDetailResponse>(`/api/agents/${selectedId}`),
+    enabled: Boolean(selectedId),
+  });
+  const selected = detail?.agent;
 
   const mutation = useMutation({
     mutationFn: (body: Record<string, unknown>) =>
       apiClient.patch<{ agent: AgentRow }>(`/api/agents/${selectedId}`, body),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['agents'] });
+      queryClient.invalidateQueries({ queryKey: ['agent', selectedId] });
     },
   });
 
-  const [webhookError, setWebhookError] = useState<string | null>(null);
+  const deleteMutation = useMutation({
+    mutationFn: () => apiClient.delete(`/api/agents/${selectedId}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['agents'] });
+      setDeleteOpen(false);
+      navigate('/agents');
+    },
+  });
 
-  // Clear any previous mutation/validation error when the user switches agents —
-  // otherwise the old error message would stick to the new form until the
-  // next submission. `selectedId` is the only value we care about; `mutation.reset`
-  // is stable across renders, so we intentionally exclude it from the dep array.
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally only depend on selectedId
   useEffect(() => {
     if (!selectedId) return;
@@ -71,9 +95,6 @@ export function SettingsPage() {
     const webhookInput = (fd.get('webhookUrl') as string) || '';
     let webhookUrl: string | null = null;
     if (webhookInput.trim().length > 0) {
-      // Validate client-side: must be an http/https URL. The backend re-validates
-      // but failing fast here gives a better UX and blocks javascript: / data:
-      // URLs from ever reaching the agent's webhook config.
       try {
         const parsed = new URL(webhookInput);
         if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
@@ -89,7 +110,6 @@ export function SettingsPage() {
     setWebhookError(null);
 
     const alertRules: Record<string, number> = {};
-
     const fields = [
       'slippagePctThreshold',
       'gasMultThreshold',
@@ -97,7 +117,6 @@ export function SettingsPage() {
       'errorRatePctThreshold',
       'staleMinutesThreshold',
     ] as const;
-
     for (const field of fields) {
       const val = fd.get(field) as string;
       const num = Number(val);
@@ -109,140 +128,310 @@ export function SettingsPage() {
     mutation.mutate(body);
   }
 
+  async function copyToken() {
+    if (!selected?.ingestToken) return;
+    await navigator.clipboard.writeText(selected.ingestToken);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1400);
+  }
+
   return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Settings</h1>
+    <div className="p-7">
+      <form onSubmit={handleSubmit}>
+        <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
+            <p className="mt-1.5 text-[13px] text-fg-3">
+              Per-agent alert thresholds, webhooks & ingest tokens.
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="submit"
+              disabled={mutation.isPending || !selectedId}
+              className={cn(
+                'inline-flex h-7 items-center gap-1.5 rounded-[5px] bg-accent px-2.5',
+                'font-mono text-[11.5px] font-medium tracking-tight',
+                'text-[color:var(--primary-foreground)] transition-[filter] hover:brightness-110',
+                'disabled:opacity-50 disabled:cursor-not-allowed',
+              )}
+            >
+              {mutation.isPending ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Save className="h-3.5 w-3.5" />
+              )}
+              <span>Save changes</span>
+            </button>
+          </div>
+        </div>
 
-      <div className="space-y-2">
-        <label htmlFor="agent-select" className="text-sm font-medium">
-          Select Agent
-        </label>
-        <select
-          id="agent-select"
-          value={selectedId}
-          onChange={(e) => setSelectedId(e.target.value)}
-          className="flex h-10 w-full max-w-xs rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-        >
-          {agents.map((a) => (
-            <option key={a.id} value={a.id}>
-              {a.name}
-            </option>
-          ))}
-        </select>
-      </div>
+        <div className="grid grid-cols-2 gap-4 max-[960px]:grid-cols-1">
+          <div className="flex flex-col gap-4">
+            <Card title="Agent" meta="select to configure">
+              <div className="px-4 py-4">
+                <FieldLabel>Active agent</FieldLabel>
+                <div className="flex items-center rounded-[5px] border border-line bg-surface-2 px-2.5 py-1.5">
+                  <select
+                    value={selectedId}
+                    onChange={(e) => setSelectedId(e.target.value)}
+                    className="w-full cursor-pointer bg-transparent font-mono text-[12.5px] text-fg outline-none"
+                  >
+                    {agents.length === 0 ? <option value="">no agents</option> : null}
+                    {agents.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.name} — {a.walletPubkey.slice(0, 8)}…
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </Card>
 
-      {selected && (
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Webhook</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <label htmlFor="webhookUrl" className="text-sm font-medium">
-                Webhook URL
-              </label>
-              <Input
-                id="webhookUrl"
-                name="webhookUrl"
-                type="url"
-                placeholder="https://example.com/webhook"
-                defaultValue={selected.webhookUrl ?? ''}
-              />
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Alert Rule Thresholds</CardTitle>
-            </CardHeader>
-            <CardContent className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-1">
-                <label htmlFor="slippagePctThreshold" className="text-sm font-medium">
-                  Slippage %
-                </label>
-                <Input
-                  id="slippagePctThreshold"
+            <Card title="Anomaly Thresholds" meta="overrides global defaults">
+              <div className="grid gap-3.5 px-4 py-4">
+                <ThresholdInput
                   name="slippagePctThreshold"
-                  type="number"
-                  step="0.01"
-                  placeholder="e.g. 2.5"
-                  defaultValue={selected.alertRules?.slippagePctThreshold ?? ''}
+                  label="Slippage spike"
+                  hint="fires at ≥ value · critical at 5× threshold"
+                  suffix="%"
+                  step="0.1"
+                  defaultValue={selected?.alertRules?.slippagePctThreshold}
                 />
-              </div>
-              <div className="space-y-1">
-                <label htmlFor="gasMultThreshold" className="text-sm font-medium">
-                  Gas multiplier
-                </label>
-                <Input
-                  id="gasMultThreshold"
+                <ThresholdInput
                   name="gasMultThreshold"
-                  type="number"
-                  step="0.1"
-                  placeholder="e.g. 3.0"
-                  defaultValue={selected.alertRules?.gasMultThreshold ?? ''}
+                  label="Gas spike"
+                  hint="multiple of 24h median fee"
+                  suffix="×"
+                  step="0.5"
+                  defaultValue={selected?.alertRules?.gasMultThreshold}
                 />
-              </div>
-              <div className="space-y-1">
-                <label htmlFor="drawdownPctThreshold" className="text-sm font-medium">
-                  Drawdown %
-                </label>
-                <Input
-                  id="drawdownPctThreshold"
-                  name="drawdownPctThreshold"
-                  type="number"
-                  step="0.1"
-                  placeholder="e.g. 10"
-                  defaultValue={selected.alertRules?.drawdownPctThreshold ?? ''}
-                />
-              </div>
-              <div className="space-y-1">
-                <label htmlFor="errorRatePctThreshold" className="text-sm font-medium">
-                  Error rate %
-                </label>
-                <Input
-                  id="errorRatePctThreshold"
+                <ThresholdInput
                   name="errorRatePctThreshold"
-                  type="number"
+                  label="Error rate (1h)"
+                  hint="% failed tx in rolling window"
+                  suffix="%"
                   step="1"
-                  min="0"
-                  max="100"
-                  placeholder="e.g. 20"
-                  defaultValue={selected.alertRules?.errorRatePctThreshold ?? ''}
+                  defaultValue={selected?.alertRules?.errorRatePctThreshold}
                 />
-              </div>
-              <div className="space-y-1">
-                <label htmlFor="staleMinutesThreshold" className="text-sm font-medium">
-                  Stale (minutes)
-                </label>
-                <Input
-                  id="staleMinutesThreshold"
+                <ThresholdInput
+                  name="drawdownPctThreshold"
+                  label="Drawdown (1h)"
+                  hint="% PnL loss"
+                  suffix="%"
+                  step="1"
+                  defaultValue={selected?.alertRules?.drawdownPctThreshold}
+                />
+                <ThresholdInput
                   name="staleMinutesThreshold"
-                  type="number"
+                  label="Stale agent"
+                  hint="minutes of inactivity"
+                  suffix="min"
                   step="1"
-                  min="1"
-                  placeholder="e.g. 60"
-                  defaultValue={selected.alertRules?.staleMinutesThreshold ?? ''}
+                  defaultValue={selected?.alertRules?.staleMinutesThreshold}
                 />
               </div>
-            </CardContent>
-          </Card>
+            </Card>
+          </div>
 
-          {webhookError && <p className="text-sm text-destructive">{webhookError}</p>}
-          {mutation.error && (
-            <p className="text-sm text-destructive">{(mutation.error as Error).message}</p>
-          )}
-          {mutation.isSuccess && <p className="text-sm text-green-500">Settings saved.</p>}
+          <div className="flex flex-col gap-4">
+            <Card title="Ingest Token" meta="secret · rotate if leaked">
+              <div className="px-4 py-4">
+                <FieldLabel>OTLP agent.token</FieldLabel>
+                <div className="flex items-center gap-2 rounded-[5px] border border-line bg-surface-2 px-2.5 py-1.5">
+                  <input
+                    value={selected?.ingestToken ?? ''}
+                    readOnly
+                    className="flex-1 bg-transparent font-mono text-[11.5px] text-fg outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={copyToken}
+                    disabled={!selected?.ingestToken}
+                    className="inline-flex items-center gap-1 rounded-sm border border-line px-1.5 py-0.5 font-mono text-[10px] text-fg-2 hover:border-fg-3 hover:text-fg disabled:opacity-50"
+                  >
+                    <Copy className="h-2.5 w-2.5" />
+                    {copied ? 'copied' : 'copy'}
+                  </button>
+                </div>
+                <p className="mt-2.5 font-mono text-[11px] text-fg-3">
+                  Set as <span className="text-accent">agent.token</span> resource attribute in your
+                  OTel SDK.
+                </p>
+              </div>
+            </Card>
 
-          <Button type="submit" disabled={mutation.isPending}>
-            {mutation.isPending ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Save className="mr-2 h-4 w-4" />
-            )}
-            Save Settings
-          </Button>
-        </form>
-      )}
+            <Card title="Notifications" meta="delivery channels">
+              <div className="grid gap-3.5 px-4 py-4">
+                <div>
+                  <FieldLabel>Webhook URL</FieldLabel>
+                  <div className="flex items-center rounded-[5px] border border-line bg-surface-2 px-2.5 py-1.5">
+                    <input
+                      name="webhookUrl"
+                      type="url"
+                      placeholder="https://example.com/webhook"
+                      defaultValue={selected?.webhookUrl ?? ''}
+                      className="w-full bg-transparent font-mono text-[12.5px] text-fg outline-none placeholder:text-fg-3"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <FieldLabel hint="post-MVP">Discord webhook</FieldLabel>
+                  <div className="flex items-center rounded-[5px] border border-line bg-surface-2 px-2.5 py-1.5 opacity-50">
+                    <input
+                      disabled
+                      placeholder="https://discord.com/api/webhooks/…"
+                      className="w-full bg-transparent font-mono text-[12.5px] outline-none placeholder:text-fg-3"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <FieldLabel hint="post-MVP">Slack webhook</FieldLabel>
+                  <div className="flex items-center rounded-[5px] border border-line bg-surface-2 px-2.5 py-1.5 opacity-50">
+                    <input
+                      disabled
+                      placeholder="https://hooks.slack.com/services/…"
+                      className="w-full bg-transparent font-mono text-[12.5px] outline-none placeholder:text-fg-3"
+                    />
+                  </div>
+                </div>
+              </div>
+            </Card>
+
+            <Card title="Danger Zone" meta="irreversible">
+              <div className="px-4 py-4">
+                <p className="mb-3 text-[13px] text-fg-2">
+                  Delete <span className="font-mono text-fg">{selected?.name ?? '—'}</span> and
+                  cascade all transactions, reasoning logs and alerts. This action cannot be undone.
+                </p>
+                <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+                  <DialogTrigger asChild>
+                    <button
+                      type="button"
+                      disabled={!selectedId}
+                      className={cn(
+                        'inline-flex h-7 items-center gap-1.5 rounded-[5px] border px-2.5',
+                        'font-mono text-[11.5px] font-medium text-crit',
+                        'border-[color:color-mix(in_oklch,var(--crit)_35%,var(--line))] bg-surface-2',
+                        'hover:bg-[color:color-mix(in_oklch,var(--crit)_12%,var(--bg-2))]',
+                        'disabled:opacity-50 disabled:cursor-not-allowed',
+                      )}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      Delete agent
+                    </button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Delete agent</DialogTitle>
+                      <DialogDescription>
+                        This will permanently delete <strong>{selected?.name}</strong> and all
+                        related data.
+                      </DialogDescription>
+                    </DialogHeader>
+                    {deleteMutation.isError ? (
+                      <p className="font-mono text-xs text-crit">
+                        {(deleteMutation.error as Error).message}
+                      </p>
+                    ) : null}
+                    <DialogFooter>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        onClick={() => {
+                          deleteMutation.reset();
+                          setDeleteOpen(false);
+                        }}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        disabled={deleteMutation.isPending}
+                        onClick={() => deleteMutation.mutate()}
+                      >
+                        {deleteMutation.isPending ? 'Deleting…' : 'Delete'}
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+              </div>
+            </Card>
+          </div>
+        </div>
+
+        <div className="mt-5 flex flex-wrap gap-3 text-[12px]">
+          {webhookError ? <p className="text-crit">{webhookError}</p> : null}
+          {mutation.error ? <p className="text-crit">{(mutation.error as Error).message}</p> : null}
+          {mutation.isSuccess ? <p className="text-accent">Settings saved.</p> : null}
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function Card({
+  title,
+  meta,
+  children,
+}: {
+  title: string;
+  meta?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="overflow-hidden rounded-md border border-line bg-surface-2">
+      <div className="flex items-center justify-between border-b border-line px-4 py-3">
+        <span className="font-mono text-[11px] uppercase tracking-[0.08em] text-fg-2">{title}</span>
+        {meta ? (
+          <span className="font-mono text-[10.5px] tracking-[0.04em] text-fg-3">{meta}</span>
+        ) : null}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function FieldLabel({ children, hint }: { children: React.ReactNode; hint?: string }) {
+  return (
+    <div className="mb-1.5 flex justify-between font-mono text-[10.5px] uppercase tracking-[0.08em] text-fg-3">
+      <span>{children}</span>
+      {hint ? (
+        <span className="normal-case tracking-normal text-[11px] text-fg-3">{hint}</span>
+      ) : null}
+    </div>
+  );
+}
+
+function ThresholdInput({
+  name,
+  label,
+  hint,
+  suffix,
+  step,
+  defaultValue,
+}: {
+  name: string;
+  label: string;
+  hint: string;
+  suffix: string;
+  step: string;
+  defaultValue?: number | undefined;
+}) {
+  return (
+    <div>
+      <FieldLabel hint={hint}>{label}</FieldLabel>
+      <div className="flex items-center gap-2 rounded-[5px] border border-line bg-surface-2 px-2.5 py-1.5">
+        <input
+          name={name}
+          type="number"
+          step={step}
+          defaultValue={defaultValue ?? ''}
+          className="flex-1 bg-transparent font-mono text-[12.5px] text-fg outline-none placeholder:text-fg-3"
+        />
+        <span className="font-mono text-[11px] text-fg-3">{suffix}</span>
+      </div>
     </div>
   );
 }

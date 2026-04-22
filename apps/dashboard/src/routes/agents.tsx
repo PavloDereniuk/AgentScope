@@ -1,6 +1,4 @@
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import {
   Dialog,
   DialogContent,
@@ -12,10 +10,11 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { apiClient } from '@/lib/api-client';
+import { cn } from '@/lib/utils';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Bot, Loader2, Plus, Search } from 'lucide-react';
+import { Download, Loader2, Plus, Search } from 'lucide-react';
 import type { FormEvent } from 'react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 
 const FRAMEWORKS = ['elizaos', 'agent-kit', 'custom'] as const;
@@ -32,11 +31,191 @@ interface AgentRow {
   createdAt: string;
 }
 
-const statusColor: Record<string, 'default' | 'secondary' | 'destructive'> = {
-  live: 'default',
-  stale: 'secondary',
-  failed: 'destructive',
-};
+type Filter = 'all' | 'live' | 'stale' | 'failed';
+const FILTERS: Filter[] = ['all', 'live', 'stale', 'failed'];
+
+export function AgentsPage() {
+  const [filter, setFilter] = useState<Filter>('all');
+  const [search, setSearch] = useState('');
+
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['agents'],
+    queryFn: () => apiClient.get<{ agents: AgentRow[] }>('/api/agents'),
+  });
+
+  const agents = data?.agents ?? [];
+
+  const counts = useMemo<Record<Filter, number>>(() => {
+    return {
+      all: agents.length,
+      live: agents.filter((a) => a.status === 'live').length,
+      stale: agents.filter((a) => a.status === 'stale').length,
+      failed: agents.filter((a) => a.status === 'failed').length,
+    };
+  }, [agents]);
+
+  const filtered = useMemo(() => {
+    let list = filter === 'all' ? agents : agents.filter((a) => a.status === filter);
+    if (search) {
+      const q = search.toLowerCase();
+      list = list.filter(
+        (a) => a.name.toLowerCase().includes(q) || a.walletPubkey.toLowerCase().includes(q),
+      );
+    }
+    return list;
+  }, [agents, filter, search]);
+
+  return (
+    <div className="p-7">
+      <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="flex items-baseline gap-3 text-2xl font-semibold tracking-tight">
+            Agents
+            <span className="font-mono text-[13px] font-normal text-fg-3">({agents.length})</span>
+          </h1>
+          <p className="mt-1.5 text-[13px] text-fg-3">
+            Register, monitor & configure your on-chain AI agents.
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <button type="button" className={btnGhost} disabled title="Coming post-MVP">
+            <Download className="h-3.5 w-3.5" />
+            <span>Export CSV</span>
+          </button>
+          <AddAgentDialog />
+        </div>
+      </div>
+
+      <div className="mb-5 flex flex-wrap items-center gap-4 border-b border-line">
+        <div className="flex gap-0">
+          {FILTERS.map((k) => (
+            <button
+              key={k}
+              type="button"
+              onClick={() => setFilter(k)}
+              className={cn(
+                'relative px-4 py-2.5 font-mono text-xs lowercase tracking-wide transition-colors',
+                filter === k ? 'text-fg' : 'text-fg-3 hover:text-fg-2',
+              )}
+            >
+              {k}
+              <span
+                className={cn(
+                  'ml-1.5 rounded-full border border-line px-1.5 py-px text-[10px]',
+                  filter === k
+                    ? 'border-[color:var(--accent-dim)] text-accent'
+                    : 'bg-surface-2 text-fg-3',
+                )}
+              >
+                {counts[k]}
+              </span>
+              {filter === k ? (
+                <span
+                  aria-hidden
+                  className="absolute -bottom-px left-0 right-0 h-[1.5px] bg-accent"
+                />
+              ) : null}
+            </button>
+          ))}
+        </div>
+        <div className="ml-auto flex items-center gap-2 py-1.5">
+          <label className="flex w-[260px] items-center gap-2 rounded-[5px] border border-line bg-surface-2 px-2.5 py-1.5 font-mono text-xs text-fg-3">
+            <Search className="h-3 w-3 shrink-0" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search by name or wallet…"
+              className="flex-1 bg-transparent text-fg outline-none placeholder:text-fg-3"
+            />
+          </label>
+        </div>
+      </div>
+
+      {isLoading && <p className="font-mono text-xs text-fg-3">Loading agents…</p>}
+      {error && (
+        <p className="font-mono text-xs text-crit">Failed to load: {(error as Error).message}</p>
+      )}
+
+      {!isLoading && filtered.length === 0 ? (
+        <div className="rounded-md border border-line bg-surface-2 px-8 py-16 text-center">
+          <p className="text-[13px] text-fg-3">
+            {search
+              ? 'No agents match your search.'
+              : filter === 'all'
+                ? 'No agents registered yet.'
+                : `No ${filter} agents.`}
+          </p>
+        </div>
+      ) : null}
+
+      {filtered.length > 0 ? (
+        <div className="overflow-x-auto rounded-md border border-line bg-surface-2">
+          <div className="grid min-w-[720px] grid-cols-[28px_minmax(180px,1.6fr)_minmax(140px,1.2fr)_80px_90px_90px] gap-3 border-b border-line px-4 py-2.5 font-mono text-[10px] uppercase tracking-[0.08em] text-fg-3">
+            <span>#</span>
+            <span>agent</span>
+            <span>wallet</span>
+            <span className="text-right">framework</span>
+            <span className="text-right">type</span>
+            <span className="text-right">last seen</span>
+          </div>
+          {filtered.map((agent, i) => (
+            <Link
+              key={agent.id}
+              to={`/agents/${agent.id}`}
+              className="grid min-w-[720px] cursor-pointer grid-cols-[28px_minmax(180px,1.6fr)_minmax(140px,1.2fr)_80px_90px_90px] items-center gap-3 border-b border-line-soft px-4 py-3 transition-colors last:border-b-0 hover:bg-surface-3"
+            >
+              <span className="font-mono text-[10px] text-fg-3">
+                {String(i + 1).padStart(2, '0')}
+              </span>
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="truncate text-[13.5px] font-medium text-fg">{agent.name}</span>
+                <StatusBadge status={agent.status} />
+              </div>
+              <span className="truncate font-mono text-[11.5px] text-fg-3">
+                {agent.walletPubkey}
+              </span>
+              <span className="text-right font-mono text-[11.5px] text-fg-2">
+                {agent.framework}
+              </span>
+              <span className="text-right font-mono text-[11.5px] text-fg-2">
+                {agent.agentType}
+              </span>
+              <span className="text-right font-mono text-[11px] text-fg-3">
+                {agent.lastSeenAt ? relativeTime(agent.lastSeenAt) : 'never'}
+              </span>
+            </Link>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function StatusBadge({ status }: { status: 'live' | 'stale' | 'failed' }) {
+  const styles =
+    status === 'live'
+      ? 'text-accent border-[color:var(--accent-dim)] bg-[color-mix(in_oklch,var(--accent)_10%,transparent)]'
+      : status === 'stale'
+        ? 'text-warn border-[color:color-mix(in_oklch,var(--warn)_35%,var(--line))]'
+        : 'text-crit border-[color:color-mix(in_oklch,var(--crit)_35%,var(--line))]';
+  const dot =
+    status === 'live'
+      ? 'bg-accent shadow-[0_0_0_3px_color-mix(in_oklch,var(--accent)_25%,transparent)]'
+      : status === 'stale'
+        ? 'bg-warn'
+        : 'bg-crit';
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center gap-1.5 rounded-full border px-2 py-px font-mono text-[10px] uppercase tracking-[0.08em]',
+        styles,
+      )}
+    >
+      <span className={cn('h-1.5 w-1.5 rounded-full', dot)} />
+      {status}
+    </span>
+  );
+}
 
 function AddAgentDialog() {
   const [open, setOpen] = useState(false);
@@ -69,10 +248,10 @@ function AddAgentDialog() {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button>
-          <Plus className="mr-2 h-4 w-4" />
-          Add Agent
-        </Button>
+        <button type="button" className={btnPrimary}>
+          <Plus className="h-3.5 w-3.5" />
+          <span>Register agent</span>
+        </button>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
@@ -81,7 +260,10 @@ function AddAgentDialog() {
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <label htmlFor="agent-name" className="text-sm font-medium">
+            <label
+              htmlFor="agent-name"
+              className="font-mono text-[10.5px] uppercase tracking-wider text-fg-3"
+            >
               Name
             </label>
             <Input
@@ -93,21 +275,27 @@ function AddAgentDialog() {
             />
           </div>
           <div className="space-y-2">
-            <label htmlFor="agent-wallet" className="text-sm font-medium">
+            <label
+              htmlFor="agent-wallet"
+              className="font-mono text-[10.5px] uppercase tracking-wider text-fg-3"
+            >
               Wallet Public Key
             </label>
-            <Input id="agent-wallet" name="walletPubkey" placeholder="So1ana..." required />
+            <Input id="agent-wallet" name="walletPubkey" placeholder="So1ana…" required />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <label htmlFor="agent-framework" className="text-sm font-medium">
+              <label
+                htmlFor="agent-framework"
+                className="font-mono text-[10.5px] uppercase tracking-wider text-fg-3"
+              >
                 Framework
               </label>
               <select
                 id="agent-framework"
                 name="framework"
                 required
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                className="flex h-10 w-full rounded-md border border-line bg-surface-2 px-3 py-2 font-mono text-xs"
               >
                 {FRAMEWORKS.map((f) => (
                   <option key={f} value={f}>
@@ -117,14 +305,17 @@ function AddAgentDialog() {
               </select>
             </div>
             <div className="space-y-2">
-              <label htmlFor="agent-type" className="text-sm font-medium">
+              <label
+                htmlFor="agent-type"
+                className="font-mono text-[10.5px] uppercase tracking-wider text-fg-3"
+              >
                 Type
               </label>
               <select
                 id="agent-type"
                 name="agentType"
                 required
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                className="flex h-10 w-full rounded-md border border-line bg-surface-2 px-3 py-2 font-mono text-xs"
               >
                 {AGENT_TYPES.map((t) => (
                   <option key={t} value={t}>
@@ -134,9 +325,9 @@ function AddAgentDialog() {
               </select>
             </div>
           </div>
-          {mutation.error && (
-            <p className="text-sm text-destructive">{(mutation.error as Error).message}</p>
-          )}
+          {mutation.error ? (
+            <p className="font-mono text-xs text-crit">{(mutation.error as Error).message}</p>
+          ) : null}
           <DialogFooter>
             <Button type="submit" disabled={mutation.isPending}>
               {mutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
@@ -149,86 +340,24 @@ function AddAgentDialog() {
   );
 }
 
-export function AgentsPage() {
-  const [search, setSearch] = useState('');
+const btnPrimary = cn(
+  'inline-flex h-7 items-center gap-1.5 rounded-[5px] bg-accent px-2.5 font-mono text-[11.5px] font-medium tracking-tight',
+  'text-[color:var(--primary-foreground)] hover:brightness-110 transition-[filter]',
+);
 
-  const { data, isLoading, error } = useQuery({
-    queryKey: ['agents'],
-    queryFn: () => apiClient.get<{ agents: AgentRow[] }>('/api/agents'),
-  });
+const btnGhost = cn(
+  'inline-flex h-7 items-center gap-1.5 rounded-[5px] border border-line bg-surface-2 px-2.5',
+  'font-mono text-[11.5px] font-medium tracking-tight text-fg-2 hover:text-fg hover:border-fg-3 hover:bg-surface-3 transition-colors',
+  'disabled:opacity-50 disabled:cursor-not-allowed',
+);
 
-  const agents = data?.agents ?? [];
-  const filtered = search
-    ? agents.filter(
-        (a) =>
-          a.name.toLowerCase().includes(search.toLowerCase()) ||
-          a.walletPubkey.toLowerCase().includes(search.toLowerCase()),
-      )
-    : agents;
-
-  return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Agents</h1>
-        <AddAgentDialog />
-      </div>
-
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          placeholder="Search by name or wallet..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="pl-10"
-        />
-      </div>
-
-      {isLoading && <p className="text-muted-foreground">Loading agents...</p>}
-
-      {error && (
-        <p className="text-destructive">Failed to load agents: {(error as Error).message}</p>
-      )}
-
-      {!isLoading && filtered.length === 0 && (
-        <Card>
-          <CardContent className="flex flex-col items-center gap-2 py-12">
-            <Bot className="h-12 w-12 text-muted-foreground" />
-            <p className="text-muted-foreground">
-              {search ? 'No agents match your search.' : 'No agents registered yet.'}
-            </p>
-          </CardContent>
-        </Card>
-      )}
-
-      <div className="grid gap-3">
-        {filtered.map((agent) => (
-          <Link key={agent.id} to={`/agents/${agent.id}`}>
-            <Card className="transition-colors hover:bg-accent/30">
-              <CardContent className="flex items-center gap-4 p-4">
-                <Bot className="h-8 w-8 shrink-0 text-muted-foreground" />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium">{agent.name}</span>
-                    <Badge variant={statusColor[agent.status] ?? 'secondary'}>{agent.status}</Badge>
-                    <Badge variant="outline" className="text-xs">
-                      {agent.framework}
-                    </Badge>
-                  </div>
-                  <p className="truncate text-sm text-muted-foreground">{agent.walletPubkey}</p>
-                </div>
-                <div className="shrink-0 text-right text-xs text-muted-foreground">
-                  <p>{agent.agentType}</p>
-                  <p>
-                    {agent.lastSeenAt
-                      ? `Last seen ${new Date(agent.lastSeenAt).toLocaleDateString()}`
-                      : 'Never seen'}
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-          </Link>
-        ))}
-      </div>
-    </div>
-  );
+function relativeTime(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  if (diff < 60_000) return 'just now';
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  return `${days}d ago`;
 }
