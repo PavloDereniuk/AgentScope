@@ -1,0 +1,82 @@
+---
+const stats = [
+  {
+    idx: '01',
+    label: 'DEPLOYED',
+    value: '9,000',
+    unit: '+',
+    desc: 'AI agents already live on Solana',
+    source: 'Alchemy, 2026',
+  },
+  {
+    idx: '02',
+    label: 'X402 TRAFFIC',
+    value: '77',
+    unit: '%',
+    desc: 'of Solana x402 transactions originate from agents',
+    source: 'x402 Foundation, 2026',
+  },
+  {
+    idx: '03',
+    label: 'LOST · 2025',
+    value: '$45',
+    unit: 'M',
+    desc: 'drained from an AI trading agent breach — no monitoring layer existed',
+    source: 'public incident reports, 2025',
+  },
+  {
+    idx: '04',
+    label: 'ELIZAOS STARS',
+    value: '17.6',
+    unit: 'K',
+    desc: 'mass-adopted agent framework, shipping with zero telemetry',
+    source: 'github.com/elizaOS, 2026',
+  },
+];
+---
+
+<section class="problem shell" id="why">
+  <div class="section-label"><span class="dot"></span>02 — WHY</div>
+
+  <div class="problem-head">
+    <h2>
+      Agents ship code.<br />
+      <span class="dim">Agents ship capital.</span><br />
+      No one watches them.
+    </h2>
+    <p>
+      Existing AI observability stops at the LLM call. Solana explorers stop
+      at the transaction. Neither knows <em>why</em> an agent made a trade —
+      and by the time something breaks, funds are already gone.
+    </p>
+  </div>
+
+  <div class="stats">
+    {stats.map((stat) => (
+      <div class="stat">
+        <div class="stat-idx">{stat.idx}</div>
+        <div class="stat-label">{stat.label}</div>
+        <div class="stat-num">{stat.value}<span class="unit">{stat.unit}</span></div>
+        <div class="stat-desc">
+          {stat.desc}
+          <span class="stat-source">— {stat.source}</span>
+        </div>
+      </div>
+    ))}
+  </div>
+</section>
+
+<style>
+  .stat-source {
+    display: block;
+    margin-top: 8px;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    color: var(--fg-3);
+    letter-spacing: 0.04em;
+  }
+  h2 em {
+    font-style: italic;
+    color: var(--fg);
+  }
+</style>

@@ -1,0 +1,159 @@
+---
+// Floating theme-switcher panel. Visibility driven by data-tweaks on <html>
+// (toggled from Nav). Applies palette/font/density/gridlines to <html> and
+// persists choices to localStorage so refreshes keep the state.
+---
+
+<aside class="tweaks" id="tweaks-panel" aria-label="Theme tweaks">
+  <div class="t-title">
+    <span class="dot"></span>
+    Tweaks
+  </div>
+
+  <div class="t-group">
+    <h4>Accent</h4>
+    <div class="t-swatches">
+      <button type="button" class="t-swatch t-swatch-green" data-palette="green" title="Green" aria-label="Green palette"></button>
+      <button type="button" class="t-swatch t-swatch-violet" data-palette="violet" title="Violet" aria-label="Violet palette"></button>
+      <button type="button" class="t-swatch t-swatch-cyan" data-palette="cyan" title="Cyan" aria-label="Cyan palette"></button>
+      <button type="button" class="t-swatch t-swatch-amber" data-palette="amber" title="Amber" aria-label="Amber palette"></button>
+      <button type="button" class="t-swatch t-swatch-mono" data-palette="mono" title="Mono" aria-label="Mono palette"></button>
+    </div>
+  </div>
+
+  <div class="t-group">
+    <h4>Typography</h4>
+    <div class="t-opts cols-3">
+      <button type="button" class="t-opt" data-font="geist">Geist</button>
+      <button type="button" class="t-opt" data-font="ibm">IBM Plex</button>
+      <button type="button" class="t-opt" data-font="inter">Inter</button>
+    </div>
+  </div>
+
+  <div class="t-group">
+    <h4>Density</h4>
+    <div class="t-opts cols-3">
+      <button type="button" class="t-opt" data-density="compact">Compact</button>
+      <button type="button" class="t-opt" data-density="normal">Normal</button>
+      <button type="button" class="t-opt" data-density="roomy">Roomy</button>
+    </div>
+  </div>
+
+  <div class="t-group">
+    <h4>Grid lines</h4>
+    <div class="t-opts cols-3">
+      <button type="button" class="t-opt" data-gridlines="on">On</button>
+      <button type="button" class="t-opt" data-gridlines="off">Off</button>
+    </div>
+  </div>
+</aside>
+
+<style>
+  /* Panel visibility driven by <html> data-tweaks attr toggled from Nav */
+  :global(html[data-tweaks="on"]) .tweaks {
+    display: block;
+  }
+
+  /* Palette swatch colors — keep in sync with theme.css accent tokens */
+  .t-swatch-green {
+    background: oklch(82% 0.18 135);
+  }
+  .t-swatch-violet {
+    background: oklch(72% 0.2 295);
+  }
+  .t-swatch-cyan {
+    background: oklch(82% 0.15 210);
+  }
+  .t-swatch-amber {
+    background: oklch(82% 0.16 75);
+  }
+  .t-swatch-mono {
+    background: oklch(96% 0.005 260);
+  }
+
+  .tweaks :is(button):focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+</style>
+
+<script>
+  type TweakKey = "palette" | "font" | "density" | "gridlines";
+  type Tweaks = Record<TweakKey, string>;
+
+  const STORAGE_KEY = "agentscope.tweaks";
+  const DEFAULTS: Tweaks = {
+    palette: "green",
+    font: "geist",
+    density: "normal",
+    gridlines: "on",
+  };
+
+  const html = document.documentElement;
+
+  function readStored(): Partial<Tweaks> {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      return raw ? (JSON.parse(raw) as Partial<Tweaks>) : {};
+    } catch {
+      return {};
+    }
+  }
+
+  function persist(state: Tweaks) {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    } catch {
+      // ignore storage quota / private-mode errors
+    }
+  }
+
+  function applyToHtml(state: Tweaks) {
+    for (const key of Object.keys(state) as TweakKey[]) {
+      html.setAttribute(`data-${key}`, state[key]);
+    }
+  }
+
+  function syncButtons(state: Tweaks) {
+    const panel = document.getElementById("tweaks-panel");
+    if (!panel) return;
+    for (const key of Object.keys(state) as TweakKey[]) {
+      const value = state[key];
+      const buttons = panel.querySelectorAll<HTMLButtonElement>(`[data-${key}]`);
+      for (const btn of buttons) {
+        const matches = btn.dataset[key] === value;
+        btn.classList.toggle("on", matches);
+        btn.setAttribute("aria-pressed", matches ? "true" : "false");
+      }
+    }
+  }
+
+  function initTweaksPanel() {
+    const state: Tweaks = { ...DEFAULTS, ...readStored() };
+    applyToHtml(state);
+    syncButtons(state);
+
+    const panel = document.getElementById("tweaks-panel");
+    if (!panel) return;
+
+    panel.addEventListener("click", (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      const button = target.closest<HTMLButtonElement>("button[data-palette], button[data-font], button[data-density], button[data-gridlines]");
+      if (!button) return;
+
+      for (const key of Object.keys(DEFAULTS) as TweakKey[]) {
+        const value = button.dataset[key];
+        if (value) {
+          state[key] = value;
+          html.setAttribute(`data-${key}`, value);
+          break;
+        }
+      }
+      persist(state);
+      syncButtons(state);
+    });
+  }
+
+  initTweaksPanel();
+</script>

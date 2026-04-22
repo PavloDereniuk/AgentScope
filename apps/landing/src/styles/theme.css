@@ -1,0 +1,78 @@
+/* AgentScope landing — design tokens (OKLCH palette, fonts, density).
+   Ported from docs/design-v2-api/agentscope/project/styles.css.
+   Swappers target [data-palette], [data-font], [data-density] on <html>.
+   Google Fonts are loaded via <link> in BaseLayout head for non-blocking render. */
+
+:root {
+  /* Background layers (darker → lighter) */
+  --bg: oklch(14% 0.008 260);
+  --bg-2: oklch(17% 0.01 260);
+  --bg-3: oklch(21% 0.012 260);
+  --bg-4: oklch(24% 0.014 260);
+
+  /* Borders */
+  --line: oklch(28% 0.015 260);
+  --line-soft: oklch(22% 0.012 260);
+
+  /* Foreground text tiers */
+  --fg: oklch(96% 0.005 260);
+  --fg-2: oklch(72% 0.01 260);
+  --fg-3: oklch(52% 0.015 260);
+
+  /* Accent + semantic */
+  --accent: oklch(82% 0.18 135);
+  --accent-dim: oklch(45% 0.12 135);
+  --warn: oklch(75% 0.18 75);
+  --crit: oklch(68% 0.22 18);
+  --info: oklch(72% 0.13 230);
+
+  /* Typography */
+  --font-sans: "Geist", system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, monospace;
+
+  /* Density (row height + section padding) */
+  --row: 64px;
+  --pad: 80px;
+}
+
+/* Palette swappers */
+[data-palette="green"] {
+  --accent: oklch(82% 0.18 135);
+  --accent-dim: oklch(45% 0.12 135);
+}
+[data-palette="violet"] {
+  --accent: oklch(72% 0.2 295);
+  --accent-dim: oklch(42% 0.14 295);
+}
+[data-palette="cyan"] {
+  --accent: oklch(82% 0.15 210);
+  --accent-dim: oklch(45% 0.11 210);
+}
+[data-palette="amber"] {
+  --accent: oklch(82% 0.16 75);
+  --accent-dim: oklch(48% 0.12 75);
+}
+[data-palette="mono"] {
+  --accent: oklch(96% 0.005 260);
+  --accent-dim: oklch(55% 0.005 260);
+}
+
+/* Font swappers */
+[data-font="ibm"] {
+  --font-sans: "IBM Plex Sans", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+[data-font="inter"] {
+  --font-sans: "Inter", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+}
+
+/* Density swappers */
+[data-density="compact"] {
+  --row: 48px;
+  --pad: 56px;
+}
+[data-density="roomy"] {
+  --row: 80px;
+  --pad: 120px;
+}

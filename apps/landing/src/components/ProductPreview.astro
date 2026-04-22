@@ -1,0 +1,259 @@
+---
+// Static dashboard mockup — pure HTML/CSS/inline SVG, no interactivity.
+// Mirrors the future dashboard shell (apps/dashboard) for design consistency.
+---
+
+<section class="section shell" id="preview">
+  <div class="section-label"><span class="dot"></span>05 — THE DASHBOARD</div>
+
+  <div class="preview-head">
+    <h2>
+      Every trade.<br />
+      <span class="dim">Every thought behind it.</span>
+    </h2>
+    <p>
+      Click a transaction → see the reasoning tree that produced it. Watch
+      the PnL curve react in real time. Get alerted before the drawdown turns
+      into a postmortem.
+    </p>
+  </div>
+
+  <div class="browser">
+    <div class="browser-bar">
+      <div class="dots"><span></span><span></span><span></span></div>
+      <div class="url">app.agentscope.dev<span class="accent">/agents/agt_7fK2Qz8n</span></div>
+      <div class="browser-spacer"></div>
+    </div>
+
+    <div class="dash">
+      <aside class="dash-side">
+        <div class="dash-side-logo"><span class="dot-a"></span>agentscope</div>
+        <div class="dash-nav">
+          <div class="dash-nav-item">
+            <svg class="icn" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg>
+            overview
+          </div>
+          <div class="dash-nav-item active">
+            <svg class="icn" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="5" r="2.5"/><path d="M3 14c0-2.8 2.2-5 5-5s5 2.2 5 5"/></svg>
+            agents
+          </div>
+          <div class="dash-nav-item">
+            <svg class="icn" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="5" r="2"/><path d="M12 7v4m0 0H7v5m5-5h5v5"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="18" r="2"/></svg>
+            reasoning
+          </div>
+          <div class="dash-nav-item">
+            <svg class="icn" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5l6.5 11.5h-13z"/><path d="M8 6v3M8 11v.5"/></svg>
+            alerts
+          </div>
+          <div class="dash-nav-item">
+            <svg class="icn" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="2"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2"/></svg>
+            settings
+          </div>
+          <div class="dash-nav-sep">Recent</div>
+          <div class="dash-nav-item">› solana-trader</div>
+          <div class="dash-nav-item">› yield-ant-01</div>
+          <div class="dash-nav-item">› nft-arb-kit</div>
+        </div>
+      </aside>
+
+      <div class="dash-main">
+        <div class="dash-head">
+          <div class="dash-title">
+            solana-trader
+            <span class="pill">● LIVE</span>
+            <span class="wallet">7fK2…Qz8n</span>
+          </div>
+          <div class="dash-head-pills">
+            <span class="chip">elizaos</span>
+            <span class="chip">24h</span>
+          </div>
+        </div>
+
+        <div class="dash-kpis">
+          <div class="kpi">
+            <div class="kpi-lbl">TX · 24H</div>
+            <div class="kpi-val">1,284</div>
+            <div class="kpi-delta">+12.4%</div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-lbl">SUCCESS RATE</div>
+            <div class="kpi-val">98.2%</div>
+            <div class="kpi-delta">+0.8%</div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-lbl">SOL DELTA</div>
+            <div class="kpi-val">+18.42</div>
+            <div class="kpi-delta">+4.1 SOL</div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-lbl">LAST ALERT</div>
+            <div class="kpi-val kpi-val-sm">SLIPPAGE_SPIKE</div>
+            <div class="kpi-delta neg">42s ago</div>
+          </div>
+        </div>
+
+        <div class="dash-row">
+          <div class="dash-card">
+            <div class="dash-card-head">
+              <div class="dash-card-title">PNL · CUMULATIVE SOL</div>
+              <div class="dash-card-meta">24h · live</div>
+            </div>
+            <div class="chart-wrap">
+              <svg viewBox="0 0 600 160" preserveAspectRatio="none">
+                <defs>
+                  <linearGradient id="pnl-grad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stop-color="var(--accent)" stop-opacity="0.35" />
+                    <stop offset="100%" stop-color="var(--accent)" stop-opacity="0" />
+                  </linearGradient>
+                </defs>
+                <g stroke="var(--line-soft)" stroke-width="0.5">
+                  <line x1="0" y1="40" x2="600" y2="40" />
+                  <line x1="0" y1="80" x2="600" y2="80" />
+                  <line x1="0" y1="120" x2="600" y2="120" />
+                </g>
+                <path
+                  d="M0,120 L30,115 L60,100 L90,108 L120,92 L150,85 L180,92 L210,78 L240,82 L270,70 L300,65 L330,58 L360,62 L390,48 L420,52 L450,42 L480,38 L510,30 L540,25 L570,20 L600,14 L600,160 L0,160 Z"
+                  fill="url(#pnl-grad)"
+                />
+                <path
+                  d="M0,120 L30,115 L60,100 L90,108 L120,92 L150,85 L180,92 L210,78 L240,82 L270,70 L300,65 L330,58 L360,62 L390,48 L420,52 L450,42 L480,38 L510,30 L540,25 L570,20 L600,14"
+                  fill="none"
+                  stroke="var(--accent)"
+                  stroke-width="1.5"
+                />
+                <circle cx="600" cy="14" r="3" fill="var(--accent)" />
+                <circle cx="600" cy="14" r="6" fill="var(--accent)" opacity="0.3" />
+              </svg>
+            </div>
+            <div class="chart-x">
+              <span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>NOW</span>
+            </div>
+          </div>
+
+          <div class="dash-card">
+            <div class="dash-card-head">
+              <div class="dash-card-title">REASONING · trace 83e2b4</div>
+              <div class="dash-card-meta">4 spans · 512ms</div>
+            </div>
+            <div class="tree">
+              <div class="tree-row">
+                <span class="indent">▾ </span>
+                <span class="nm">execute_swap</span>
+                <span class="bar" style="width:80px" />
+                <span class="dur">412ms</span>
+              </div>
+              <div class="tree-row">
+                <span class="indent">  ├─ </span>
+                <span class="nm">jupiter.route</span>
+                <span class="bar bar-dim" style="width:56px" />
+                <span class="dur">218ms</span>
+              </div>
+              <div class="tree-row">
+                <span class="indent">  │   ├─ </span>
+                <span>fetch_quote</span>
+                <span class="bar bar-dimmer" style="width:32px" />
+                <span class="dur">120ms</span>
+              </div>
+              <div class="tree-row">
+                <span class="indent">  │   └─ </span>
+                <span>build_tx</span>
+                <span class="bar bar-dimmer" style="width:16px" />
+                <span class="dur">64ms</span>
+              </div>
+              <div class="tree-row">
+                <span class="indent">  └─ </span>
+                <span class="nm">confirm_signature</span>
+                <span class="bar bar-dim" style="width:44px" />
+                <span class="dur">174ms</span>
+              </div>
+              <div class="tree-row tree-row-crit">
+                <span class="indent">▲ </span>
+                <span class="nm">slippage_spike</span>
+                <span class="dur">1.8% &gt; 1%</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="dash-card">
+          <div class="dash-card-head">
+            <div class="dash-card-title">ALERTS · LAST 5</div>
+            <div class="dash-card-meta">2 critical · 1 warning · 2 info</div>
+          </div>
+          <div class="alert-list">
+            <div class="alert-row">
+              <span class="sev-dot crit"></span>
+              <span class="rule">SLIPPAGE_SPIKE</span>
+              <span class="msg">Observed <span class="em">1.8%</span> slippage on SOL→USDC · threshold <span class="em">1.0%</span></span>
+              <span class="time">42s</span>
+            </div>
+            <div class="alert-row">
+              <span class="sev-dot crit"></span>
+              <span class="rule">GAS_SPIKE</span>
+              <span class="msg">Fee <span class="em">24,000</span> lam · <span class="em">4.8×</span> 24h median</span>
+              <span class="time">6m</span>
+            </div>
+            <div class="alert-row">
+              <span class="sev-dot warn"></span>
+              <span class="rule">ERROR_RATE</span>
+              <span class="msg">Failed tx <span class="em">22%</span> in last hour · threshold <span class="em">20%</span></span>
+              <span class="time">18m</span>
+            </div>
+            <div class="alert-row">
+              <span class="sev-dot info"></span>
+              <span class="rule">STALE_AGENT</span>
+              <span class="msg">No activity for <span class="em">32min</span> — info-level</span>
+              <span class="time">32m</span>
+            </div>
+            <div class="alert-row">
+              <span class="sev-dot info"></span>
+              <span class="rule">RESOLVED</span>
+              <span class="msg">Drawdown back below <span class="em">10%</span> threshold</span>
+              <span class="time">1h</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .browser-spacer {
+    width: 60px;
+  }
+  .dash-title .wallet {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--fg-3);
+    font-weight: 400;
+  }
+  .dash-head-pills {
+    display: flex;
+    gap: 8px;
+  }
+  .dash-head-pills .chip {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    color: var(--fg-3);
+    padding: 4px 10px;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+  }
+  .kpi-val-sm {
+    font-size: 13px;
+    line-height: 1.4;
+    padding-top: 4px;
+  }
+  .bar-dim {
+    opacity: 0.7;
+  }
+  .bar-dimmer {
+    opacity: 0.5;
+  }
+  .tree-row-crit,
+  .tree-row-crit .nm,
+  .tree-row-crit .dur {
+    color: var(--crit);
+  }
+</style>

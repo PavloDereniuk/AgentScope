@@ -66,6 +66,8 @@ wallets/
 # Docs (internal notes, handoff bundles, scratchpads — all local-only)
 docs/
 
-# Markdown files (except README for GitHub)
+# Markdown files (except GitHub-standard policy files)
 *.md
 !README.md
+!SECURITY.md
+!CODE_OF_CONDUCT.md

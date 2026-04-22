@@ -1,51 +1,102 @@
 ---
-const features = [
+interface Feature {
+  idx: string;
+  title: string;
+  body: string;
+  tag: string;
+  iconPath: string;
+}
+
+const features: Feature[] = [
   {
-    icon: '📋',
+    idx: 'F.01',
     title: 'Agent Registry',
-    desc: 'Register any Solana wallet as an AI agent. One place to manage identities, ingest tokens, and metadata.',
+    body: 'Register any Solana wallet as a monitored agent. Per-agent ingest tokens, alert thresholds, framework tags. Cascade-safe deletion.',
+    tag: 'Hono · Privy · RLS',
+    iconPath: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 9h6M9 13h6M9 17h3"/>',
   },
   {
-    icon: '⛓️',
-    title: 'On-chain Ingestion',
-    desc: 'Real-time WebSocket listener parses Jupiter v6 swaps and Kamino Lend operations into structured events.',
+    idx: 'F.02',
+    title: 'On-chain Tx Parsing',
+    body: 'Yellowstone WebSocket ingest. Jupiter v6 swaps & Kamino Lend actions parsed to structured records — slippage, route, SOL delta, fee.',
+    tag: 'Helius · Drizzle',
+    iconPath: '<path d="M3 12h4l3-8 4 16 3-8h4"/>',
   },
   {
-    icon: '🧠',
-    title: 'Reasoning Traces',
-    desc: 'OpenTelemetry spans capture every decision step — prompts, model calls, tool invocations — and correlate them to on-chain tx.',
+    idx: 'F.03',
+    title: 'OTel Reasoning Logs',
+    body: 'OTLP/HTTP receiver ingests spans from your agent SDK. Parent-child trees, attributes, status, auto-correlated to the tx signature.',
+    tag: 'OpenTelemetry',
+    iconPath: '<circle cx="12" cy="5" r="2"/><path d="M12 7v4m0 0H7v5m5-5h5v5"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="18" r="2"/>',
   },
   {
-    icon: '🚨',
+    idx: 'F.04',
     title: 'Anomaly Detection',
-    desc: 'Rule-based detector flags high slippage, gas spikes, large drawdowns, error bursts, and stale agents automatically.',
+    body: 'Five battle-tested rules: slippage spike, gas spike, error rate, drawdown, stale agent. Per-agent thresholds with warning→critical escalation.',
+    tag: '5 rules · dedupe',
+    iconPath: '<path d="M12 3v4m0 10v4M3 12h4m10 0h4M5.6 5.6l2.8 2.8m7.2 7.2l2.8 2.8M5.6 18.4l2.8-2.8m7.2-7.2l2.8-2.8"/>',
   },
   {
-    icon: '📊',
-    title: 'Live Dashboard',
-    desc: 'Transaction timeline, PnL chart, reasoning tree, and SSE-streamed alert feed — all in one SPA.',
+    idx: 'F.05',
+    title: 'Telegram Alerts',
+    body: 'Structured multi-line messages humanised per rule type. Bot delivery out of the box; threshold overrides per agent; dedupe keys prevent noise.',
+    tag: 'Telegram Bot API',
+    iconPath: '<path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/>',
   },
   {
-    icon: '🔌',
-    title: 'SDK Integrations',
-    desc: 'Two-line setup for ElizaOS agents (wrapActions) and Solana Agent Kit agents (traced). Spans ship automatically.',
+    idx: 'F.06',
+    title: 'Real-time SSE',
+    body: 'Server-Sent Events stream pushes tx.new and alert.new into the dashboard. No polling, no WebSocket complexity — just a flat EventSource.',
+    tag: 'SSE · EventSource',
+    iconPath: '<path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>',
   },
 ];
 ---
 
-<section class="bg-gray-900 py-20 px-6">
-  <div class="mx-auto max-w-5xl">
-    <h2 class="text-center text-3xl font-bold text-white">Everything your agent needs to be observable</h2>
-    <p class="mt-3 text-center text-gray-400">Built for the Solana AI agent ecosystem, from day one.</p>
+<section class="section shell" id="features">
+  <div class="section-label"><span class="dot"></span>03 — WHAT'S INSIDE</div>
 
-    <div class="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-      {features.map((f) => (
-        <div class="rounded-xl border border-gray-800 bg-gray-950 p-6 hover:border-green-800 transition-colors">
-          <div class="text-3xl mb-3">{f.icon}</div>
-          <h3 class="text-lg font-semibold text-white">{f.title}</h3>
-          <p class="mt-2 text-sm text-gray-400 leading-relaxed">{f.desc}</p>
+  <div class="features-head">
+    <h2>
+      One SDK call.<br />
+      <span class="dim">Six layers of coverage.</span>
+    </h2>
+    <p>
+      Drop <code class="inline-code">initAgentScope()</code>
+      into your agent and every reasoning span, on-chain transaction, and
+      rule violation is captured, correlated, and streamed to your dashboard.
+    </p>
+  </div>
+
+  <div class="features-grid">
+    {features.map((f) => (
+      <article class="feature">
+        <div class="feature-idx"><span>{f.idx}</span><span class="status">SHIPPED</span></div>
+        <div class="feature-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" set:html={f.iconPath} />
         </div>
-      ))}
-    </div>
+        <h3>{f.title}</h3>
+        <p>{f.body}</p>
+        <span class="feature-tag">{f.tag}</span>
+      </article>
+    ))}
   </div>
 </section>
+
+<style>
+  .inline-code {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--accent);
+    background: var(--bg-2);
+    padding: 2px 6px;
+    border-radius: 3px;
+  }
+
+  /* Tablet 2×3 grid — desktop 3×2 comes from landing.css default */
+  @media (max-width: 960px) and (min-width: 640px) {
+    .features-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+</style>

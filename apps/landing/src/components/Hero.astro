@@ -1,49 +1,79 @@
 ---
-const DASHBOARD_URL = import.meta.env.PUBLIC_DASHBOARD_URL ?? 'https://agentscope-dashboard.vercel.app';
+const DASHBOARD_URL = import.meta.env.PUBLIC_DASHBOARD_URL ?? 'https://github.com/PavloDereniuk/agentscope';
 ---
 
-<section class="relative overflow-hidden bg-gray-950 pt-24 pb-20 px-6 text-center">
-  <!-- Subtle grid background -->
-  <div class="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(34,197,94,0.04)_1px,transparent_1px),linear-gradient(90deg,rgba(34,197,94,0.04)_1px,transparent_1px)] bg-[size:48px_48px]"></div>
+<section class="hero-section">
+  <div class="hero shell">
+    <div class="hero-inner">
+      <div>
+        <div class="hero-eyebrow">
+          <span class="pulse"></span>
+          LIVE · SOLANA MAINNET · 9,000+ AGENTS INDEXED
+        </div>
 
-  <!-- Badge -->
-  <div class="inline-flex items-center gap-2 rounded-full border border-green-800 bg-green-950/60 px-4 py-1.5 text-sm text-green-400 mb-8">
-    <span class="h-2 w-2 rounded-full bg-green-400 animate-pulse"></span>
-    Colosseum Frontier 2026 · AI Track
+        <h1 class="hero-title">
+          Your AI agents are<br />
+          trading <em>blind.</em><br />
+          <span class="mono">// observe everything.</span>
+        </h1>
+
+        <p class="hero-sub">
+          Full-stack observability for on-chain AI agents. Registry, transaction
+          tracing, OpenTelemetry reasoning logs, rule-based anomaly detection
+          and Telegram alerts — in one place.
+        </p>
+
+        <div class="hero-cta-row">
+          <a href={DASHBOARD_URL} class="btn btn-primary btn-lg">Start monitoring →</a>
+          <a href="#preview" class="btn btn-ghost btn-lg">See the dashboard</a>
+        </div>
+
+        <div class="hero-meta">
+          <div><strong>&lt; 200ms</strong>P95 ingest latency</div>
+          <div><strong>5</strong>anomaly rules</div>
+          <div><strong>2</strong>SDKs: eliza · agent-kit</div>
+          <div><strong>OSS</strong>MIT · built in public</div>
+        </div>
+      </div>
+
+      <div class="term-wrap">
+        <div class="term" id="hero-terminal" aria-label="Live reasoning trace stream">
+          <div class="term-head">
+            <div class="term-dots"><span></span><span></span><span></span></div>
+            <span class="term-live">live · /v1/traces</span>
+            <span>00:04:12</span>
+          </div>
+          <div class="term-body">
+            <div><span class="prompt">$</span> <span>agentscope watch agt_7fK2·solana-trader</span></div>
+            <div class="dim">  → subscribed to wallet 7fK2…Qz8n</div>
+            <div class="dim">  → span buffer: otlp/http</div>
+            <div>&nbsp;</div>
+            <div><span class="ok">●</span> <span class="comment">[trace 83e2b4]</span> <span class="fn">market_analysis</span> <span class="dim">142ms</span></div>
+            <div>  <span class="comment">└─</span> <span class="fn">fetch_price</span> <span class="str">"SOL/USDC"</span> <span class="dim">38ms</span></div>
+            <div>  <span class="comment">└─</span> <span class="fn">evaluate_strategy</span> <span class="dim">94ms</span></div>
+            <div><span class="ok">●</span> <span class="comment">[trace 83e2b5]</span> <span class="fn">execute_swap</span> <span class="dim">412ms</span></div>
+            <div>  <span class="comment">└─</span> <span class="kw">jupiter.route</span> → <span class="str">"5vKx…Jp9"</span></div>
+            <div>  <span class="comment">└─</span> slippage <span class="ok">0.12%</span> · fee <span class="str">5000</span> lam</div>
+            <div><span class="err">▲</span> <span class="comment">[rule.slippage_spike]</span> <span class="err">1.8%</span> <span class="dim">(threshold 1%)</span></div>
+            <div>  <span class="comment">→</span> telegram.send <span class="ok">ok</span></div>
+            <div>&nbsp;</div>
+            <div><span class="prompt">$</span> <span id="term-cursor" aria-hidden="true">_</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
-
-  <!-- Heading -->
-  <h1 class="mx-auto max-w-3xl text-5xl font-bold tracking-tight text-white sm:text-6xl">
-    Datadog for<br/>
-    <span class="text-green-400">Solana AI Agents</span>
-  </h1>
-
-  <p class="mx-auto mt-6 max-w-xl text-lg text-gray-400">
-    Register your on-chain agent, ship 5 lines of code, and get full observability:
-    transaction timeline, reasoning traces, anomaly detection, and Telegram alerts.
-  </p>
-
-  <!-- CTAs -->
-  <div class="mt-10 flex flex-col sm:flex-row gap-4 justify-center">
-    <a
-      href={DASHBOARD_URL}
-      class="inline-flex items-center gap-2 rounded-lg bg-green-500 px-6 py-3 text-base font-semibold text-gray-950 shadow-lg hover:bg-green-400 transition-colors"
-    >
-      Get Started →
-    </a>
-    <a
-      href="https://github.com/PavloDereniuk/agentscope"
-      target="_blank"
-      rel="noopener noreferrer"
-      class="inline-flex items-center gap-2 rounded-lg border border-gray-700 bg-gray-900 px-6 py-3 text-base font-semibold text-gray-200 hover:border-gray-500 transition-colors"
-    >
-      <svg class="h-5 w-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
-      View on GitHub
-    </a>
-  </div>
-
-  <!-- Proof line -->
-  <p class="mt-8 text-sm text-gray-600">
-    5-minute setup · No infra to manage · ElizaOS + Solana Agent Kit ready
-  </p>
 </section>
+
+<script>
+  // Blinking cursor in hero terminal. Paused when user prefers reduced motion.
+  const cursor = document.getElementById("term-cursor");
+  const prefersReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (cursor && !prefersReduced) {
+    let on = true;
+    setInterval(() => {
+      on = !on;
+      cursor.style.opacity = on ? "1" : "0.15";
+    }, 520);
+  }
+</script>

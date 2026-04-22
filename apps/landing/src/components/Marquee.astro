@@ -1,0 +1,31 @@
+---
+const items = [
+  'OTLP/HTTP',
+  'Jupiter v6',
+  'Kamino Lend',
+  'ElizaOS',
+  'Agent Kit',
+  'Helius',
+  'Solana',
+  'Drizzle',
+  'Hono',
+  'Privy',
+  'Supabase',
+  'Yellowstone',
+];
+---
+
+<div class="marquee" aria-label="Stack and integrations">
+  <div class="marquee-track">
+    <span>
+      {items.map((item) => (
+        <span><span class="tick">●</span> {item.toUpperCase()}</span>
+      ))}
+    </span>
+    <span aria-hidden="true">
+      {items.map((item) => (
+        <span><span class="tick">●</span> {item.toUpperCase()}</span>
+      ))}
+    </span>
+  </div>
+</div>

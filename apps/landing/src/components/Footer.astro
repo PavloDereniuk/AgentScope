@@ -1,0 +1,129 @@
+---
+interface Props {
+  repoUrl?: string;
+  quickstartUrl?: string;
+  colosseumUrl?: string;
+}
+
+const {
+  repoUrl = 'https://github.com/PavloDereniuk/agentscope',
+  quickstartUrl = 'https://github.com/PavloDereniuk/agentscope/blob/main/docs/QUICKSTART.md',
+  colosseumUrl = 'https://arena.colosseum.org/frontier',
+} = Astro.props;
+
+const year = new Date().getFullYear();
+---
+
+<footer class="shell footer-root">
+  <div class="footer-grid footer-grid-5">
+    <div class="footer-brand">
+      <a href="/" class="logo" aria-label="AgentScope home">
+        <span class="logo-mark">
+          <svg viewBox="0 0 22 22" fill="none" aria-hidden="true">
+            <rect x="1" y="1" width="20" height="20" rx="4" stroke="currentColor" stroke-width="1.5" />
+            <circle cx="11" cy="11" r="4" stroke="currentColor" stroke-width="1.5" />
+            <circle cx="11" cy="11" r="1.5" fill="var(--accent)" />
+          </svg>
+        </span>
+        agentscope<sup>v0.9</sup>
+      </a>
+      <p>
+        Full-stack observability for on-chain AI agents. Built for the Colosseum
+        Frontier AI track, {year}.
+      </p>
+    </div>
+
+    <div class="footer-col">
+      <h4>Product</h4>
+      <a href="#features">Features</a>
+      <a href="#preview">Dashboard</a>
+      <a href="#integrate">SDKs</a>
+      <a href={repoUrl + '/blob/main/docs/SPEC.md'} target="_blank" rel="noopener noreferrer">Spec</a>
+    </div>
+
+    <div class="footer-col">
+      <h4>Resources</h4>
+      <a href={quickstartUrl} target="_blank" rel="noopener noreferrer">Quickstart</a>
+      <a href={repoUrl} target="_blank" rel="noopener noreferrer">GitHub</a>
+      <a href={repoUrl + '/blob/main/docs/PLAN.md'} target="_blank" rel="noopener noreferrer">Plan</a>
+      <a href={repoUrl + '/blob/main/README.md'} target="_blank" rel="noopener noreferrer">README</a>
+    </div>
+
+    <div class="footer-col">
+      <h4>Community</h4>
+      <a href={repoUrl + '/issues'} target="_blank" rel="noopener noreferrer">Issues</a>
+      <a href={repoUrl + '/discussions'} target="_blank" rel="noopener noreferrer">Discussions</a>
+      <a href={colosseumUrl} target="_blank" rel="noopener noreferrer">Colosseum</a>
+    </div>
+
+    <div class="footer-col">
+      <h4>Legal</h4>
+      <a href={repoUrl + '/blob/main/LICENSE'} target="_blank" rel="noopener noreferrer">MIT License</a>
+      <a href={repoUrl + '/blob/main/SECURITY.md'} target="_blank" rel="noopener noreferrer">Security</a>
+      <a href={repoUrl + '/blob/main/CODE_OF_CONDUCT.md'} target="_blank" rel="noopener noreferrer">Code of Conduct</a>
+    </div>
+  </div>
+
+  <div class="footer-bottom">
+    <span>© {year} AGENTSCOPE · SOLANA · OPEN SOURCE</span>
+    <span class="status-pill" role="status" aria-live="polite">
+      <span class="status-dot"></span>
+      STREAMING
+      <span class="status-sep">·</span>
+      SSE
+      <span class="status-sep">·</span>
+      MAINNET
+    </span>
+  </div>
+</footer>
+
+<style>
+  .footer-grid-5 {
+    grid-template-columns: 2fr 1fr 1fr 1fr 1fr;
+  }
+
+  .status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 12px;
+    border: 1px solid var(--accent-dim);
+    border-radius: 100px;
+    background: color-mix(in oklch, var(--accent) 6%, transparent);
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.08em;
+    color: var(--accent);
+  }
+  .status-pill .status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 0 0 var(--accent);
+    animation: status-pulse 1.8s ease-out infinite;
+  }
+  .status-pill .status-sep {
+    color: var(--accent-dim);
+  }
+
+  @keyframes status-pulse {
+    0% {
+      box-shadow: 0 0 0 0 color-mix(in oklch, var(--accent) 60%, transparent);
+    }
+    100% {
+      box-shadow: 0 0 0 8px color-mix(in oklch, var(--accent) 0%, transparent);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .status-pill .status-dot {
+      animation: none;
+    }
+  }
+
+  @media (max-width: 960px) {
+    .footer-grid-5 {
+      grid-template-columns: 1fr 1fr;
+    }
+  }
+</style>

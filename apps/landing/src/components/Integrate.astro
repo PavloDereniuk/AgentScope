@@ -1,0 +1,64 @@
+---
+// Syntax-highlighted code snippet using hand-rolled spans with the same
+// .kw / .str / .fn / .comment / .dim palette as the hero terminal.
+// Matches the real @agentscope/agent-kit-sdk public API surface:
+//   - initAgentScope({ apiUrl, agentToken })  [otel-setup.ts]
+//   - traced(name, fn, attrs?)                [trace-decorator.ts]
+---
+
+<section class="section shell" id="integrate">
+  <div class="section-label"><span class="dot"></span>04 — INTEGRATE</div>
+
+  <div class="features-head">
+    <h2>
+      Three lines.<br />
+      <span class="dim">Then you're observed.</span>
+    </h2>
+    <p>
+      No sidecar, no OTel Collector, no config. The SDK initialises a global
+      NodeSDK and ships spans directly over OTLP/HTTP to your AgentScope
+      deployment. Auth is a single resource attribute.
+    </p>
+  </div>
+
+  <div class="term integrate-term">
+    <div class="term-head">
+      <div class="term-dots"><span></span><span></span><span></span></div>
+      <span>src/agent/index.ts — TypeScript</span>
+      <span class="dim">npm i @agentscope/agent-kit-sdk</span>
+    </div>
+    <pre class="term-body integrate-body"><code><span class="kw">import</span> {'{ '}<span class="fn">initAgentScope</span>, <span class="fn">traced</span>{' }'} <span class="kw">from</span> <span class="str">'@agentscope/agent-kit-sdk'</span>;
+
+<span class="fn">initAgentScope</span>({'({'}
+  apiUrl: process.env.<span class="fn">AGENTSCOPE_API_URL</span>!,
+  agentToken: process.env.<span class="fn">AGENTSCOPE_AGENT_TOKEN</span>!,
+{'})'};
+
+<span class="comment">// Wrap any async action — nested traced() calls auto-parent.</span>
+<span class="kw">const</span> sig = <span class="kw">await</span> <span class="fn">traced</span>(<span class="str">'swap'</span>, () =&gt; kit.<span class="fn">trade</span>(mint, amount, <span class="str">'buy'</span>), {'{'}
+  <span class="str">'solana.mint'</span>: mint,
+  <span class="str">'trade.amount_sol'</span>: amount,
+  <span class="str">'solana.tx.signature'</span>: sig, <span class="comment">// correlates span ↔ tx</span>
+{'}'});</code></pre>
+  </div>
+</section>
+
+<style>
+  .integrate-term {
+    max-width: 980px;
+    margin: 0 auto;
+  }
+  .integrate-body {
+    font-size: 13px;
+    line-height: 1.8;
+    margin: 0;
+    white-space: pre-wrap;
+    overflow-x: auto;
+  }
+  .integrate-body code {
+    font-family: inherit;
+    color: inherit;
+    background: none;
+    padding: 0;
+  }
+</style>
