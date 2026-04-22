@@ -63,6 +63,9 @@ wallets/
 *.key
 .cache/
 
+# Docs (internal notes, handoff bundles, scratchpads — all local-only)
+docs/
+
 # Markdown files (except README for GitHub)
 *.md
 !README.md
