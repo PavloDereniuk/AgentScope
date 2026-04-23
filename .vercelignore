@@ -1,0 +1,12 @@
+.env
+.env.*
+apps/*/.env
+apps/*/.env.*
+packages/*/.env
+packages/*/.env.*
+scripts/.env
+scripts/.env.*
+*.keypair.json
+docs/
+node_modules/
+.turbo/
