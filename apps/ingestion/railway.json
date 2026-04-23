@@ -1,0 +1,13 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "build": {
+    "builder": "NIXPACKS",
+    "nixpacksVersion": "latest",
+    "buildCommand": "corepack enable && pnpm install --frozen-lockfile && pnpm --filter @agentscope/ingestion... build"
+  },
+  "deploy": {
+    "startCommand": "pnpm --filter @agentscope/ingestion start",
+    "restartPolicyType": "ON_FAILURE",
+    "restartPolicyMaxRetries": 10
+  }
+}
