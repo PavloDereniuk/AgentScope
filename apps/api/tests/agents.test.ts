@@ -765,12 +765,24 @@ describe('PATCH /api/agents/:id', () => {
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
-      agent: { framework: string; walletPubkey: string; ingestToken: string; name: string };
+      agent: {
+        framework: string;
+        walletPubkey: string;
+        ingestToken?: string;
+        name: string;
+      };
     };
     expect(body.agent.name).toBe('Renamed');
     expect(body.agent.framework).toBe('custom');
     expect(body.agent.walletPubkey).toBe(seeded.agent.walletPubkey);
-    expect(body.agent.ingestToken).toBe(seeded.agent.ingestToken);
+    // ingestToken is a secret credential — the PATCH response must not
+    // echo it back (the only delivery channel is the POST /agents response).
+    expect(body.agent).not.toHaveProperty('ingestToken');
+
+    // The stored row still has the original token unchanged — PATCH
+    // silently stripped the hijack attempt.
+    const [row] = await ctx.testDb.db.select().from(agents).where(eq(agents.id, seeded.agent.id));
+    expect(row?.ingestToken).toBe(seeded.agent.ingestToken);
   });
 
   it('accepts an empty body as a no-op and returns the current agent', async () => {

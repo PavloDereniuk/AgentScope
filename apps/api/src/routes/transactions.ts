@@ -20,6 +20,7 @@
  */
 
 import { type Database, agentTransactions, agents, reasoningLogs } from '@agentscope/db';
+import { SOLANA_SIGNATURE_RE } from '@agentscope/shared';
 import { zValidator } from '@hono/zod-validator';
 import { and, asc, eq, inArray } from 'drizzle-orm';
 import { Hono } from 'hono';
@@ -28,9 +29,12 @@ import { z } from 'zod';
 import { ensureUser } from '../lib/users';
 import type { ApiEnv } from '../middleware/auth';
 
-const BASE58_RE = /^[1-9A-HJ-NP-Za-km-z]+$/;
+// Use the canonical {32,88} base58 regex from @agentscope/shared so the
+// read-path accept-set matches the write-path (OTLP persister) — without
+// the shared import, fixtures with leading-zero bytes that encode to
+// 32–63 chars would be persisted but 422 on lookup.
 const signatureParamSchema = z.object({
-  signature: z.string().min(64).max(88).regex(BASE58_RE, 'must be base58'),
+  signature: z.string().regex(SOLANA_SIGNATURE_RE, 'must be a valid solana signature'),
 });
 
 export function createTransactionsRouter(db: Database) {

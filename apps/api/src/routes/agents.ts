@@ -46,6 +46,28 @@ const RECENT_TX_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 const agentIdParamSchema = z.object({ id: z.string().uuid() });
 
+/**
+ * Public projection for read/update responses. `ingestToken` is omitted
+ * so the secret only crosses the wire once, on POST /agents (the user
+ * needs it to configure their OTel exporter). Every subsequent response
+ * — list, detail, patch — uses this projection so the token can never
+ * be re-fetched by an authenticated client.
+ */
+const AGENT_PUBLIC_COLUMNS = {
+  id: agents.id,
+  userId: agents.userId,
+  walletPubkey: agents.walletPubkey,
+  name: agents.name,
+  framework: agents.framework,
+  agentType: agents.agentType,
+  status: agents.status,
+  tags: agents.tags,
+  webhookUrl: agents.webhookUrl,
+  alertRules: agents.alertRules,
+  createdAt: agents.createdAt,
+  lastSeenAt: agents.lastSeenAt,
+} as const;
+
 /** Max page size for the transactions list endpoint (task 3.10). */
 const MAX_TX_PAGE_LIMIT = 100;
 const DEFAULT_TX_PAGE_LIMIT = 50;
@@ -119,20 +141,7 @@ export function createAgentsRouter(db: Database, sseBus: SseBus, alerter?: Deliv
     const user = await ensureUser(db, privyDid);
 
     const rows = await db
-      .select({
-        id: agents.id,
-        userId: agents.userId,
-        walletPubkey: agents.walletPubkey,
-        name: agents.name,
-        framework: agents.framework,
-        agentType: agents.agentType,
-        status: agents.status,
-        tags: agents.tags,
-        webhookUrl: agents.webhookUrl,
-        alertRules: agents.alertRules,
-        createdAt: agents.createdAt,
-        lastSeenAt: agents.lastSeenAt,
-      })
+      .select(AGENT_PUBLIC_COLUMNS)
       .from(agents)
       .where(eq(agents.userId, user.id))
       .orderBy(desc(agents.createdAt))
@@ -184,6 +193,12 @@ export function createAgentsRouter(db: Database, sseBus: SseBus, alerter?: Deliv
 
       const user = await ensureUser(db, privyDid);
 
+      // ingestToken is intentionally included here — this is the single
+      // owner-scoped detail endpoint the dashboard settings page uses to
+      // surface the token to its owner (copy-to-clipboard for OTel exporter
+      // setup). The list endpoint omits it on purpose (fewer exposures,
+      // many-agent cache surface). A dedicated reveal endpoint with an
+      // explicit confirmation step is tracked for post-MVP.
       const [agent] = await db
         .select()
         .from(agents)
@@ -260,7 +275,7 @@ export function createAgentsRouter(db: Database, sseBus: SseBus, alerter?: Deliv
       // get a consistent `{agent}` response regardless of payload.
       if (Object.keys(patch).length === 0) {
         const [current] = await db
-          .select()
+          .select(AGENT_PUBLIC_COLUMNS)
           .from(agents)
           .where(and(eq(agents.id, agentId), eq(agents.userId, user.id)))
           .limit(1);
@@ -274,7 +289,7 @@ export function createAgentsRouter(db: Database, sseBus: SseBus, alerter?: Deliv
         .update(agents)
         .set(patch)
         .where(and(eq(agents.id, agentId), eq(agents.userId, user.id)))
-        .returning();
+        .returning(AGENT_PUBLIC_COLUMNS);
       if (!updated) {
         throw new HTTPException(404, { message: 'agent not found' });
       }

@@ -25,6 +25,16 @@ import type { AlertRuleThresholds } from '@agentscope/shared';
 import { and, eq, ne } from 'drizzle-orm';
 
 /**
+ * Cron-local logger: EvalLogger (used by evaluateCron) plus warn/info for
+ * cadence messages emitted outside the rule loop. pino satisfies this
+ * structurally.
+ */
+interface CronLogger extends EvalLogger {
+  warn: (obj: Record<string, unknown> | string, msg?: string) => void;
+  info?: (obj: Record<string, unknown> | string, msg?: string) => void;
+}
+
+/**
  * Stable composite key for RuleResult ↔ inserted-row correlation.
  * Null dedupeKey is legal for rules that opt out of dedupe; without the
  * rule-name prefix, two different rules both emitting null collide into
@@ -38,7 +48,7 @@ const CRON_RULES: readonly CronRuleDef[] = [drawdownRule, errorRateRule, staleRu
 
 export interface CronDeps {
   db: Database;
-  logger: EvalLogger;
+  logger: CronLogger;
   defaults: DefaultThresholds;
   intervalMs?: number;
   /** When set, alerts are delivered via the alerter after DB insert. */
@@ -96,6 +106,8 @@ export async function runCronCycle(deps: CronDeps): Promise<number> {
       // their RuleResult via a composite key instead of relying on
       // array-index order (unstable under onConflictDoNothing) or on
       // dedupeKey alone (null keys from two different rules collide).
+      // DO NOT remove `ruleName` or `dedupeKey` from the projection below —
+      // correlationKey() depends on both.
       .returning({
         id: alerts.id,
         triggeredAt: alerts.triggeredAt,
@@ -199,20 +211,36 @@ export async function runCronCycle(deps: CronDeps): Promise<number> {
 export function startCron(deps: CronDeps): { stop: () => void } {
   const intervalMs = deps.intervalMs ?? 60_000;
 
+  // Prevent overlapping cycles: if a cycle takes longer than intervalMs
+  // (e.g. DB is slow), the next tick should skip rather than pile on DB
+  // locks. At MVP agent counts a cycle is tens of ms, so skips are rare;
+  // still a cheap safety net.
+  let running = false;
+
   const timer = setInterval(() => {
+    if (running) {
+      deps.logger.warn('cron cycle skipped — previous cycle still running');
+      return;
+    }
+    running = true;
     // Double-wrap: runCronCycle().catch() handles rejections from the promise
     // chain, and the outer try/catch protects against synchronous throws in
     // catch() handlers themselves. Without this, one bad handler error would
     // surface as an uncaughtException and kill the process.
     try {
-      runCronCycle(deps).catch((err) => {
-        try {
-          deps.logger.error({ err }, 'cron cycle failed');
-        } catch {
-          // swallow — nothing sensible to do if the logger itself throws
-        }
-      });
+      runCronCycle(deps)
+        .catch((err) => {
+          try {
+            deps.logger.error({ err }, 'cron cycle failed');
+          } catch {
+            // swallow — nothing sensible to do if the logger itself throws
+          }
+        })
+        .finally(() => {
+          running = false;
+        });
     } catch (err) {
+      running = false;
       try {
         deps.logger.error({ err }, 'cron setInterval tick threw synchronously');
       } catch {

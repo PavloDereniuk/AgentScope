@@ -87,6 +87,20 @@ async function main(): Promise<void> {
   };
 
   let lastLoggedSlot = 0;
+
+  // In-flight persist tracker. Each onTransaction handler is fire-and-forget,
+  // but on SIGTERM we need to wait for them to finish so transactions received
+  // milliseconds before the signal aren't lost (along with their detector/alert
+  // runs). Same pattern as event-publisher's MAX_IN_FLIGHT.
+  let persistsInFlight = 0;
+  const persistContext: PersistContext = {
+    db,
+    registry,
+    logger,
+    detector: detectorDeps,
+    ...(publishEvent ? { publishEvent } : {}),
+  };
+
   const stream = await createWsStream(
     {
       rpcUrl: config.SOLANA_RPC_URL,
@@ -100,17 +114,10 @@ async function main(): Promise<void> {
         }
       },
       onTransaction: (tx) => {
-        // Fire-and-forget — persist errors are logged inside persistTx.
-        void persistTx(
-          {
-            db,
-            registry,
-            logger,
-            detector: detectorDeps,
-            ...(publishEvent ? { publishEvent } : {}),
-          },
-          tx,
-        );
+        persistsInFlight++;
+        void persistTx(persistContext, tx).finally(() => {
+          persistsInFlight--;
+        });
       },
       onError: (err) => {
         logger.error({ err }, 'rpc stream error');
@@ -128,14 +135,6 @@ async function main(): Promise<void> {
   // on every 30s reconcile cycle.
   const backfilledWallets = new Set<string>();
 
-  const persistCtx: PersistContext = {
-    db,
-    registry,
-    logger,
-    detector: detectorDeps,
-    ...(publishEvent ? { publishEvent } : {}),
-  };
-
   /**
    * Run backfill for any wallets that haven't been backfilled yet.
    * Fire-and-forget — errors are logged inside backfillWallet.
@@ -149,7 +148,7 @@ async function main(): Promise<void> {
         await backfillWallet(
           wallet,
           { rpcUrl: config.SOLANA_RPC_URL, maxSignatures: 50 },
-          persistCtx,
+          persistContext,
           logger,
         );
       } catch (err) {
@@ -188,7 +187,27 @@ async function main(): Promise<void> {
 
   // Graceful shutdown handlers. Wait for any in-flight reconcile so we
   // don't cut the stream mid-subscribe — otherwise the fresh process
-  // may inherit dangling server-side state on restart.
+  // may inherit dangling server-side state on restart. Also wait (up to
+  // 5s) for in-flight persistTx calls so transactions received moments
+  // before the signal still reach the db and the detector.
+  const PERSIST_DRAIN_TIMEOUT_MS = 5_000;
+  const PERSIST_DRAIN_POLL_MS = 50;
+
+  async function drainPersists(): Promise<void> {
+    if (persistsInFlight === 0) return;
+    logger.info({ persistsInFlight }, 'draining in-flight persists');
+    const deadline = Date.now() + PERSIST_DRAIN_TIMEOUT_MS;
+    while (persistsInFlight > 0 && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, PERSIST_DRAIN_POLL_MS));
+    }
+    if (persistsInFlight > 0) {
+      logger.warn(
+        { persistsInFlight, timeoutMs: PERSIST_DRAIN_TIMEOUT_MS },
+        'persist drain timed out — some transactions may not have persisted',
+      );
+    }
+  }
+
   const shutdown = (signal: string) => {
     logger.info({ signal }, 'shutting down');
     clearInterval(reconcileTimer);
@@ -196,6 +215,7 @@ async function main(): Promise<void> {
     registry.stop();
     Promise.resolve(reconciling)
       .catch(() => undefined)
+      .then(() => drainPersists())
       .then(() => stream.close())
       .catch((err) => logger.error({ err }, 'stream close failed'))
       .finally(() => process.exit(0));

@@ -34,6 +34,19 @@ export function createEventPublisher(apiUrl: string, internalSecret: string, log
       return;
     }
 
+    // Reset the throttle counter only when we actually ENTER (not exit) the
+    // non-dropping state with a pending drop count. Resetting in the finally
+    // of every successful publish is wrong — under sustained oscillation
+    // (drop → success → drop), the counter flips back to 0 between drops
+    // and the warn fires on every new drop. Reset here, before the send.
+    if (droppedSinceLastLog > 0) {
+      logger.info(
+        { recoveredAfterDrops: droppedSinceLastLog },
+        'SSE publish back-pressure cleared',
+      );
+      droppedSinceLastLog = 0;
+    }
+
     inFlight++;
     void (async () => {
       try {
@@ -53,7 +66,6 @@ export function createEventPublisher(apiUrl: string, internalSecret: string, log
         logger.warn({ err, eventType: event.type }, 'failed to publish SSE event');
       } finally {
         inFlight--;
-        droppedSinceLastLog = 0;
       }
     })();
   };

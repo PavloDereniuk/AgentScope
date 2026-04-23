@@ -28,7 +28,7 @@ const defaults: DefaultThresholds = {
   staleMinutes: 30,
 };
 
-const silentLogger = { error: () => {}, info: () => {} };
+const silentLogger = { error: () => {}, info: () => {}, warn: () => {} };
 
 let db: Database;
 let pg: PGlite;

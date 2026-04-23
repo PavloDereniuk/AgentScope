@@ -312,41 +312,49 @@ export function AgentDetailPage() {
               </tr>
             </thead>
             <tbody>
-              {transactions.map((tx) => (
-                <tr
-                  key={tx.id}
-                  tabIndex={0}
-                  onClick={() => setSelectedTx(tx.signature)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      setSelectedTx(tx.signature);
-                    }
-                  }}
-                  className="cursor-pointer border-b border-line-soft transition-colors last:border-b-0 hover:bg-surface-3 focus:outline-none focus:bg-surface-3"
-                >
-                  <Td className="font-mono text-fg-3">
-                    {new Date(tx.blockTime).toLocaleTimeString()}
-                  </Td>
-                  <Td className="font-mono text-fg">{shortenSignature(tx.signature)}</Td>
-                  <Td className="font-mono text-fg-2">{tx.instructionName ?? '—'}</Td>
-                  <Td
-                    className={cn(
-                      'text-right font-mono tabular-nums',
-                      Number(tx.solDelta) >= 0 ? 'text-accent' : 'text-crit',
-                    )}
+              {transactions.map((tx) => {
+                // Guard against null/undefined/non-numeric solDelta — NaN breaks
+                // both the conditional colour class (NaN >= 0 is false) and the
+                // rendered value. Same pattern as pnl-chart / tx-timeline / TxDrawer.
+                const rawDelta = Number(tx.solDelta);
+                const delta = Number.isFinite(rawDelta) ? rawDelta : 0;
+                return (
+                  <tr
+                    key={tx.id}
+                    tabIndex={0}
+                    aria-label={`View transaction ${shortenSignature(tx.signature)}`}
+                    onClick={() => setSelectedTx(tx.signature)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        setSelectedTx(tx.signature);
+                      }
+                    }}
+                    className="cursor-pointer border-b border-line-soft transition-colors last:border-b-0 hover:bg-surface-3 focus:outline-none focus:bg-surface-3"
                   >
-                    {Number(tx.solDelta) >= 0 ? '+' : ''}
-                    {Number(tx.solDelta).toFixed(4)}
-                  </Td>
-                  <Td className="text-right font-mono tabular-nums text-fg-3">
-                    {tx.feeLamports.toLocaleString()}
-                  </Td>
-                  <Td className="text-right">
-                    <StatusPill ok={tx.success} />
-                  </Td>
-                </tr>
-              ))}
+                    <Td className="font-mono text-fg-3">
+                      {new Date(tx.blockTime).toLocaleTimeString()}
+                    </Td>
+                    <Td className="font-mono text-fg">{shortenSignature(tx.signature)}</Td>
+                    <Td className="font-mono text-fg-2">{tx.instructionName ?? '—'}</Td>
+                    <Td
+                      className={cn(
+                        'text-right font-mono tabular-nums',
+                        delta >= 0 ? 'text-accent' : 'text-crit',
+                      )}
+                    >
+                      {delta >= 0 ? '+' : ''}
+                      {delta.toFixed(4)}
+                    </Td>
+                    <Td className="text-right font-mono tabular-nums text-fg-3">
+                      {tx.feeLamports.toLocaleString()}
+                    </Td>
+                    <Td className="text-right">
+                      <StatusPill ok={tx.success} />
+                    </Td>
+                  </tr>
+                );
+              })}
               {transactions.length === 0 ? (
                 <tr>
                   <td

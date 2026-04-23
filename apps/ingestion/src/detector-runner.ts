@@ -100,6 +100,9 @@ export async function runTxDetector(
     // array-index order (which is not guaranteed to be stable when
     // onConflictDoNothing skips rows). Keying on dedupeKey alone collapses
     // two different rules that both emit a null key into the same slot.
+    // DO NOT remove `ruleName` or `dedupeKey` from the projection below —
+    // correlationKey() depends on both and silently mis-correlates if either
+    // becomes `undefined`.
     .returning({
       id: alerts.id,
       triggeredAt: alerts.triggeredAt,
