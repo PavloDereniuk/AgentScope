@@ -1,13 +1,28 @@
 {
   "name": "@agentscope/agent-kit-sdk",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0-alpha.0",
+  "description": "AgentScope observability wrapper for Solana Agent Kit — hooks every tool call into OpenTelemetry spans the AgentScope API can ingest.",
+  "license": "MIT",
   "type": "module",
-  "main": "src/index.ts",
-  "types": "src/index.ts",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
   },
+  "files": ["dist", "README.md"],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/PavloDereniuk/agentscope.git",
+    "directory": "packages/agent-kit-sdk"
+  },
+  "homepage": "https://github.com/PavloDereniuk/agentscope#readme",
+  "keywords": ["solana", "agent", "observability", "opentelemetry", "solana-agent-kit"],
   "peerDependencies": {
     "solana-agent-kit": "*"
   },
@@ -23,7 +38,7 @@
     "@opentelemetry/sdk-node": "^0.214.0"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.build.json",
     "lint": "biome check .",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",

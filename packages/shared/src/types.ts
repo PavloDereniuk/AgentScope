@@ -27,7 +27,7 @@ export const ALERT_RULE_NAMES = [
 ] as const;
 export type AlertRuleName = (typeof ALERT_RULE_NAMES)[number];
 
-export const DELIVERY_CHANNELS = ['telegram', 'discord', 'slack'] as const;
+export const DELIVERY_CHANNELS = ['telegram', 'webhook', 'discord', 'slack'] as const;
 export type DeliveryChannel = (typeof DELIVERY_CHANNELS)[number];
 
 export const DELIVERY_STATUSES = ['pending', 'delivered', 'failed'] as const;
@@ -87,6 +87,8 @@ export interface Agent {
   agentType: AgentType;
   tags: readonly string[];
   webhookUrl: string | null;
+  /** Per-agent Telegram chat_id for alert delivery. Null → fall back to env default. */
+  telegramChatId: string | null;
   alertRules: AlertRuleThresholds;
   /** Opaque token used by the agent's OTel exporter to authenticate /v1/traces. */
   ingestToken: string;
@@ -102,6 +104,7 @@ export interface CreateAgentInput {
   agentType: AgentType;
   tags?: readonly string[] | undefined;
   webhookUrl?: string | null | undefined;
+  telegramChatId?: string | null | undefined;
   alertRules?: AlertRuleThresholds | undefined;
 }
 
@@ -109,6 +112,7 @@ export interface UpdateAgentInput {
   name?: string | undefined;
   tags?: readonly string[] | undefined;
   webhookUrl?: string | null | undefined;
+  telegramChatId?: string | null | undefined;
   alertRules?: AlertRuleThresholds | undefined;
 }
 

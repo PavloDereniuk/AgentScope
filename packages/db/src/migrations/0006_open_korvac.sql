@@ -1,0 +1,21 @@
+-- ============================================================================
+-- 0006 — promote `webhook` to first-class delivery_channel enum value
+--
+-- Epic 14: the agents.webhook_url column has existed since Epic 1 and is
+-- surfaced in the dashboard UI, but deliver() returned "channel X not
+-- supported in MVP" because the delivery_channel enum never had a matching
+-- variant. Add it now so alerts can record `delivery_channel = 'webhook'`.
+--
+-- Enum order is preserved by Postgres; BEFORE 'discord' keeps the overall
+-- ordering telegram → webhook → discord → slack, matching
+-- DELIVERY_CHANNELS in shared/src/types.ts.
+--
+-- ALTER TYPE … ADD VALUE cannot run inside a transaction on Postgres < 12,
+-- and even on 12+ it cannot be used in the same transaction as the value.
+-- drizzle-kit does not wrap migrations in a transaction by default, so this
+-- bare statement is safe. It is also idempotent because Postgres 12+
+-- accepts IF NOT EXISTS, but drizzle-kit emits the plain form — a re-run
+-- would error on duplicate value, which is what we want (loud signal).
+-- ============================================================================
+
+ALTER TYPE "public"."delivery_channel" ADD VALUE 'webhook' BEFORE 'discord';

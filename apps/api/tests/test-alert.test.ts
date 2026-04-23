@@ -121,8 +121,8 @@ describe('POST /api/agents/:id/test-alert', () => {
     const agentId = await createAgent(ctx, 'Smoke', 'So11111111111111111111111111111111111111112');
     const res = await post(ctx, agentId);
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { ok: boolean; delivered: boolean };
-    expect(body).toEqual({ ok: true, delivered: true });
+    const body = (await res.json()) as { ok: boolean; delivered: boolean; channel: string };
+    expect(body).toEqual({ ok: true, delivered: true, channel: 'telegram' });
 
     expect(ctx.sendMock).toHaveBeenCalledTimes(1);
     const [msg] = ctx.sendMock.mock.calls[0] ?? [];
@@ -168,5 +168,70 @@ describe('POST /api/agents/:id/test-alert', () => {
     await post(ctx, agentId);
     const rows = await ctx.testDb.db.select().from(alerts);
     expect(rows).toEqual([]);
+  });
+
+  // Epic 14 — per-agent routing on the smoke-test endpoint.
+  it('forwards the agent telegramChatId to the Telegram sender', async () => {
+    // Create agent then PATCH in the chat id (the default POST path here
+    // does not set it, and the schema+UI flow is PATCH-after-create).
+    const createRes = await ctx.app.request('/api/agents', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: BEARER },
+      body: JSON.stringify({
+        walletPubkey: 'So11111111111111111111111111111111111111112',
+        name: 'PerAgentChat',
+        framework: 'custom',
+        agentType: 'other',
+      }),
+    });
+    const { agent } = (await createRes.json()) as { agent: { id: string } };
+    await ctx.app.request(`/api/agents/${agent.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: BEARER },
+      body: JSON.stringify({ telegramChatId: '555777999' }),
+    });
+
+    const res = await post(ctx, agent.id);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { channel: string };
+    expect(body.channel).toBe('telegram');
+
+    const [msg] = ctx.sendMock.mock.calls[0] ?? [];
+    expect(msg).toMatchObject({ chatId: '555777999' });
+  });
+
+  it('routes through webhook when agent has webhookUrl set — Telegram sender is not called', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response('ok', { status: 200 }));
+    try {
+      const createRes = await ctx.app.request('/api/agents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: BEARER },
+        body: JSON.stringify({
+          walletPubkey: 'So11111111111111111111111111111111111111112',
+          name: 'WebhookOnly',
+          framework: 'custom',
+          agentType: 'other',
+          webhookUrl: 'https://example.com/hooks/abc',
+        }),
+      });
+      const { agent } = (await createRes.json()) as { agent: { id: string } };
+
+      const res = await post(ctx, agent.id);
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { channel: string };
+      expect(body.channel).toBe('webhook');
+
+      // Telegram sender must not have been invoked.
+      expect(ctx.sendMock).not.toHaveBeenCalled();
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+      const webhookBody = JSON.parse(init.body as string);
+      expect(webhookBody.agent.name).toBe('WebhookOnly');
+      expect(webhookBody.alert.ruleName).toBe('test_alert');
+    } finally {
+      fetchSpy.mockRestore();
+    }
   });
 });

@@ -1,14 +1,16 @@
 /**
- * Tests for alerter package (tasks 5.11-5.13).
+ * Tests for alerter package (tasks 5.11-5.13 + Epic 14 webhook).
  *
- * Tests Telegram message formatting, mock delivery, and the deliver()
- * strategy router.
+ * Covers Telegram message formatting, the deliver() strategy router,
+ * and the webhook sender's POST shape, retry-on-5xx and no-retry-on-4xx
+ * behavior.
  */
 
 import { describe, expect, it, vi } from 'vitest';
 import { deliver } from '../src/deliver';
 import { formatTelegramMessage } from '../src/telegram';
 import type { AlertMessage, ChannelSender } from '../src/types';
+import { createWebhookSender } from '../src/webhook';
 
 const sampleAlert: AlertMessage = {
   id: 'alert-1',
@@ -71,7 +73,24 @@ describe('deliver', () => {
     expect(result.error).toContain('not configured');
   });
 
-  it('returns failure for unsupported channels', async () => {
+  it('routes to webhook sender when channel is webhook', async () => {
+    const mockSender: ChannelSender = {
+      send: vi.fn().mockResolvedValue({ success: true, channel: 'webhook' }),
+    };
+
+    const result = await deliver({ webhook: mockSender }, sampleAlert, 'webhook');
+    expect(result.success).toBe(true);
+    expect(result.channel).toBe('webhook');
+    expect(mockSender.send).toHaveBeenCalledWith(sampleAlert);
+  });
+
+  it('returns failure when webhook sender is not configured', async () => {
+    const result = await deliver({}, sampleAlert, 'webhook');
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('not configured');
+  });
+
+  it('returns failure for discord/slack until MVP support lands', async () => {
     const result = await deliver({}, sampleAlert, 'discord');
     expect(result.success).toBe(false);
     expect(result.error).toContain('not supported');
@@ -85,5 +104,100 @@ describe('deliver', () => {
     const result = await deliver({ telegram: mockSender }, sampleAlert, 'telegram');
     expect(result.success).toBe(false);
     expect(result.error).toBe('network');
+  });
+});
+
+describe('createWebhookSender', () => {
+  const url = 'https://example.com/hooks/abc';
+
+  function makeResponse(status: number, body = ''): Response {
+    return new Response(body, {
+      status,
+      headers: { 'Content-Type': 'text/plain' },
+    });
+  }
+
+  it('posts JSON payload with {alert, agent} shape and Content-Type header', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(makeResponse(200, 'ok'));
+    const sender = createWebhookSender({ url }, fetchMock);
+
+    const result = await sender.send(sampleAlert);
+
+    expect(result.success).toBe(true);
+    expect(result.channel).toBe('webhook');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    const [calledUrl, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(calledUrl).toBe(url);
+    expect(init.method).toBe('POST');
+    expect((init.headers as Record<string, string>)['Content-Type']).toBe('application/json');
+
+    const body = JSON.parse(init.body as string);
+    expect(body).toMatchObject({
+      alert: {
+        id: 'alert-1',
+        ruleName: 'slippage_spike',
+        severity: 'warning',
+        payload: sampleAlert.payload,
+        triggeredAt: sampleAlert.triggeredAt,
+      },
+      agent: { id: 'agent-1', name: 'Trading Bot' },
+    });
+  });
+
+  it('retries up to 3 times on 5xx and succeeds on the final attempt', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(makeResponse(503))
+      .mockResolvedValueOnce(makeResponse(502))
+      .mockResolvedValueOnce(makeResponse(200, 'ok'));
+    const sender = createWebhookSender({ url }, fetchMock);
+
+    const result = await sender.send(sampleAlert);
+
+    expect(result.success).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it('does NOT retry on 4xx (client error) — returns failure immediately', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(makeResponse(404, 'not found'));
+    const sender = createWebhookSender({ url }, fetchMock);
+
+    const result = await sender.send(sampleAlert);
+
+    expect(result.success).toBe(false);
+    expect(result.channel).toBe('webhook');
+    expect(result.error).toContain('404');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries on network error and returns the last error after exhausting retries', async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new Error('ECONNREFUSED'));
+    const sender = createWebhookSender({ url }, fetchMock);
+
+    const result = await sender.send(sampleAlert);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('ECONNREFUSED');
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it('truncates error messages to 200 chars to match alerts.delivery_error column shape', async () => {
+    const longBody = 'x'.repeat(500);
+    const fetchMock = vi.fn().mockResolvedValue(makeResponse(400, longBody));
+    const sender = createWebhookSender({ url }, fetchMock);
+
+    const result = await sender.send(sampleAlert);
+
+    expect(result.success).toBe(false);
+    expect(result.error?.length ?? 0).toBeLessThanOrEqual(200);
+  });
+
+  it('rejects non-http(s) URLs at construction time', () => {
+    expect(() => createWebhookSender({ url: 'ftp://example.com/x' })).toThrow(/http\(s\)/);
+  });
+
+  it('rejects empty URL at construction time', () => {
+    expect(() => createWebhookSender({ url: '' })).toThrow(/required/);
   });
 });

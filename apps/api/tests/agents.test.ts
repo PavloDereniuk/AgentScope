@@ -811,6 +811,63 @@ describe('PATCH /api/agents/:id', () => {
     const res = await patch(seeded.agent.id, { webhookUrl: 'not-a-url' });
     expect(res.status).toBe(422);
   });
+
+  // Epic 14 — per-agent Telegram chat_id.
+  it('persists telegramChatId on POST and echoes it on subsequent reads', async () => {
+    const res = await ctx.app.request('/api/agents', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: BEARER },
+      body: JSON.stringify({
+        walletPubkey: 'So11111111111111111111111111111111111111112',
+        name: 'TGChat',
+        framework: 'custom',
+        agentType: 'other',
+        telegramChatId: '987654321',
+      }),
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { agent: { id: string; telegramChatId: string | null } };
+    expect(body.agent.telegramChatId).toBe('987654321');
+
+    const detail = await ctx.app.request(`/api/agents/${body.agent.id}`, {
+      headers: { Authorization: BEARER },
+    });
+    const detailBody = (await detail.json()) as {
+      agent: { telegramChatId: string | null };
+    };
+    expect(detailBody.agent.telegramChatId).toBe('987654321');
+  });
+
+  it('accepts telegramChatId on PATCH and allows clearing with null', async () => {
+    const seeded = await createAgent({
+      walletPubkey: 'So11111111111111111111111111111111111111112',
+      name: 'TGPatch',
+      framework: 'custom',
+      agentType: 'other',
+    });
+
+    const setRes = await patch(seeded.agent.id, { telegramChatId: '-100200300400' });
+    expect(setRes.status).toBe(200);
+    const setBody = (await setRes.json()) as { agent: { telegramChatId: string | null } };
+    expect(setBody.agent.telegramChatId).toBe('-100200300400');
+
+    const clearRes = await patch(seeded.agent.id, { telegramChatId: null });
+    expect(clearRes.status).toBe(200);
+    const clearBody = (await clearRes.json()) as { agent: { telegramChatId: string | null } };
+    expect(clearBody.agent.telegramChatId).toBeNull();
+  });
+
+  it('rejects non-numeric telegramChatId with 422', async () => {
+    const seeded = await createAgent({
+      walletPubkey: 'So11111111111111111111111111111111111111112',
+      name: 'BadChat',
+      framework: 'custom',
+      agentType: 'other',
+    });
+
+    const res = await patch(seeded.agent.id, { telegramChatId: '@someuser' });
+    expect(res.status).toBe(422);
+  });
 });
 
 describe('DELETE /api/agents/:id', () => {

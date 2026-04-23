@@ -10,7 +10,13 @@
  * separate deployment needed for MVP.
  */
 
-import { type AlertMessage, type DeliverDeps, deliver } from '@agentscope/alerter';
+import {
+  type AlertMessage,
+  type DeliverDeps,
+  type DeliveryResult,
+  createWebhookSender,
+  deliver,
+} from '@agentscope/alerter';
 import { type Database, agents, alerts } from '@agentscope/db';
 import {
   type CronRuleDef,
@@ -21,7 +27,7 @@ import {
   staleRule,
 } from '@agentscope/detector';
 import type { EvalLogger } from '@agentscope/detector';
-import type { AlertRuleThresholds } from '@agentscope/shared';
+import type { AlertRuleThresholds, DeliveryChannel } from '@agentscope/shared';
 import { and, eq, ne } from 'drizzle-orm';
 
 /**
@@ -46,6 +52,22 @@ function correlationKey(ruleName: string, dedupeKey: string | null): string {
 
 const CRON_RULES: readonly CronRuleDef[] = [drawdownRule, errorRateRule, staleRule];
 
+/**
+ * Pick the delivery channel for one agent. `webhook > telegram > skip`.
+ *
+ * Webhook senders are constructed inline per-agent (URL is part of the
+ * agent row), so we don't require `alerter.webhook` to be pre-wired — a
+ * non-null webhookUrl is sufficient. Telegram falls back only if the
+ * cron was given a `telegram` sender at startup. Returns null when no
+ * channel is deliverable, leaving the row in the default
+ * `delivery_status = 'pending'` state.
+ */
+function pickChannel(alerter: DeliverDeps, webhookUrl: string | null): DeliveryChannel | null {
+  if (webhookUrl) return 'webhook';
+  if (alerter.telegram) return 'telegram';
+  return null;
+}
+
 export interface CronDeps {
   db: Database;
   logger: CronLogger;
@@ -62,8 +84,20 @@ export interface CronDeps {
  */
 export async function runCronCycle(deps: CronDeps): Promise<number> {
   const allAgents = await deps.db
-    .select({ id: agents.id, name: agents.name, alertRules: agents.alertRules })
+    .select({
+      id: agents.id,
+      name: agents.name,
+      alertRules: agents.alertRules,
+      telegramChatId: agents.telegramChatId,
+      webhookUrl: agents.webhookUrl,
+    })
     .from(agents);
+
+  // Shared across the whole cycle: webhook senders are expensive to
+  // reconstruct (they parse-validate the URL) and the same agent URL
+  // typically fires multiple rules per tick. Scoped per-cycle so stale
+  // senders don't leak if an agent later rotates its webhookUrl.
+  const webhookCache = new Map<string, ReturnType<typeof createWebhookSender>>();
 
   const now = new Date();
   let totalAlerts = 0;
@@ -152,53 +186,78 @@ export async function runCronCycle(deps: CronDeps): Promise<number> {
       });
     }
 
-    // Deliver via configured channels (Telegram for MVP). Each delivery
-    // is isolated — one channel failure must not block others. Mirrors
-    // the pattern used in detector-runner.ts for tx-triggered rules.
+    // Deliver via per-agent channel (Epic 14: webhook > telegram > skip).
+    // Each delivery is isolated — one channel failure must not block
+    // others. Mirrors the pattern used in detector-runner.ts.
     if (deps.alerter) {
       const alerter = deps.alerter;
       const agentName = agent.name;
+      const telegramChatId = agent.telegramChatId ?? null;
+      const webhookUrl = agent.webhookUrl ?? null;
+      const channel = pickChannel(alerter, webhookUrl);
 
-      await Promise.all(
-        results.map(async (result) => {
-          const row = insertedByKey.get(correlationKey(result.ruleName, result.dedupeKey ?? null));
-          if (!row) return;
+      if (channel) {
+        const perAgentDeps: DeliverDeps = {
+          ...(alerter.telegram ? { telegram: alerter.telegram } : {}),
+          ...(channel === 'webhook' && webhookUrl
+            ? {
+                webhook: (() => {
+                  const cached = webhookCache.get(webhookUrl);
+                  if (cached) return cached;
+                  const sender = createWebhookSender({ url: webhookUrl });
+                  webhookCache.set(webhookUrl, sender);
+                  return sender;
+                })(),
+              }
+            : {}),
+        };
 
-          const msg: AlertMessage = {
-            id: row.id,
-            agentId: agent.id,
-            agentName,
-            ruleName: result.ruleName,
-            severity: result.severity,
-            payload: result.payload,
-            triggeredAt: row.triggeredAt,
-          };
+        await Promise.all(
+          results.map(async (result) => {
+            const row = insertedByKey.get(
+              correlationKey(result.ruleName, result.dedupeKey ?? null),
+            );
+            if (!row) return;
 
-          try {
-            const delivery = await deliver(alerter, msg, 'telegram');
-            if (delivery.success) {
-              await deps.db
-                .update(alerts)
-                .set({
-                  deliveredAt: new Date().toISOString(),
-                  deliveryChannel: 'telegram',
-                  deliveryStatus: 'delivered',
-                })
-                .where(eq(alerts.id, row.id));
-            } else {
-              await deps.db
-                .update(alerts)
-                .set({
-                  deliveryStatus: 'failed',
-                  deliveryError: delivery.error ?? 'unknown',
-                })
-                .where(eq(alerts.id, row.id));
+            const msg: AlertMessage = {
+              id: row.id,
+              agentId: agent.id,
+              agentName,
+              ruleName: result.ruleName,
+              severity: result.severity,
+              payload: result.payload,
+              triggeredAt: row.triggeredAt,
+              ...(telegramChatId ? { chatId: telegramChatId } : {}),
+              ...(webhookUrl ? { webhookUrl } : {}),
+            };
+
+            try {
+              const delivery: DeliveryResult = await deliver(perAgentDeps, msg, channel);
+              if (delivery.success) {
+                await deps.db
+                  .update(alerts)
+                  .set({
+                    deliveredAt: new Date().toISOString(),
+                    deliveryChannel: channel,
+                    deliveryStatus: 'delivered',
+                  })
+                  .where(eq(alerts.id, row.id));
+              } else {
+                await deps.db
+                  .update(alerts)
+                  .set({
+                    deliveryStatus: 'failed',
+                    deliveryChannel: channel,
+                    deliveryError: delivery.error ?? 'unknown',
+                  })
+                  .where(eq(alerts.id, row.id));
+              }
+            } catch (err) {
+              deps.logger.error({ err, alertId: row.id }, 'cron alert delivery failed');
             }
-          } catch (err) {
-            deps.logger.error({ err, alertId: row.id }, 'cron alert delivery failed');
-          }
-        }),
-      );
+          }),
+        );
+      }
     }
   }
 

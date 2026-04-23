@@ -8,7 +8,7 @@
  * and that drizzle's CRUD operators round-trip correctly.
  */
 
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PGlite } from '@electric-sql/pglite';
@@ -46,8 +46,14 @@ beforeAll(async () => {
   client = new PGlite();
   await client.waitReady;
   db = drizzle(client);
-  await applyMigration('0000_far_morbius.sql');
-  await applyMigration('0001_rls_and_partition.sql');
+  // Apply every migration in journal order so new columns/enums added in
+  // later migrations (e.g. Epic 14's telegram_chat_id and webhook enum
+  // value) are present. Previously only 0000 and 0001 were applied, which
+  // silently broke smoke tests whenever a new migration landed.
+  const files = (await readdir(MIGRATIONS_DIR)).filter((f) => f.endsWith('.sql')).sort();
+  for (const file of files) {
+    await applyMigration(file);
+  }
 });
 
 afterAll(async () => {

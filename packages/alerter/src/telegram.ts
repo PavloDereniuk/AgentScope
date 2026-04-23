@@ -16,6 +16,12 @@ import type { AlertMessage, DeliveryResult } from './types';
 
 export interface TelegramConfig {
   botToken: string;
+  /**
+   * Fallback chat_id used when an AlertMessage does not carry its own
+   * `chatId` (Epic 14 per-agent routing). Intended for demo agents and
+   * legacy callers; user-owned agents should set `agents.telegram_chat_id`
+   * and have the detector-runner pass it through on every message.
+   */
   chatId: string;
 }
 
@@ -127,6 +133,10 @@ export function createTelegramSender(config: TelegramConfig) {
       const text = formatTelegramMessage(msg);
       // Build the URL per call so the token never leaks into a stored value.
       const url = `${apiBase}${config.botToken}/sendMessage`;
+      // Per-message chat_id (Epic 14) overrides the factory default. The
+      // default survives for demo agents that never set telegramChatId.
+      const chatId =
+        typeof msg.chatId === 'string' && msg.chatId.trim().length > 0 ? msg.chatId : config.chatId;
 
       for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
         try {
@@ -134,7 +144,7 @@ export function createTelegramSender(config: TelegramConfig) {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              chat_id: config.chatId,
+              chat_id: chatId,
               text,
               parse_mode: 'HTML',
             }),

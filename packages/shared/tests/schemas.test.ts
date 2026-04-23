@@ -48,6 +48,7 @@ function makeAgent(): Agent {
     agentType: 'trader',
     tags: ['demo', 'devnet'],
     webhookUrl: null,
+    telegramChatId: null,
     alertRules: {},
     ingestToken: 'tok_abc123',
     status: 'live',
@@ -192,6 +193,7 @@ describe('agentSchema', () => {
       agentType: 'yield',
       tags: [],
       webhookUrl: 'https://example.com/hook',
+      telegramChatId: '987654321',
       alertRules: {
         slippagePctThreshold: 10,
         gasMultThreshold: 4,
@@ -215,6 +217,7 @@ describe('agentSchema', () => {
         agentType: 'trader',
         tags: [],
         webhookUrl: null,
+        telegramChatId: null,
         alertRules: {},
         ingestToken: 'tok_x',
         status: 'live',
@@ -235,6 +238,7 @@ describe('agentSchema', () => {
         agentType: 'trader',
         tags: [],
         webhookUrl: null,
+        telegramChatId: null,
         alertRules: {},
         ingestToken: 'tok_x',
         status: 'live',
@@ -264,9 +268,34 @@ describe('createAgentInputSchema', () => {
       agentType: 'other',
       tags: ['x'],
       webhookUrl: 'https://x.com',
+      telegramChatId: '123456789',
       alertRules: { drawdownPctThreshold: 15 },
     });
     expect(input.tags).toEqual(['x']);
+    expect(input.telegramChatId).toBe('123456789');
+  });
+
+  it('accepts negative telegramChatId (group/channel format -100…)', () => {
+    const input = createAgentInputSchema.parse({
+      walletPubkey: VALID_PUBKEY,
+      name: 'Group Agent',
+      framework: 'custom',
+      agentType: 'other',
+      telegramChatId: '-100200300400',
+    });
+    expect(input.telegramChatId).toBe('-100200300400');
+  });
+
+  it('rejects non-numeric telegramChatId', () => {
+    expect(() =>
+      createAgentInputSchema.parse({
+        walletPubkey: VALID_PUBKEY,
+        name: 'Bad Agent',
+        framework: 'custom',
+        agentType: 'other',
+        telegramChatId: '@someuser',
+      }),
+    ).toThrow();
   });
 
   it('rejects empty name', () => {

@@ -22,6 +22,7 @@ interface AgentRow {
   name: string;
   walletPubkey: string;
   webhookUrl: string | null;
+  telegramChatId: string | null;
   ingestToken?: string;
   alertRules: {
     slippagePctThreshold?: number;
@@ -39,9 +40,13 @@ interface AgentDetailResponse {
   agent: AgentRow;
 }
 
+/** Regex mirrors shared/src/schemas.ts telegramChatIdSchema. */
+const TELEGRAM_CHAT_ID_RE = /^-?\d{1,32}$/;
+
 export function SettingsPage() {
   const [selectedId, setSelectedId] = useState<string>('');
   const [webhookError, setWebhookError] = useState<string | null>(null);
+  const [telegramChatIdError, setTelegramChatIdError] = useState<string | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'error'>('idle');
   const queryClient = useQueryClient();
@@ -91,15 +96,16 @@ export function SettingsPage() {
   // credentials work and the bot can reach this chat".
   const testAlertMutation = useMutation({
     mutationFn: () =>
-      apiClient.post<{ ok: boolean; delivered: boolean }>(
+      apiClient.post<{ ok: boolean; delivered: boolean; channel?: string }>(
         `/api/agents/${selectedId}/test-alert`,
         {},
       ),
-    onSuccess: () => {
+    onSuccess: (data) => {
       // Non-2xx (503 unconfigured / 502 downstream failure) throws
       // ApiError and flows into onError below — this branch only fires
-      // when the backend actually handed the message to Telegram.
-      toast.success('Test alert sent — check your Telegram.');
+      // when the backend actually handed the message to the channel.
+      const channel = data.channel ?? 'telegram';
+      toast.success(`Test alert sent via ${channel} — check your inbox.`);
     },
     onError: (err) => {
       toast.error(`Failed: ${(err as Error).message}`);
@@ -110,6 +116,7 @@ export function SettingsPage() {
   useEffect(() => {
     if (!selectedId) return;
     setWebhookError(null);
+    setTelegramChatIdError(null);
     mutation.reset();
   }, [selectedId]);
 
@@ -134,6 +141,17 @@ export function SettingsPage() {
     }
     setWebhookError(null);
 
+    const telegramChatIdInput = ((fd.get('telegramChatId') as string) || '').trim();
+    let telegramChatId: string | null = null;
+    if (telegramChatIdInput.length > 0) {
+      if (!TELEGRAM_CHAT_ID_RE.test(telegramChatIdInput)) {
+        setTelegramChatIdError('Chat ID must be numeric (e.g. 123456789 or -100123456789)');
+        return;
+      }
+      telegramChatId = telegramChatIdInput;
+    }
+    setTelegramChatIdError(null);
+
     const alertRules: Record<string, number> = {};
     const fields = [
       'slippagePctThreshold',
@@ -148,7 +166,7 @@ export function SettingsPage() {
       if (val && !Number.isNaN(num) && num > 0) alertRules[field] = num;
     }
 
-    const body: Record<string, unknown> = { webhookUrl };
+    const body: Record<string, unknown> = { webhookUrl, telegramChatId };
     if (Object.keys(alertRules).length > 0) body.alertRules = alertRules;
     mutation.mutate(body);
   }
@@ -294,7 +312,7 @@ export function SettingsPage() {
               <div className="grid gap-3.5 px-4 py-4">
                 <div>
                   <div className="mb-1.5 flex items-center justify-between">
-                    <FieldLabel>Telegram</FieldLabel>
+                    <FieldLabel>Telegram chat ID</FieldLabel>
                     <button
                       type="button"
                       onClick={() => testAlertMutation.mutate()}
@@ -313,9 +331,27 @@ export function SettingsPage() {
                       Send test alert
                     </button>
                   </div>
-                  <p className="font-mono text-[11px] text-fg-3">
-                    Delivery bot configured server-side via{' '}
-                    <span className="text-fg-2">TELEGRAM_BOT_TOKEN</span>.
+                  <div className="flex items-center rounded-[5px] border border-line bg-surface-2 px-2.5 py-1.5">
+                    <input
+                      name="telegramChatId"
+                      type="text"
+                      inputMode="numeric"
+                      placeholder="123456789"
+                      defaultValue={selected?.telegramChatId ?? ''}
+                      className="w-full bg-transparent font-mono text-[12.5px] text-fg outline-none placeholder:text-fg-3"
+                    />
+                  </div>
+                  <p className="mt-2 font-mono text-[11px] text-fg-3">
+                    Get your chat_id: message{' '}
+                    <a
+                      href="https://t.me/userinfobot"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-accent hover:underline"
+                    >
+                      @userinfobot
+                    </a>{' '}
+                    on Telegram. Empty → falls back to server-side default.
                   </p>
                 </div>
                 <div>
@@ -329,6 +365,10 @@ export function SettingsPage() {
                       className="w-full bg-transparent font-mono text-[12.5px] text-fg outline-none placeholder:text-fg-3"
                     />
                   </div>
+                  <p className="mt-2 font-mono text-[11px] text-fg-3">
+                    When set, takes precedence over Telegram. Accepts Discord/Slack incoming
+                    webhooks or any POST-JSON endpoint.
+                  </p>
                 </div>
                 <div>
                   <FieldLabel hint="post-MVP">Discord webhook</FieldLabel>
@@ -418,6 +458,7 @@ export function SettingsPage() {
 
         <div className="mt-5 flex flex-wrap gap-3 text-[12px]">
           {webhookError ? <p className="text-crit">{webhookError}</p> : null}
+          {telegramChatIdError ? <p className="text-crit">{telegramChatIdError}</p> : null}
           {mutation.error ? <p className="text-crit">{(mutation.error as Error).message}</p> : null}
           {mutation.isSuccess ? <p className="text-accent">Settings saved.</p> : null}
         </div>

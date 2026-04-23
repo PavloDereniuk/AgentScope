@@ -286,6 +286,13 @@ React 18 SPA, Vite 5, Tailwind, shadcn/ui, Recharts, Privy auth.
 
 Auto-instruments ElizaOS actions with OpenTelemetry spans and ships them to AgentScope.
 
+**Install from npm:**
+
+```bash
+pnpm add @agentscope/elizaos-plugin@alpha
+# or: npm install @agentscope/elizaos-plugin@alpha
+```
+
 ```typescript
 import { initAgentScope, wrapActions } from '@agentscope/elizaos-plugin';
 
@@ -316,6 +323,13 @@ No dependency on `@elizaos/core` at build time — uses duck-typed internal inte
 ## Agent Kit SDK (`packages/agent-kit-sdk`)
 
 Lightweight OTel integration for Solana Agent Kit workflows.
+
+**Install from npm:**
+
+```bash
+pnpm add @agentscope/agent-kit-sdk@alpha
+# or: npm install @agentscope/agent-kit-sdk@alpha
+```
 
 ```typescript
 import { initAgentScope, traced } from '@agentscope/agent-kit-sdk';

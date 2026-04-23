@@ -105,6 +105,8 @@ export const agents = pgTable(
     agentType: agentTypeEnum('agent_type').notNull(),
     tags: text('tags').array().notNull().default(sql`ARRAY[]::text[]`),
     webhookUrl: text('webhook_url'),
+    /** Per-agent Telegram chat_id for alert delivery. Null → fall back to env default. */
+    telegramChatId: text('telegram_chat_id'),
     alertRules: jsonb('alert_rules').notNull().default({}),
     /** Opaque token used by the agent's OTel exporter for /v1/traces. */
     ingestToken: text('ingest_token').notNull(),

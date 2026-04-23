@@ -1,15 +1,23 @@
 /**
- * Detector runner (task 5.9).
+ * Detector runner (task 5.9 + Epic 14 per-agent routing).
  *
  * After each successful tx persist, evaluates tx-triggered rules
  * (slippage_spike, gas_spike) and inserts alert rows for any that fire.
  *
- * The runner fetches the agent's alert_rules thresholds from DB so each
- * rule can use per-agent overrides. Rule errors are caught and logged
- * by the evaluator — they never crash the ingestion pipeline.
+ * Routing (Epic 14): the channel picked per message is
+ *   webhook > telegram > skip
+ * based on the owning agent's `webhookUrl` / `telegramChatId` columns.
+ * A webhook sender is constructed lazily per unique URL so we don't pay
+ * URL-validation cost on every delivery.
  */
 
-import { type AlertMessage, type DeliverDeps, deliver } from '@agentscope/alerter';
+import {
+  type AlertMessage,
+  type DeliverDeps,
+  type DeliveryResult,
+  createWebhookSender,
+  deliver,
+} from '@agentscope/alerter';
 import { type Database, agents, alerts } from '@agentscope/db';
 import {
   type DefaultThresholds,
@@ -20,7 +28,7 @@ import {
   slippageRule,
 } from '@agentscope/detector';
 import type { EvalLogger } from '@agentscope/detector';
-import type { AlertRuleThresholds } from '@agentscope/shared';
+import type { AlertRuleThresholds, DeliveryChannel } from '@agentscope/shared';
 import { eq } from 'drizzle-orm';
 
 /** All tx-triggered rules, evaluated after each persist. */
@@ -47,6 +55,38 @@ export interface DetectorDeps {
 }
 
 /**
+ * Pick the delivery channel for one agent. `webhook > telegram > skip`.
+ *
+ * Webhook senders are constructed inline per-agent (URL is part of the
+ * agent row), so we don't require `alerter.webhook` to be pre-wired — a
+ * non-null webhookUrl is sufficient. Telegram falls back only if the
+ * runner was given a `telegram` sender at startup. Returns null when no
+ * channel is deliverable, leaving the row in the default
+ * `delivery_status = 'pending'` state.
+ */
+function pickChannel(alerter: DeliverDeps, webhookUrl: string | null): DeliveryChannel | null {
+  if (webhookUrl) return 'webhook';
+  if (alerter.telegram) return 'telegram';
+  return null;
+}
+
+/**
+ * Build or reuse a webhook sender for a given URL. Senders are cheap but
+ * URL validation runs at construction time; caching keeps the per-tick
+ * cost constant when the same agent fires multiple rules.
+ */
+function webhookSenderFor(
+  url: string,
+  cache: Map<string, ReturnType<typeof createWebhookSender>>,
+): ReturnType<typeof createWebhookSender> {
+  const existing = cache.get(url);
+  if (existing) return existing;
+  const sender = createWebhookSender({ url });
+  cache.set(url, sender);
+  return sender;
+}
+
+/**
  * Run tx-triggered detector rules for a just-persisted transaction.
  * Inserts alert rows for any rules that fire. Returns the count of
  * alerts created.
@@ -56,15 +96,22 @@ export async function runTxDetector(
   agentId: string,
   transaction: TxSnapshot,
 ): Promise<number> {
-  // Fetch agent's name + per-rule thresholds.
+  // Fetch agent's name + per-rule thresholds + per-agent routing (Epic 14).
   const [agent] = await deps.db
-    .select({ alertRules: agents.alertRules, name: agents.name })
+    .select({
+      alertRules: agents.alertRules,
+      name: agents.name,
+      telegramChatId: agents.telegramChatId,
+      webhookUrl: agents.webhookUrl,
+    })
     .from(agents)
     .where(eq(agents.id, agentId))
     .limit(1);
 
   const alertRules = (agent?.alertRules ?? {}) as AlertRuleThresholds;
   const agentName = agent?.name ?? 'Unknown Agent';
+  const telegramChatId = agent?.telegramChatId ?? null;
+  const webhookUrl = agent?.webhookUrl ?? null;
 
   const results = await evaluateTx(
     TX_RULES,
@@ -127,13 +174,26 @@ export async function runTxDetector(
     });
   }
 
-  // Deliver alerts via configured channels (5.14).
-  // Each delivery is isolated with its own try/catch so one Telegram failure
-  // does not block other alerts, and we await all deliveries in parallel via
-  // Promise.all to avoid sequential latency and ensure every DB update
-  // completes before the function returns (no orphaned pending writes).
+  // Deliver alerts via configured channels. Each delivery is isolated with
+  // its own try/catch so one channel failure does not block other alerts,
+  // and we await all deliveries in parallel via Promise.all to avoid
+  // sequential latency and ensure every DB update completes before the
+  // function returns (no orphaned pending writes).
   if (deps.alerter) {
     const alerter = deps.alerter;
+    const channel = pickChannel(alerter, webhookUrl);
+    if (!channel) return results.length;
+
+    // Build a per-agent alerter view: for webhook we swap in a sender
+    // bound to *this* agent's URL so deliver() doesn't need to know about
+    // per-agent routing.
+    const webhookCache = new Map<string, ReturnType<typeof createWebhookSender>>();
+    const perAgentDeps: DeliverDeps = {
+      ...(alerter.telegram ? { telegram: alerter.telegram } : {}),
+      ...(channel === 'webhook' && webhookUrl
+        ? { webhook: webhookSenderFor(webhookUrl, webhookCache) }
+        : {}),
+    };
 
     await Promise.all(
       results.map(async (result) => {
@@ -148,16 +208,18 @@ export async function runTxDetector(
           severity: result.severity,
           payload: result.payload,
           triggeredAt: row.triggeredAt,
+          ...(telegramChatId ? { chatId: telegramChatId } : {}),
+          ...(webhookUrl ? { webhookUrl } : {}),
         };
 
         try {
-          const delivery = await deliver(alerter, msg, 'telegram');
+          const delivery: DeliveryResult = await deliver(perAgentDeps, msg, channel);
           if (delivery.success) {
             await deps.db
               .update(alerts)
               .set({
                 deliveredAt: new Date().toISOString(),
-                deliveryChannel: 'telegram',
+                deliveryChannel: channel,
                 deliveryStatus: 'delivered',
               })
               .where(eq(alerts.id, row.id));
@@ -166,6 +228,7 @@ export async function runTxDetector(
               .update(alerts)
               .set({
                 deliveryStatus: 'failed',
+                deliveryChannel: channel,
                 deliveryError: delivery.error ?? 'unknown',
               })
               .where(eq(alerts.id, row.id));

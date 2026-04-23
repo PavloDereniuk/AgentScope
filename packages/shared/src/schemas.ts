@@ -102,6 +102,17 @@ export const alertRuleThresholdsSchema = z.object({
   staleMinutesThreshold: z.number().int().positive().optional(),
 });
 
+/**
+ * Telegram chat_id: numeric string (user `123456789`, group/channel `-100123456789`).
+ * Accept optional leading `-` and 1–32 digits; reject whitespace and non-digits.
+ * Kept permissive (no 15-digit cap) so future 64-bit-typed chat_ids still pass,
+ * but tight enough that pasted usernames or URLs are rejected at the API edge.
+ */
+export const telegramChatIdSchema = z
+  .string()
+  .trim()
+  .regex(/^-?\d{1,32}$/, 'must be numeric telegram chat_id');
+
 export const agentSchema = z.object({
   id: uuidSchema,
   userId: uuidSchema,
@@ -111,6 +122,7 @@ export const agentSchema = z.object({
   agentType: agentTypeSchema,
   tags: z.array(z.string().min(1).max(40)).max(20).readonly(),
   webhookUrl: z.string().url().nullable(),
+  telegramChatId: telegramChatIdSchema.nullable(),
   alertRules: alertRuleThresholdsSchema,
   ingestToken: z.string().min(1),
   status: agentStatusSchema,
@@ -125,6 +137,7 @@ export const createAgentInputSchema = z.object({
   agentType: agentTypeSchema,
   tags: z.array(z.string().min(1).max(40)).max(20).readonly().optional(),
   webhookUrl: z.string().url().nullable().optional(),
+  telegramChatId: telegramChatIdSchema.nullable().optional(),
   alertRules: alertRuleThresholdsSchema.optional(),
 });
 
@@ -133,6 +146,7 @@ export const updateAgentInputSchema = z
     name: z.string().min(1).max(120),
     tags: z.array(z.string().min(1).max(40)).max(20).readonly(),
     webhookUrl: z.string().url().nullable(),
+    telegramChatId: telegramChatIdSchema.nullable(),
     alertRules: alertRuleThresholdsSchema,
   })
   .partial();

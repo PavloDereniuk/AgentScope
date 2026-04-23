@@ -14,7 +14,13 @@
  */
 
 import { randomBytes, randomUUID } from 'node:crypto';
-import { type AlertMessage, type DeliverDeps, deliver } from '@agentscope/alerter';
+import {
+  type AlertMessage,
+  type DeliverDeps,
+  type DeliveryResult,
+  createWebhookSender,
+  deliver,
+} from '@agentscope/alerter';
 import { type Database, agentTransactions, agents, alerts, reasoningLogs } from '@agentscope/db';
 import { createAgentInputSchema, updateAgentInputSchema } from '@agentscope/shared';
 import { zValidator } from '@hono/zod-validator';
@@ -63,6 +69,7 @@ const AGENT_PUBLIC_COLUMNS = {
   status: agents.status,
   tags: agents.tags,
   webhookUrl: agents.webhookUrl,
+  telegramChatId: agents.telegramChatId,
   alertRules: agents.alertRules,
   createdAt: agents.createdAt,
   lastSeenAt: agents.lastSeenAt,
@@ -115,6 +122,7 @@ export function createAgentsRouter(db: Database, sseBus: SseBus, alerter?: Deliv
           agentType: body.agentType,
           tags: body.tags ? [...body.tags] : [],
           webhookUrl: body.webhookUrl ?? null,
+          telegramChatId: body.telegramChatId ?? null,
           alertRules: body.alertRules ?? {},
           ingestToken: generateIngestToken(),
         })
@@ -263,12 +271,16 @@ export function createAgentsRouter(db: Database, sseBus: SseBus, alerter?: Deliv
       // in the request. Unset keys are left untouched — this is what
       // makes PATCH genuinely partial.
       type AgentPatch = Partial<
-        Pick<typeof agents.$inferInsert, 'name' | 'tags' | 'webhookUrl' | 'alertRules'>
+        Pick<
+          typeof agents.$inferInsert,
+          'name' | 'tags' | 'webhookUrl' | 'telegramChatId' | 'alertRules'
+        >
       >;
       const patch: AgentPatch = {};
       if (body.name !== undefined) patch.name = body.name;
       if (body.tags !== undefined) patch.tags = [...body.tags];
       if (body.webhookUrl !== undefined) patch.webhookUrl = body.webhookUrl;
+      if (body.telegramChatId !== undefined) patch.telegramChatId = body.telegramChatId;
       if (body.alertRules !== undefined) patch.alertRules = body.alertRules;
 
       // Empty body → no-op. Fetch and return current state so clients
@@ -450,7 +462,12 @@ export function createAgentsRouter(db: Database, sseBus: SseBus, alerter?: Deliv
 
       const user = await ensureUser(db, privyDid);
       const [agent] = await db
-        .select({ id: agents.id, name: agents.name })
+        .select({
+          id: agents.id,
+          name: agents.name,
+          telegramChatId: agents.telegramChatId,
+          webhookUrl: agents.webhookUrl,
+        })
         .from(agents)
         .where(and(eq(agents.id, agentId), eq(agents.userId, user.id)))
         .limit(1);
@@ -467,6 +484,28 @@ export function createAgentsRouter(db: Database, sseBus: SseBus, alerter?: Deliv
           message: 'alerter not configured on server',
         });
       }
+
+      // Epic 14: pick the same channel the detector would use for this
+      // agent so "test alert" proves the real delivery path, not a
+      // hard-coded Telegram route. `webhook > telegram > 503`.
+      const webhookUrl = agent.webhookUrl ?? null;
+      const channel: 'webhook' | 'telegram' | null = webhookUrl
+        ? 'webhook'
+        : alerter.telegram
+          ? 'telegram'
+          : null;
+      if (!channel) {
+        throw new HTTPException(503, {
+          message: 'no delivery channel configured for this agent',
+        });
+      }
+
+      const perAgentDeps: DeliverDeps = {
+        ...(alerter.telegram ? { telegram: alerter.telegram } : {}),
+        ...(channel === 'webhook' && webhookUrl
+          ? { webhook: createWebhookSender({ url: webhookUrl }) }
+          : {}),
+      };
 
       // 'test_alert' is intentionally not in the AlertRuleName union —
       // adding it there would ripple through persistence code for a
@@ -486,18 +525,20 @@ export function createAgentsRouter(db: Database, sseBus: SseBus, alerter?: Deliv
           source: 'dashboard smoke test',
         },
         triggeredAt: new Date().toISOString(),
+        ...(agent.telegramChatId ? { chatId: agent.telegramChatId } : {}),
+        ...(webhookUrl ? { webhookUrl } : {}),
       };
 
-      const result = await deliver(alerter, msg as AlertMessage, 'telegram');
+      const result: DeliveryResult = await deliver(perAgentDeps, msg as AlertMessage, channel);
       if (!result.success) {
-        // 502 — downstream channel (Telegram) rejected the send. The
-        // message is the verbatim sender error so ops can act (invalid
-        // chat id, revoked bot token, etc.).
+        // 502 — downstream channel rejected the send. The message is the
+        // verbatim sender error so ops can act (invalid chat id, revoked
+        // bot token, 4xx from webhook endpoint, etc.).
         throw new HTTPException(502, {
           message: result.error ?? 'delivery failed',
         });
       }
-      return c.json({ ok: true, delivered: true });
+      return c.json({ ok: true, delivered: true, channel });
     },
   );
 
