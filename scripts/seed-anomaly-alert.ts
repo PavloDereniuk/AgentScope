@@ -12,9 +12,11 @@
  * Env vars required:
  *   DATABASE_URL
  *   TELEGRAM_BOT_TOKEN
- *   TELEGRAM_DEFAULT_CHAT_ID
  *   AGENTSCOPE_AGENT_TOKEN_TRADER   (used to locate the target agent)
  *   AGENTSCOPE_SLIPPAGE_PCT_THRESHOLD  (optional override, default 5)
+ *   TELEGRAM_DEFAULT_CHAT_ID        (optional fallback — used only when
+ *                                    agents.telegram_chat_id is NULL for the target agent;
+ *                                    @deprecated post-Epic 14, will be removed in the next release)
  *   INTERNAL_SECRET                 (optional — if set, publishes SSE tx.new + alert.new
  *                                    so the dashboard refreshes live without manual F5)
  *   AGENTSCOPE_API_URL              (optional, default http://localhost:3000 — API base
@@ -43,7 +45,6 @@ const API_URL = (process.env['AGENTSCOPE_API_URL'] ?? 'http://localhost:3000').r
 
 if (!DATABASE_URL) throw new Error('DATABASE_URL is required');
 if (!TELEGRAM_BOT_TOKEN) throw new Error('TELEGRAM_BOT_TOKEN is required');
-if (!TELEGRAM_DEFAULT_CHAT_ID) throw new Error('TELEGRAM_DEFAULT_CHAT_ID is required');
 if (!AGENT_TOKEN) throw new Error('AGENTSCOPE_AGENT_TOKEN_TRADER is required');
 
 /**
@@ -90,13 +91,34 @@ const defaults: DefaultThresholds = {
 const db = createDb({ connectionString: DATABASE_URL });
 
 const [agent] = await db
-  .select({ id: agents.id, name: agents.name, alertRules: agents.alertRules })
+  .select({
+    id: agents.id,
+    name: agents.name,
+    alertRules: agents.alertRules,
+    telegramChatId: agents.telegramChatId,
+  })
   .from(agents)
   .where(eq(agents.ingestToken, AGENT_TOKEN))
   .limit(1);
 
 if (!agent) {
   throw new Error(`No agent found for AGENTSCOPE_AGENT_TOKEN_TRADER=${AGENT_TOKEN}`);
+}
+
+// Post-Epic-14 routing: the telegram sender no longer pulls a deployer-wide
+// fallback chat_id from the environment. We resolve the destination here
+// instead — agent.telegramChatId first (prod path), then TELEGRAM_DEFAULT_CHAT_ID
+// (opt-in demo path) — and pass it in every AlertMessage.
+const resolvedChatId = agent.telegramChatId ?? TELEGRAM_DEFAULT_CHAT_ID;
+if (!resolvedChatId) {
+  throw new Error(
+    `Agent ${agent.name} has no telegram_chat_id set and TELEGRAM_DEFAULT_CHAT_ID is not configured — nowhere to deliver the alert.`,
+  );
+}
+if (!agent.telegramChatId) {
+  console.warn(
+    `Agent ${agent.name}.telegram_chat_id is NULL — falling back to TELEGRAM_DEFAULT_CHAT_ID (deprecated, set the DB column instead)`,
+  );
 }
 
 console.info(`Target agent: ${agent.name} (${agent.id})`);
@@ -198,10 +220,7 @@ const inserted = await db
 console.info(`Inserted ${inserted.length} alert row(s)`);
 
 // Deliver via Telegram — same alerter package ingestion uses.
-const telegram = createTelegramSender({
-  botToken: TELEGRAM_BOT_TOKEN,
-  chatId: TELEGRAM_DEFAULT_CHAT_ID,
-});
+const telegram = createTelegramSender({ botToken: TELEGRAM_BOT_TOKEN });
 
 for (let i = 0; i < results.length; i++) {
   const result = results[i];
@@ -216,6 +235,7 @@ for (let i = 0; i < results.length; i++) {
     severity: result.severity,
     payload: result.payload,
     triggeredAt: row.triggeredAt,
+    chatId: resolvedChatId,
   };
 
   await publishBusEvent({
