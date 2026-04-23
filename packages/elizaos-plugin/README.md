@@ -1,4 +1,4 @@
-# @agentscope/elizaos-plugin
+# @agentscopehq/elizaos-plugin
 
 Drop-in AgentScope observability for ElizaOS agents. Emits OpenTelemetry reasoning spans to your AgentScope API so every action, decision, and tool call shows up alongside on-chain transactions.
 
@@ -7,9 +7,9 @@ Drop-in AgentScope observability for ElizaOS agents. Emits OpenTelemetry reasoni
 ## Install
 
 ```bash
-pnpm add @agentscope/elizaos-plugin@alpha
+pnpm add @agentscopehq/elizaos-plugin@alpha
 # or
-npm install @agentscope/elizaos-plugin@alpha
+npm install @agentscopehq/elizaos-plugin@alpha
 ```
 
 Requires Node 20+ and an existing `@elizaos/core` install.
@@ -17,7 +17,7 @@ Requires Node 20+ and an existing `@elizaos/core` install.
 ## Usage
 
 ```ts
-import { initAgentScope, wrapActions } from '@agentscope/elizaos-plugin';
+import { initAgentScope, wrapActions } from '@agentscopehq/elizaos-plugin';
 
 const sdk = initAgentScope({
   apiUrl: process.env.AGENTSCOPE_API_URL,      // https://api.agentscope.dev

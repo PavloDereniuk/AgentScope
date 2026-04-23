@@ -21,7 +21,7 @@
     "count-stale-alerts": "tsx --env-file=../.env count-stale-alerts.ts"
   },
   "dependencies": {
-    "@agentscope/agent-kit-sdk": "workspace:*",
+    "@agentscopehq/agent-kit-sdk": "workspace:*",
     "@agentscope/alerter": "workspace:*",
     "@agentscope/db": "workspace:*",
     "@agentscope/detector": "workspace:*",

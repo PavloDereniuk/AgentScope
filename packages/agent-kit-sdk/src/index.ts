@@ -1,9 +1,9 @@
 /**
- * @agentscope/agent-kit-sdk
+ * @agentscopehq/agent-kit-sdk
  *
  * Add AgentScope observability to any Solana agent in two lines:
  *
- *   import { initAgentScope, traced } from '@agentscope/agent-kit-sdk';
+ *   import { initAgentScope, traced } from '@agentscopehq/agent-kit-sdk';
  *
  *   initAgentScope({
  *     apiUrl: process.env.AGENTSCOPE_API_URL,

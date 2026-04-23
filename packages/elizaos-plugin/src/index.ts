@@ -1,11 +1,11 @@
 /**
- * @agentscope/elizaos-plugin
+ * @agentscopehq/elizaos-plugin
  *
  * Auto-instrument ElizaOS action handlers with OpenTelemetry traces
  * and ship them to the AgentScope observability platform.
  *
  * Usage:
- *   import { initAgentScope, wrapActions } from '@agentscope/elizaos-plugin';
+ *   import { initAgentScope, wrapActions } from '@agentscopehq/elizaos-plugin';
  *
  *   const sdk = initAgentScope({
  *     apiUrl: process.env.AGENTSCOPE_API_URL,

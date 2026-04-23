@@ -1,6 +1,6 @@
 import { type Span, SpanStatusCode, trace } from '@opentelemetry/api';
 
-const TRACER_NAME = '@agentscope/agent-kit-sdk';
+const TRACER_NAME = '@agentscopehq/agent-kit-sdk';
 
 // Matches @opentelemetry/api's AttributeValue shape: primitives plus
 // homogeneously-typed arrays with optional null/undefined entries. Keeping

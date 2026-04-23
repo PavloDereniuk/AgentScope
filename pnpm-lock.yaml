@@ -313,9 +313,6 @@ importers:
 
   scripts:
     dependencies:
-      '@agentscope/agent-kit-sdk':
-        specifier: workspace:*
-        version: link:../packages/agent-kit-sdk
       '@agentscope/alerter':
         specifier: workspace:*
         version: link:../packages/alerter
@@ -328,6 +325,9 @@ importers:
       '@agentscope/shared':
         specifier: workspace:*
         version: link:../packages/shared
+      '@agentscopehq/agent-kit-sdk':
+        specifier: workspace:*
+        version: link:../packages/agent-kit-sdk
       '@solana/web3.js':
         specifier: ^1.98.0
         version: 1.98.4(bufferutil@4.1.0)(encoding@0.1.13)(typescript@5.9.3)(utf-8-validate@5.0.10)

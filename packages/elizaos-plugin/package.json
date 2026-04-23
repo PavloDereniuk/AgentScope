@@ -1,5 +1,5 @@
 {
-  "name": "@agentscope/elizaos-plugin",
+  "name": "@agentscopehq/elizaos-plugin",
   "version": "0.1.0-alpha.0",
   "description": "Drop-in AgentScope observability plugin for ElizaOS agents — emits OTel reasoning spans to your AgentScope API.",
   "license": "MIT",

@@ -1,7 +1,7 @@
 import { type Attributes, type Span, SpanStatusCode, trace } from '@opentelemetry/api';
 import type { Action, ActionHandler } from './types.js';
 
-const TRACER_NAME = '@agentscope/elizaos-plugin';
+const TRACER_NAME = '@agentscopehq/elizaos-plugin';
 
 /**
  * Base58 Solana signature format. Kept in sync with `SOLANA_SIGNATURE_RE`

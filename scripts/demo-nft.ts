@@ -21,7 +21,7 @@ import {
   sendAndConfirmTransaction,
 } from '@solana/web3.js';
 import { readFileSync } from 'node:fs';
-import { initAgentScope, traced } from '@agentscope/agent-kit-sdk';
+import { initAgentScope, traced } from '@agentscopehq/agent-kit-sdk';
 
 const RPC_URL = process.env['SOLANA_RPC_URL'] ?? 'https://api.mainnet-beta.solana.com';
 const API_URL = process.env['AGENTSCOPE_API_URL'] ?? 'http://localhost:3000';

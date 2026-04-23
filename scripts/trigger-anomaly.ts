@@ -23,7 +23,7 @@ import {
   sendAndConfirmTransaction,
 } from '@solana/web3.js';
 import { readFileSync } from 'node:fs';
-import { initAgentScope, traced } from '@agentscope/agent-kit-sdk';
+import { initAgentScope, traced } from '@agentscopehq/agent-kit-sdk';
 
 const ANOMALY_NETWORK = process.env['ANOMALY_NETWORK'] ?? 'devnet';
 const DEFAULT_RPC =

@@ -1,4 +1,4 @@
-# @agentscope/agent-kit-sdk
+# @agentscopehq/agent-kit-sdk
 
 AgentScope observability wrapper for [Solana Agent Kit](https://github.com/sendaifun/solana-agent-kit). Hooks every tool call into OpenTelemetry spans the AgentScope API ingests in real time.
 
@@ -7,9 +7,9 @@ AgentScope observability wrapper for [Solana Agent Kit](https://github.com/senda
 ## Install
 
 ```bash
-pnpm add @agentscope/agent-kit-sdk@alpha
+pnpm add @agentscopehq/agent-kit-sdk@alpha
 # or
-npm install @agentscope/agent-kit-sdk@alpha
+npm install @agentscopehq/agent-kit-sdk@alpha
 ```
 
 Requires Node 20+. Works with any SolanaAgentKit instance; `solana-agent-kit` is an optional peer.
@@ -17,7 +17,7 @@ Requires Node 20+. Works with any SolanaAgentKit instance; `solana-agent-kit` is
 ## Usage
 
 ```ts
-import { initAgentScope, traced } from '@agentscope/agent-kit-sdk';
+import { initAgentScope, traced } from '@agentscopehq/agent-kit-sdk';
 
 initAgentScope({
   apiUrl: process.env.AGENTSCOPE_API_URL,        // https://api.agentscope.dev
@@ -38,7 +38,7 @@ Get `AGENTSCOPE_AGENT_TOKEN` from the **Settings → Ingest Token** panel of you
 Re-export of `trace` from `@opentelemetry/api` lets you attach on-chain signatures once the tx confirms — no extra dep needed:
 
 ```ts
-import { trace } from '@agentscope/agent-kit-sdk';
+import { trace } from '@agentscopehq/agent-kit-sdk';
 
 const sig = await traced('swap', async () => {
   const result = await kit.trade(mint, amount, 'buy');

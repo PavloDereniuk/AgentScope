@@ -42,8 +42,8 @@ Existing AI observability tools (Braintrust, Langfuse, Arize) monitor LLM calls 
 └─────────────────────────────────────────────────────────────────────┘
 
 Agent SDKs:
-  @agentscope/elizaos-plugin   — ElizaOS auto-instrumentation
-  @agentscope/agent-kit-sdk    — Solana Agent Kit integration
+  @agentscopehq/elizaos-plugin   — ElizaOS auto-instrumentation
+  @agentscopehq/agent-kit-sdk    — Solana Agent Kit integration
 ```
 
 **Data flow:** Solana tx → WebSocket (Helius) → ingestion → parser → DB → detector → alerter → Telegram
@@ -289,12 +289,12 @@ Auto-instruments ElizaOS actions with OpenTelemetry spans and ships them to Agen
 **Install from npm:**
 
 ```bash
-pnpm add @agentscope/elizaos-plugin@alpha
-# or: npm install @agentscope/elizaos-plugin@alpha
+pnpm add @agentscopehq/elizaos-plugin@alpha
+# or: npm install @agentscopehq/elizaos-plugin@alpha
 ```
 
 ```typescript
-import { initAgentScope, wrapActions } from '@agentscope/elizaos-plugin';
+import { initAgentScope, wrapActions } from '@agentscopehq/elizaos-plugin';
 
 const sdk = initAgentScope({
   apiUrl: 'https://your-api.railway.app',
@@ -327,12 +327,12 @@ Lightweight OTel integration for Solana Agent Kit workflows.
 **Install from npm:**
 
 ```bash
-pnpm add @agentscope/agent-kit-sdk@alpha
-# or: npm install @agentscope/agent-kit-sdk@alpha
+pnpm add @agentscopehq/agent-kit-sdk@alpha
+# or: npm install @agentscopehq/agent-kit-sdk@alpha
 ```
 
 ```typescript
-import { initAgentScope, traced } from '@agentscope/agent-kit-sdk';
+import { initAgentScope, traced } from '@agentscopehq/agent-kit-sdk';
 
 const sdk = initAgentScope({
   apiUrl: 'https://your-api.railway.app',
@@ -367,7 +367,7 @@ Context propagation: nested `traced()` calls automatically create parent-child s
 
 ## Demo Scripts (`scripts/`)
 
-All scripts use `@agentscope/agent-kit-sdk` and require env vars: `AGENTSCOPE_API_URL`, `AGENTSCOPE_AGENT_TOKEN_*`, `SOLANA_RPC_URL`.
+All scripts use `@agentscopehq/agent-kit-sdk` and require env vars: `AGENTSCOPE_API_URL`, `AGENTSCOPE_AGENT_TOKEN_*`, `SOLANA_RPC_URL`.
 
 | Script | Command | Description |
 |---|---|---|
@@ -480,8 +480,8 @@ pnpm build         # production build (all packages)
 | `@agentscope/detector` | 33 | 7 evaluator + 5 rule suites (slippage/gas/error-rate/drawdown/stale) |
 | `@agentscope/alerter` | 6 | Telegram format + delivery router |
 | `@agentscope/ingestion` | 3 | Detector runner + cron cycle |
-| `@agentscope/elizaos-plugin` | 3 | Mock OTLP server: success span, error status, tx correlation |
-| `@agentscope/agent-kit-sdk` | 4 | Mock OTLP server: resource attr, custom attrs, error, parent-child |
+| `@agentscopehq/elizaos-plugin` | 3 | Mock OTLP server: success span, error status, tx correlation |
+| `@agentscopehq/agent-kit-sdk` | 4 | Mock OTLP server: resource attr, custom attrs, error, parent-child |
 | `@agentscope/api` | 119 | 6 error middleware + 6 auth + 7 SSE bus + 6 cursor + 44 agents CRUD + 8 transactions + 11 alerts + 24 OTLP + 7 reasoning |
 
 ---

@@ -31,7 +31,7 @@ We aim to:
 - AgentScope API (`apps/api`) — auth, OTLP receiver, tx/alert routes
 - Ingestion worker (`apps/ingestion`) — Yellowstone stream, parser dispatcher, detector
 - Dashboard (`apps/dashboard`) — Privy auth, SSE consumer, data display
-- SDK packages — `@agentscope/agent-kit-sdk`, `@agentscope/elizaos-plugin`
+- SDK packages — `@agentscopehq/agent-kit-sdk`, `@agentscopehq/elizaos-plugin`
 - Database schema and RLS policies (`packages/db`)
 - Parser / detector / alerter logic (`packages/*`)
 
