@@ -3,11 +3,11 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "main": "dist/index.js",
+  "main": "dist/src/index.js",
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev": "tsx watch --env-file=../../.env src/server.ts",
-    "start": "node dist/server.js",
+    "start": "node dist/src/server.js",
     "lint": "biome check .",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
