@@ -7,7 +7,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev": "tsx watch --env-file=../../.env src/index.ts",
-    "start": "node dist/src/index.js",
+    "start": "tsx src/index.ts",
     "lint": "biome check .",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
@@ -26,11 +26,11 @@
     "bs58": "^6.0.0",
     "drizzle-orm": "^0.36.4",
     "pino": "^9.5.0",
+    "tsx": "^4.19.2",
     "zod": "^3.23.8"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.2.13",
-    "pino-pretty": "^11.3.0",
-    "tsx": "^4.19.2"
+    "pino-pretty": "^11.3.0"
   }
 }

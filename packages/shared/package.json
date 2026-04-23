@@ -3,24 +3,12 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "main": "dist/src/index.js",
+  "main": "src/index.ts",
   "types": "src/index.ts",
   "exports": {
-    ".": {
-      "types": "./src/index.ts",
-      "import": "./dist/src/index.js",
-      "default": "./dist/src/index.js"
-    },
-    "./schemas": {
-      "types": "./src/schemas.ts",
-      "import": "./dist/src/schemas.js",
-      "default": "./dist/src/schemas.js"
-    },
-    "./types": {
-      "types": "./src/types.ts",
-      "import": "./dist/src/types.js",
-      "default": "./dist/src/types.js"
-    }
+    ".": "./src/index.ts",
+    "./schemas": "./src/schemas.ts",
+    "./types": "./src/types.ts"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
