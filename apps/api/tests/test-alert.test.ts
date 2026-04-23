@@ -55,11 +55,29 @@ async function setup(
   return { app, testDb, sendMock };
 }
 
-async function createAgent(ctx: TestApp, name: string, walletPubkey: string): Promise<string> {
+/**
+ * Seed an agent. By default we set a telegramChatId so the existing
+ * `/test-alert` happy-path tests resolve to the Telegram channel (Epic 14
+ * follow-up removed the silent deployer-wide fallback). Tests that need
+ * to exercise the "no channel configured" branch can pass a null chatId.
+ */
+async function createAgent(
+  ctx: TestApp,
+  name: string,
+  walletPubkey: string,
+  opts: { telegramChatId?: string | null } = {},
+): Promise<string> {
+  const telegramChatId = opts.telegramChatId === undefined ? '111222333' : opts.telegramChatId;
   const res = await ctx.app.request('/api/agents', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: BEARER },
-    body: JSON.stringify({ walletPubkey, name, framework: 'custom', agentType: 'other' }),
+    body: JSON.stringify({
+      walletPubkey,
+      name,
+      framework: 'custom',
+      agentType: 'other',
+      ...(telegramChatId ? { telegramChatId } : {}),
+    }),
   });
   if (res.status !== 201) throw new Error(`seed create failed: ${res.status}`);
   const body = (await res.json()) as { agent: { id: string } };
@@ -161,6 +179,19 @@ describe('POST /api/agents/:id/test-alert', () => {
     const body = (await res.json()) as { error: { code: string; message: string } };
     expect(body.error.message).toMatch(/not configured/i);
     await noAlerter.testDb.close();
+  });
+
+  it('returns 503 when agent has no chat_id AND no webhook url (multi-tenant safety)', async () => {
+    const agentId = await createAgent(ctx, 'Bare', 'So11111111111111111111111111111111111111112', {
+      telegramChatId: null,
+    });
+    const res = await post(ctx, agentId);
+    expect(res.status).toBe(503);
+    const body = (await res.json()) as { error: { code: string; message: string } };
+    expect(body.error.message).toMatch(/no delivery channel/i);
+    // Critical: the Telegram sender must NOT have been invoked — no
+    // silent fallback to the deployer's chat.
+    expect(ctx.sendMock).not.toHaveBeenCalled();
   });
 
   it('does not persist any row to the alerts table', async () => {

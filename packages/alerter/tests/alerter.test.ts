@@ -8,7 +8,7 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import { deliver } from '../src/deliver';
-import { formatTelegramMessage } from '../src/telegram';
+import { createTelegramSender, formatTelegramMessage } from '../src/telegram';
 import type { AlertMessage, ChannelSender } from '../src/types';
 import { createWebhookSender } from '../src/webhook';
 
@@ -104,6 +104,57 @@ describe('deliver', () => {
     const result = await deliver({ telegram: mockSender }, sampleAlert, 'telegram');
     expect(result.success).toBe(false);
     expect(result.error).toBe('network');
+  });
+});
+
+describe('createTelegramSender — multi-tenant safety', () => {
+  it('returns failure (does NOT fetch) when AlertMessage has no chatId', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    try {
+      const sender = createTelegramSender({ botToken: 'bot:FAKE_TOKEN' });
+      const result = await sender.send(sampleAlert); // sampleAlert has no chatId
+      expect(result.success).toBe(false);
+      expect(result.channel).toBe('telegram');
+      expect(result.error).toMatch(/no telegram chat_id/i);
+      // Critical: no Telegram API call was attempted — no fallback to a
+      // deployer-wide chat.
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it('returns failure for empty/whitespace chatId', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    try {
+      const sender = createTelegramSender({ botToken: 'bot:FAKE_TOKEN' });
+      const result = await sender.send({ ...sampleAlert, chatId: '   ' });
+      expect(result.success).toBe(false);
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it('sends successfully when chatId is present', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    try {
+      const sender = createTelegramSender({ botToken: 'bot:FAKE_TOKEN' });
+      const result = await sender.send({ ...sampleAlert, chatId: '123456789' });
+      expect(result.success).toBe(true);
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+      const body = JSON.parse(init.body as string);
+      expect(body.chat_id).toBe('123456789');
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it('rejects empty botToken at construction time', () => {
+    expect(() => createTelegramSender({ botToken: '' })).toThrow(/botToken/);
   });
 });
 

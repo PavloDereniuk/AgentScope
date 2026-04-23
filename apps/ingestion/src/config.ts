@@ -30,7 +30,14 @@ const envSchema = z.object({
   // ── Alerter (Telegram) ─────────────────────────────────────────────────────
   /** Telegram bot token (BotFather). Required to deliver alerts via Telegram. */
   TELEGRAM_BOT_TOKEN: z.string().min(1).optional(),
-  /** Telegram chat ID to send alerts to (user, group, or channel). */
+  /**
+   * @deprecated since Epic 14 Phase 1. Per-agent chat_id now travels on
+   * each AlertMessage via `agents.telegram_chat_id`; the sender no longer
+   * falls back to this env var (would re-route new users' alerts to the
+   * platform owner's chat). Kept optional so existing .env files don't
+   * fail validation, but the value is never read. Remove after one
+   * release cycle.
+   */
   TELEGRAM_DEFAULT_CHAT_ID: z.string().min(1).optional(),
 });
 

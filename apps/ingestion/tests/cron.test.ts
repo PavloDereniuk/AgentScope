@@ -54,7 +54,11 @@ beforeAll(async () => {
   const [user] = await db.insert(users).values({ privyDid: 'did:privy:cron-test' }).returning();
   if (!user) throw new Error('seed user failed');
 
-  // Agent A: last tx 31 min ago → stale
+  // Agent A: last tx 31 min ago → stale.
+  // `telegramChatId` is required for Telegram delivery (Epic 14 multi-tenant
+  // safety removed the deployer-wide fallback); without it the cron routes
+  // to `pickChannel(...) === null` and the delivery assertions below would
+  // never fire.
   const [stale] = await db
     .insert(agents)
     .values({
@@ -64,6 +68,7 @@ beforeAll(async () => {
       framework: 'custom',
       agentType: 'other',
       ingestToken: 'tok_cron_stale',
+      telegramChatId: '111222333',
     })
     .returning();
   if (!stale) throw new Error('seed stale agent failed');

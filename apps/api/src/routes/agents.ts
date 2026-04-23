@@ -488,15 +488,19 @@ export function createAgentsRouter(db: Database, sseBus: SseBus, alerter?: Deliv
       // Epic 14: pick the same channel the detector would use for this
       // agent so "test alert" proves the real delivery path, not a
       // hard-coded Telegram route. `webhook > telegram > 503`.
+      // Telegram requires an explicit per-agent chat_id — no deployer-wide
+      // fallback (multi-tenant safety).
       const webhookUrl = agent.webhookUrl ?? null;
+      const telegramChatId = agent.telegramChatId ?? null;
       const channel: 'webhook' | 'telegram' | null = webhookUrl
         ? 'webhook'
-        : alerter.telegram
+        : alerter.telegram && telegramChatId
           ? 'telegram'
           : null;
       if (!channel) {
         throw new HTTPException(503, {
-          message: 'no delivery channel configured for this agent',
+          message:
+            'no delivery channel configured for this agent — set a telegram chat_id or webhook url',
         });
       }
 

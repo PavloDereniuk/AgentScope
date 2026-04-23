@@ -238,17 +238,26 @@ describe('runTxDetector — Epic 14 per-agent routing', () => {
     }
   });
 
-  it('omits chatId when telegramChatId is null — telegram sender falls back to its factory default', async () => {
+  it('skips telegram delivery when agent has no telegramChatId and no webhookUrl (multi-tenant safety)', async () => {
     const bareAgentId = await seedAgent({ name: 'Bare Agent' });
     const telegram = createMockSender();
 
-    await runTxDetector(
+    const count = await runTxDetector(
       { db, logger: silentLogger, defaults, alerter: { telegram } },
       bareAgentId,
       { ...slippageTx, signature: `${slippageTx.signature}_bare` },
     );
+    // The alert STILL lands in the DB (count === 1) — we just don't ship
+    // it to the platform owner's chat via fallback. The row stays in the
+    // default 'pending' delivery_status and is visible in the dashboard.
+    expect(count).toBe(1);
+    expect(telegram.captured).toHaveLength(0);
 
-    expect(telegram.captured).toHaveLength(1);
-    expect(telegram.captured[0]?.chatId).toBeUndefined();
+    const [row] = await db
+      .select({ channel: alerts.deliveryChannel, status: alerts.deliveryStatus })
+      .from(alerts)
+      .where(eq(alerts.agentId, bareAgentId));
+    expect(row?.channel).toBeNull();
+    expect(row?.status).toBe('pending');
   });
 });

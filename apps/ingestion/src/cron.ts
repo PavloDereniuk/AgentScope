@@ -57,14 +57,20 @@ const CRON_RULES: readonly CronRuleDef[] = [drawdownRule, errorRateRule, staleRu
  *
  * Webhook senders are constructed inline per-agent (URL is part of the
  * agent row), so we don't require `alerter.webhook` to be pre-wired — a
- * non-null webhookUrl is sufficient. Telegram falls back only if the
- * cron was given a `telegram` sender at startup. Returns null when no
- * channel is deliverable, leaving the row in the default
+ * non-null webhookUrl is sufficient. Telegram is picked only when the
+ * agent has its own `telegramChatId` (multi-tenant safety: no silent
+ * fallback to a deployer-wide default — that would re-route a new user's
+ * alerts into the platform owner's chat). Returns null when no channel
+ * is deliverable, leaving the row in the default
  * `delivery_status = 'pending'` state.
  */
-function pickChannel(alerter: DeliverDeps, webhookUrl: string | null): DeliveryChannel | null {
+function pickChannel(
+  alerter: DeliverDeps,
+  webhookUrl: string | null,
+  telegramChatId: string | null,
+): DeliveryChannel | null {
   if (webhookUrl) return 'webhook';
-  if (alerter.telegram) return 'telegram';
+  if (alerter.telegram && telegramChatId) return 'telegram';
   return null;
 }
 
@@ -194,7 +200,7 @@ export async function runCronCycle(deps: CronDeps): Promise<number> {
       const agentName = agent.name;
       const telegramChatId = agent.telegramChatId ?? null;
       const webhookUrl = agent.webhookUrl ?? null;
-      const channel = pickChannel(alerter, webhookUrl);
+      const channel = pickChannel(alerter, webhookUrl, telegramChatId);
 
       if (channel) {
         const perAgentDeps: DeliverDeps = {

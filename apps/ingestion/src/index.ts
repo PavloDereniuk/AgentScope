@@ -66,14 +66,13 @@ async function main(): Promise<void> {
       ? createEventPublisher(config.API_INTERNAL_URL, config.INTERNAL_SECRET, logger)
       : undefined;
 
-  // Set up optional Telegram alerter (requires TELEGRAM_BOT_TOKEN + TELEGRAM_DEFAULT_CHAT_ID).
-  const telegramSender =
-    config.TELEGRAM_BOT_TOKEN && config.TELEGRAM_DEFAULT_CHAT_ID
-      ? createTelegramSender({
-          botToken: config.TELEGRAM_BOT_TOKEN,
-          chatId: config.TELEGRAM_DEFAULT_CHAT_ID,
-        })
-      : undefined;
+  // Set up optional Telegram alerter — only needs the bot token; per-agent
+  // chat_id travels on each AlertMessage (multi-tenant safety: no
+  // deployer-wide chat_id fallback). Demo agents have their
+  // `agents.telegram_chat_id` column set explicitly in the DB.
+  const telegramSender = config.TELEGRAM_BOT_TOKEN
+    ? createTelegramSender({ botToken: config.TELEGRAM_BOT_TOKEN })
+    : undefined;
 
   // Detector deps shared between tx-triggered runner and periodic cron.
   // Use conditional spread so optional properties are absent (not `undefined`)

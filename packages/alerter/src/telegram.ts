@@ -16,13 +16,6 @@ import type { AlertMessage, DeliveryResult } from './types';
 
 export interface TelegramConfig {
   botToken: string;
-  /**
-   * Fallback chat_id used when an AlertMessage does not carry its own
-   * `chatId` (Epic 14 per-agent routing). Intended for demo agents and
-   * legacy callers; user-owned agents should set `agents.telegram_chat_id`
-   * and have the detector-runner pass it through on every message.
-   */
-  chatId: string;
 }
 
 /** Severity → emoji for visual distinction in Telegram. */
@@ -121,22 +114,29 @@ export function createTelegramSender(config: TelegramConfig) {
   if (typeof config.botToken !== 'string' || config.botToken.trim().length === 0) {
     throw new Error('[alerter] botToken is required and must be a non-empty string');
   }
-  if (typeof config.chatId !== 'string' || config.chatId.trim().length === 0) {
-    throw new Error('[alerter] chatId is required and must be a non-empty string');
-  }
   // URL is built inside `send` — storing it as a constant would embed the
   // bot token in error messages and stack traces emitted by `fetch`.
   const apiBase = 'https://api.telegram.org/bot';
 
   return {
     async send(msg: AlertMessage): Promise<DeliveryResult> {
+      // Multi-tenant safety (Epic 14 follow-up): the sender no longer
+      // falls back to a deployer-wide default chat_id. Every AlertMessage
+      // MUST carry its own `chatId` — otherwise we'd silently re-route a
+      // new user's alerts to the platform owner's chat. Demo agents set
+      // this field via `agents.telegram_chat_id` in the database, not via
+      // an env var.
+      if (typeof msg.chatId !== 'string' || msg.chatId.trim().length === 0) {
+        return {
+          success: false,
+          channel: 'telegram',
+          error: 'no telegram chat_id set for agent',
+        };
+      }
+      const chatId = msg.chatId;
       const text = formatTelegramMessage(msg);
       // Build the URL per call so the token never leaks into a stored value.
       const url = `${apiBase}${config.botToken}/sendMessage`;
-      // Per-message chat_id (Epic 14) overrides the factory default. The
-      // default survives for demo agents that never set telegramChatId.
-      const chatId =
-        typeof msg.chatId === 'string' && msg.chatId.trim().length > 0 ? msg.chatId : config.chatId;
 
       for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
         try {

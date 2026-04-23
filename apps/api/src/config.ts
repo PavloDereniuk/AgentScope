@@ -19,12 +19,20 @@ const envSchema = z.object({
   /** Shared secret for cross-service /internal/* endpoints. */
   INTERNAL_SECRET: z.string().min(32, 'INTERNAL_SECRET must be at least 32 chars'),
   /**
-   * Telegram credentials used by POST /api/agents/:id/test-alert (task 13.7).
-   * Both optional — the endpoint returns `{ok: false, error: '...'}` if either
-   * is missing, so the API stays bootable in environments that don't need
-   * alert delivery (tests, local dev without Telegram).
+   * Telegram bot token used by POST /api/agents/:id/test-alert (task 13.7).
+   * Optional — /test-alert returns 503 when missing, so the API stays
+   * bootable in environments that don't need alert delivery (tests, local
+   * dev without Telegram). Per-agent chat_id rides on each AlertMessage
+   * (Epic 14 multi-tenant safety) — no deployer-wide chat_id fallback.
    */
   TELEGRAM_BOT_TOKEN: z.string().optional(),
+  /**
+   * @deprecated since Epic 14 Phase 1. Per-agent chat_id now travels on
+   * each AlertMessage via `agents.telegram_chat_id`; the sender no longer
+   * falls back to this env var (would re-route new users' alerts to the
+   * platform owner's chat). Kept optional so existing .env files don't
+   * fail validation. Remove after one release cycle.
+   */
   TELEGRAM_DEFAULT_CHAT_ID: z.string().optional(),
 });
 

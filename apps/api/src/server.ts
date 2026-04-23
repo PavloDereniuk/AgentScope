@@ -25,15 +25,13 @@ const db = createDb({
 const verifier = createPrivyVerifier(config.PRIVY_APP_ID, config.PRIVY_APP_SECRET);
 const sseBus = createSseBus(logger);
 
-// Optional Telegram sender — only wired when creds are present. Used by the
-// POST /api/agents/:id/test-alert endpoint (task 13.7). Missing creds →
-// route returns `{ok: false, error: '...'}` instead of failing startup.
+// Optional Telegram sender — only wired when the bot token is present.
+// Used by POST /api/agents/:id/test-alert (task 13.7). Per-agent chat_id
+// rides on each AlertMessage (Epic 14); the sender has no deployer-wide
+// fallback. Missing token → /test-alert returns 503.
 const alerter: DeliverDeps = {};
-if (config.TELEGRAM_BOT_TOKEN && config.TELEGRAM_DEFAULT_CHAT_ID) {
-  alerter.telegram = createTelegramSender({
-    botToken: config.TELEGRAM_BOT_TOKEN,
-    chatId: config.TELEGRAM_DEFAULT_CHAT_ID,
-  });
+if (config.TELEGRAM_BOT_TOKEN) {
+  alerter.telegram = createTelegramSender({ botToken: config.TELEGRAM_BOT_TOKEN });
 }
 
 const app = buildApp({
