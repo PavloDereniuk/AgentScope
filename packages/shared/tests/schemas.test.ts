@@ -83,12 +83,49 @@ describe('solanaPubkeySchema', () => {
 });
 
 describe('solanaSignatureSchema', () => {
-  it('accepts valid base58 signatures', () => {
+  // Boundary fixtures — canonical accept-set is {32,88} from
+  // ../src/signature.ts. Do not loosen without updating every producer
+  // (OTLP receiver, eliza hooks, alerter, dashboard).
+  const MIN_VALID = '1'.repeat(32); // lower bound, all-base58
+  const MAX_VALID = '1'.repeat(88); // upper bound
+  const TOO_SHORT = '1'.repeat(31);
+  const TOO_LONG = '1'.repeat(89);
+
+  it('accepts valid 88-char mainnet signatures', () => {
     expect(solanaSignatureSchema.parse(VALID_SIG)).toBe(VALID_SIG);
+  });
+
+  it('accepts 32-char lower-bound signatures', () => {
+    expect(solanaSignatureSchema.parse(MIN_VALID)).toBe(MIN_VALID);
+  });
+
+  it('accepts 88-char upper-bound signatures', () => {
+    expect(solanaSignatureSchema.parse(MAX_VALID)).toBe(MAX_VALID);
+  });
+
+  it('rejects 31-char signatures', () => {
+    expect(() => solanaSignatureSchema.parse(TOO_SHORT)).toThrow();
+  });
+
+  it('rejects 89-char signatures', () => {
+    expect(() => solanaSignatureSchema.parse(TOO_LONG)).toThrow();
+  });
+
+  it('rejects signatures with non-base58 characters', () => {
+    // 0, O, I, l are excluded from base58 by design (visual ambiguity).
+    expect(() => solanaSignatureSchema.parse(`0${'1'.repeat(31)}`)).toThrow();
+    expect(() => solanaSignatureSchema.parse(`O${'1'.repeat(31)}`)).toThrow();
+    expect(() => solanaSignatureSchema.parse(`I${'1'.repeat(31)}`)).toThrow();
+    expect(() => solanaSignatureSchema.parse(`l${'1'.repeat(31)}`)).toThrow();
   });
 
   it('rejects too-short signatures', () => {
     expect(() => solanaSignatureSchema.parse('abc')).toThrow();
+  });
+
+  it('rejects non-strings', () => {
+    expect(() => solanaSignatureSchema.parse(123)).toThrow();
+    expect(() => solanaSignatureSchema.parse(null)).toThrow();
   });
 });
 

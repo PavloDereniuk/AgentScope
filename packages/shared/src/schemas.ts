@@ -9,6 +9,7 @@
  */
 
 import { z } from 'zod';
+import { SOLANA_SIGNATURE_RE } from './signature';
 import type {
   Agent,
   AgentTransaction,
@@ -46,11 +47,13 @@ export const solanaPubkeySchema = z
   .regex(BASE58_RE, 'must be base58')
   .transform((s) => s as unknown as SolanaPubkey);
 
+// Length bounds {32,88} are encoded in the canonical regex; see
+// ./signature.ts for the rationale (leading-zero base58 compression).
+// All producers (OTLP receiver, eliza hooks, alerter, dashboard, and this
+// schema) must agree on the same accept-set.
 export const solanaSignatureSchema = z
   .string()
-  .min(64)
-  .max(88)
-  .regex(BASE58_RE, 'must be base58')
+  .regex(SOLANA_SIGNATURE_RE, 'must be a valid solana signature')
   .transform((s) => s as unknown as SolanaSignature);
 
 export const uuidSchema = z

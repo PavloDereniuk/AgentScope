@@ -43,7 +43,7 @@ export function SettingsPage() {
   const [selectedId, setSelectedId] = useState<string>('');
   const [webhookError, setWebhookError] = useState<string | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'error'>('idle');
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 
@@ -155,9 +155,13 @@ export function SettingsPage() {
 
   async function copyToken() {
     if (!selected?.ingestToken) return;
-    await navigator.clipboard.writeText(selected.ingestToken);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1400);
+    try {
+      await navigator.clipboard.writeText(selected.ingestToken);
+      setCopyState('copied');
+    } catch {
+      setCopyState('error');
+    }
+    window.setTimeout(() => setCopyState('idle'), 1400);
   }
 
   return (
@@ -276,7 +280,7 @@ export function SettingsPage() {
                     className="inline-flex items-center gap-1 rounded-sm border border-line px-1.5 py-0.5 font-mono text-[10px] text-fg-2 hover:border-fg-3 hover:text-fg disabled:opacity-50"
                   >
                     <Copy className="h-2.5 w-2.5" />
-                    {copied ? 'copied' : 'copy'}
+                    {copyState === 'copied' ? 'copied' : copyState === 'error' ? 'failed' : 'copy'}
                   </button>
                 </div>
                 <p className="mt-2.5 font-mono text-[11px] text-fg-3">

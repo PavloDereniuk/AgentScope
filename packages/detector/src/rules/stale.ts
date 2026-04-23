@@ -10,6 +10,10 @@ import { agentTransactions } from '@agentscope/db';
 import { desc, eq } from 'drizzle-orm';
 import type { CronRuleDef, RuleResult } from '../types';
 
+// 3× threshold → critical. Matches drawdown's escalation; slippage/gas
+// use 5× (swap-path rules tolerate higher overshoot before escalating).
+const CRITICAL_MULTIPLIER = 3;
+
 export const staleRule: CronRuleDef = {
   name: 'stale_agent',
 
@@ -45,7 +49,7 @@ export const staleRule: CronRuleDef = {
 
     return {
       ruleName: 'stale_agent',
-      severity: inactiveMinutes >= thresholdMinutes * 3 ? 'critical' : 'warning',
+      severity: inactiveMinutes >= thresholdMinutes * CRITICAL_MULTIPLIER ? 'critical' : 'warning',
       payload: {
         inactiveMinutes,
         thresholdMinutes,

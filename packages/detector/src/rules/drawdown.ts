@@ -14,6 +14,9 @@ import { and, eq, gte, sql } from 'drizzle-orm';
 import type { CronRuleDef, RuleResult } from '../types';
 
 const WINDOW_MS = 60 * 60 * 1000;
+// 3× threshold → critical. Matches stale_agent's escalation; slippage/gas
+// use 5× (acceptable overshoot is higher for swap-path rules).
+const CRITICAL_MULTIPLIER = 3;
 
 /**
  * MVP reference balance in SOL. Without a balance oracle we assume 1 SOL
@@ -55,7 +58,7 @@ export const drawdownRule: CronRuleDef = {
 
     return {
       ruleName: 'drawdown',
-      severity: drawdownPct >= threshold * 3 ? 'critical' : 'warning',
+      severity: drawdownPct >= threshold * CRITICAL_MULTIPLIER ? 'critical' : 'warning',
       payload: {
         drawdownPct: Math.round(drawdownPct * 100) / 100,
         thresholdPct: threshold,

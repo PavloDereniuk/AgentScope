@@ -11,6 +11,11 @@ import { and, eq, gte, sql } from 'drizzle-orm';
 import type { CronRuleDef, RuleResult } from '../types';
 
 const WINDOW_MS = 60 * 60 * 1000;
+// Error-rate escalates to critical at 2× the threshold — lower than other
+// rules (gas/slippage: 5×, drawdown/stale: 3×) because error-rate is a
+// ratio of failed txs, where 2× overshoot already signals a systemic
+// failure (e.g. RPC outage, program deploy regression).
+const CRITICAL_MULTIPLIER = 2;
 
 export const errorRateRule: CronRuleDef = {
   name: 'error_rate',
@@ -40,7 +45,7 @@ export const errorRateRule: CronRuleDef = {
 
     return {
       ruleName: 'error_rate',
-      severity: ratePct >= threshold * 2 ? 'critical' : 'warning',
+      severity: ratePct >= threshold * CRITICAL_MULTIPLIER ? 'critical' : 'warning',
       payload: {
         ratePct: Math.round(ratePct * 100) / 100,
         thresholdPct: threshold,
