@@ -4,8 +4,19 @@
 > Full-stack observability platform for on-chain AI agents — registry, transaction tracing, OpenTelemetry reasoning logs, rule-based anomaly detection, real-time dashboard, Telegram alerts.
 
 **Repository:** [github.com/PavloDereniuk/AgentScope](https://github.com/PavloDereniuk/AgentScope)
-**Status:** Epics 1–9 complete (~98%), Epic 10 (deploy + submission) in progress.
+**Status:** Live on Railway + Vercel. Epic 10 (submission artifacts) in progress.
 **Deadline:** 2026-05-11 — [Colosseum Frontier AI track](https://arena.colosseum.org/frontier)
+
+## Live
+
+| Service | URL |
+|---|---|
+| Landing | [agentscope-landing.vercel.app](https://agentscope-landing.vercel.app) |
+| Dashboard | [agentscope-dashboard.vercel.app](https://agentscope-dashboard.vercel.app) |
+| API | [agentscope-api-v2-production.up.railway.app](https://agentscope-api-v2-production.up.railway.app/health) |
+| Ingestion | Railway worker (mainnet WebSocket + 60s cron) |
+
+Network: Solana **mainnet**. DB: Supabase Postgres (prod). Auth: Privy.
 
 ---
 
@@ -96,14 +107,17 @@ packages/
   config/       — Shared TypeScript + Biome configs
 
 scripts/        — CLI demo scripts (tsx, workspace package)
-infra/          — Railway + Vercel config (planned)
+apps/api/railway.json          — Railway API service (Nixpacks / Railpack)
+apps/ingestion/railway.json    — Railway ingestion worker
+apps/dashboard/vercel.json     — Vercel SPA config (rewrites, caching)
+docs/DEPLOY.md                 — full deploy runbook + env matrix
 ```
 
 ---
 
 ## REST API (`apps/api`)
 
-Base URL: `http://localhost:3000` (dev) / Railway URL (prod)
+Base URL: `http://localhost:3000` (dev) / `https://agentscope-api-v2-production.up.railway.app` (prod)
 
 ### Public
 
@@ -244,7 +258,7 @@ Sends HTML-formatted messages to a configured chat ID via the Telegram Bot API.
 
 Format: severity badge + rule name + agent ID + payload summary.
 
-Config: `TELEGRAM_BOT_TOKEN` + `TELEGRAM_DEFAULT_CHAT_ID` env vars.
+Config: `TELEGRAM_BOT_TOKEN` env var (bot-level). Per-agent `chat_id` rides on each `AlertMessage` via `agents.telegram_chat_id` — no deployer-wide fallback (Epic 14 multi-tenant safety).
 
 ### Discord / Slack (stubbed, post-MVP)
 
@@ -297,7 +311,7 @@ pnpm add @agentscopehq/elizaos-plugin@alpha
 import { initAgentScope, wrapActions } from '@agentscopehq/elizaos-plugin';
 
 const sdk = initAgentScope({
-  apiUrl: 'https://your-api.railway.app',
+  apiUrl: 'https://agentscope-api-v2-production.up.railway.app',
   agentToken: process.env.AGENTSCOPE_AGENT_TOKEN,
 });
 
@@ -335,7 +349,7 @@ pnpm add @agentscopehq/agent-kit-sdk@alpha
 import { initAgentScope, traced } from '@agentscopehq/agent-kit-sdk';
 
 const sdk = initAgentScope({
-  apiUrl: 'https://your-api.railway.app',
+  apiUrl: 'https://agentscope-api-v2-production.up.railway.app',
   agentToken: process.env.AGENTSCOPE_AGENT_TOKEN,
 });
 
@@ -412,26 +426,34 @@ Partitioning: `agent_transactions` partitioned by `block_time` RANGE, monthly. C
 
 ## Environment Variables
 
-```bash
-# Database
-DATABASE_URL=postgresql://...        # Supabase connection string
+See [`docs/DEPLOY.md`](./docs/DEPLOY.md) for the full matrix per service. Minimal local `.env`:
 
-# Solana
+```bash
+# Database (Supabase Postgres Transaction Pooler)
+DATABASE_URL=postgresql://postgres.xxx:PASSWORD@aws-…:6543/postgres
+
+# Solana (Helius free tier — mainnet)
 HELIUS_API_KEY=...
 SOLANA_RPC_URL=https://mainnet.helius-rpc.com/?api-key=...
+SOLANA_NETWORK=mainnet
 
-# Auth
+# Auth (Privy — matching dashboard origin in Allowed Origins)
 PRIVY_APP_ID=...
 PRIVY_APP_SECRET=...
-VITE_PRIVY_APP_ID=...                # Frontend
+VITE_PRIVY_APP_ID=...                # exposed at build time for the SPA
 
-# Alerting
+# Internal cross-service secret (≥32 chars, shared by api + ingestion)
+INTERNAL_SECRET=...
+
+# Alerting (per-agent chat_id stored in DB — no deployer fallback)
 TELEGRAM_BOT_TOKEN=...
-TELEGRAM_DEFAULT_CHAT_ID=...
 
-# Landing (optional)
-PUBLIC_DASHBOARD_URL=https://...
+# Frontend wiring
+VITE_API_BASE_URL=http://localhost:3000
+VITE_LANDING_URL=http://localhost:4321
 ```
+
+⚠️ `TELEGRAM_DEFAULT_CHAT_ID` is deprecated since Epic 14 Phase 1 — do **not** set it in production. Per-agent `chat_id` now travels on each `AlertMessage`; setting the env var in prod would re-route every new tenant's alerts into the deployer's personal chat.
 
 ---
 
@@ -457,6 +479,23 @@ pnpm --filter @agentscope/landing dev      # port 4321
 pnpm --filter @agentscope/db db:generate   # generate migrations
 pnpm --filter @agentscope/db db:push       # push to Supabase
 ```
+
+---
+
+## Deployment
+
+See [`docs/DEPLOY.md`](./docs/DEPLOY.md) for the full deploy runbook (env var matrix, Railway + Vercel setup, Supabase RLS check).
+
+**Infrastructure today:**
+
+| Layer | Where | Why |
+|---|---|---|
+| API + Ingestion | Railway Hobby | Long-running Node processes, internal DNS between services |
+| Dashboard + Landing | Vercel Hobby | Edge CDN, zero-config Vite/Astro, free tier |
+| Postgres | Supabase Free | 500MB + RLS built-in, managed backups |
+| Alerts | Telegram Bot API | Zero infra, per-agent `chat_id` (Epic 14 multi-tenant) |
+
+API + ingestion share the same `DATABASE_URL` (Supabase Transaction Pooler, port 6543); ingestion also calls API via public URL for `POST /internal/publish` SSE events.
 
 ---
 
