@@ -117,6 +117,30 @@ export function OverviewPage() {
     });
   }, [alerts]);
 
+  // Serializes the current in-memory Overview state (KPIs + full agent
+  // list + recent alerts) to a JSON blob and triggers a browser download.
+  // Intentionally reuses data react-query already has — no extra round-trip,
+  // so the file matches pixel-for-pixel what the user is looking at.
+  function handleExport() {
+    const snapshot = {
+      generatedAt: new Date().toISOString(),
+      stats: stats ?? null,
+      agents,
+      alerts,
+    };
+    const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `agentscope-overview-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  const canExport = statsQuery.isSuccess || agentsQuery.isSuccess || alertsQuery.isSuccess;
+
   // Rank by 24h activity (task 13.4). Ties broken by lastSeenAt so idle
   // agents still order deterministically under an all-zero window.
   const topAgents = [...agents]
@@ -142,7 +166,13 @@ export function OverviewPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <button type="button" className={btnGhost}>
+          <button
+            type="button"
+            onClick={handleExport}
+            disabled={!canExport}
+            title="Download a JSON snapshot of the current Overview state"
+            className={cn(btnGhost, 'disabled:opacity-50 disabled:cursor-not-allowed')}
+          >
             <Download className="h-3.5 w-3.5" />
             <span>Export</span>
           </button>
