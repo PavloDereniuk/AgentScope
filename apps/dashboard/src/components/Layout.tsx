@@ -1,4 +1,5 @@
 import { Outlet } from 'react-router-dom';
+import { CommandPalette } from './CommandPalette';
 import { Sidebar } from './shell/Sidebar';
 import { TopBar } from './shell/TopBar';
 
@@ -12,6 +13,7 @@ export function Layout() {
           <Outlet />
         </div>
       </main>
+      <CommandPalette />
     </div>
   );
 }
