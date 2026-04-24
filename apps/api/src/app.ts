@@ -24,6 +24,7 @@ import { createAgentsRouter } from './routes/agents';
 import { createAlertsRouter } from './routes/alerts';
 import { createOtlpRouter } from './routes/otlp';
 import { createReasoningRouter } from './routes/reasoning';
+import { createSearchRouter } from './routes/search';
 import { createStatsRouter } from './routes/stats';
 import { createTransactionsRouter } from './routes/transactions';
 
@@ -76,6 +77,7 @@ export function buildApp(deps: AppDeps) {
   api.route('/alerts', createAlertsRouter(deps.db));
   api.route('/stats', createStatsRouter(deps.db));
   api.route('/reasoning', createReasoningRouter(deps.db));
+  api.route('/search', createSearchRouter(deps.db));
 
   app.route('/api', api);
 
