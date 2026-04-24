@@ -263,3 +263,250 @@ describe('GET /api/stats/overview', () => {
     });
   });
 });
+
+interface TimeseriesPoint {
+  t: string;
+  value: number | string | null;
+}
+interface TimeseriesBody {
+  window: '24h' | '7d';
+  bucket: '1h' | '1d';
+  metric: 'tx' | 'solDelta' | 'successRate';
+  points: TimeseriesPoint[];
+}
+
+function getTimeseries(ctx: TestApp, query = '', token = BEARER) {
+  return ctx.app.request(`/api/stats/timeseries${query}`, { headers: { Authorization: token } });
+}
+
+describe('GET /api/stats/timeseries', () => {
+  let ctx: TestApp;
+
+  beforeEach(async () => {
+    ctx = await setup();
+  });
+
+  afterEach(async () => {
+    await ctx.testDb.close();
+  });
+
+  it('rejects unauthenticated requests with 401', async () => {
+    const res = await ctx.app.request('/api/stats/timeseries');
+    expect(res.status).toBe(401);
+  });
+
+  it('rejects invalid window/bucket/metric with 422', async () => {
+    const bad = await getTimeseries(ctx, '?window=1m');
+    expect(bad.status).toBe(422);
+    const bad2 = await getTimeseries(ctx, '?bucket=5m');
+    expect(bad2.status).toBe(422);
+    const bad3 = await getTimeseries(ctx, '?metric=pnl');
+    expect(bad3.status).toBe(422);
+  });
+
+  it('defaults to window=24h bucket=1h metric=tx and returns 24 or 25 dense zero-filled points', async () => {
+    const res = await getTimeseries(ctx);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as TimeseriesBody;
+    expect(body.window).toBe('24h');
+    expect(body.bucket).toBe('1h');
+    expect(body.metric).toBe('tx');
+    // Window is exactly 24h but `now` usually sits inside an hour — the
+    // grid from `date_trunc('hour', since)` to `date_trunc('hour', now)`
+    // is therefore 24 or 25 points depending on the minute of the hour.
+    expect(body.points.length).toBeGreaterThanOrEqual(24);
+    expect(body.points.length).toBeLessThanOrEqual(25);
+    // Every point must be zero-filled (no agents seeded).
+    for (const p of body.points) {
+      expect(p.value).toBe(0);
+    }
+  });
+
+  it('aggregates tx counts per hour bucket', async () => {
+    const agent = await createAgent(ctx, 'A', 'So11111111111111111111111111111111111111112');
+    // Anchor on the previous hour boundary so the two "same bucket" tx are
+    // guaranteed to share `date_trunc('hour', ts)` regardless of the current
+    // minute-of-hour. Picking relative offsets from `now` would collapse
+    // into one bucket if `now` sat late in an hour, and split into two if
+    // `now` sat early — flaky either way.
+    const nowMs = Date.now();
+    const hourMs = 60 * 60 * 1000;
+    const currentHourStart = nowMs - (nowMs % hourMs);
+    const prevHourStart = currentHourStart - hourMs;
+    const sameBucket1 = new Date(prevHourStart + 5 * 60 * 1000).toISOString();
+    const sameBucket2 = new Date(prevHourStart + 30 * 60 * 1000).toISOString();
+    const threeHoursAgo = new Date(prevHourStart - 3 * hourMs + 10 * 60 * 1000).toISOString();
+
+    await ctx.testDb.db.insert(agentTransactions).values([
+      {
+        agentId: agent.id,
+        signature: 'sig-a',
+        slot: 100,
+        blockTime: sameBucket1,
+        programId: '11111111111111111111111111111111',
+        solDelta: '0.100000000',
+        success: true,
+      },
+      {
+        agentId: agent.id,
+        signature: 'sig-b',
+        slot: 101,
+        blockTime: sameBucket2,
+        programId: '11111111111111111111111111111111',
+        solDelta: '0.200000000',
+        success: false,
+      },
+      {
+        agentId: agent.id,
+        signature: 'sig-c',
+        slot: 102,
+        blockTime: threeHoursAgo,
+        programId: '11111111111111111111111111111111',
+        solDelta: '0.300000000',
+        success: true,
+      },
+    ]);
+
+    const res = await getTimeseries(ctx, '?metric=tx');
+    const body = (await res.json()) as TimeseriesBody;
+    const nonZero = body.points.filter((p) => p.value !== 0);
+    // Two distinct hour buckets had tx: the 1h-ago bucket (2 tx) and the 3h-ago bucket (1 tx).
+    expect(nonZero).toHaveLength(2);
+    const values = nonZero.map((p) => p.value).sort();
+    expect(values).toEqual([1, 2]);
+    // Total across all points equals the total tx we seeded.
+    const total = body.points.reduce((sum, p) => sum + (typeof p.value === 'number' ? p.value : 0), 0);
+    expect(total).toBe(3);
+  });
+
+  it('returns solDelta as numeric strings, preserving lamport precision', async () => {
+    const agent = await createAgent(ctx, 'A', 'So11111111111111111111111111111111111111112');
+    const now = new Date();
+    const inside = new Date(now.getTime() - 1 * 60 * 60 * 1000).toISOString();
+
+    await ctx.testDb.db.insert(agentTransactions).values([
+      {
+        agentId: agent.id,
+        signature: 'sig-1',
+        slot: 100,
+        blockTime: inside,
+        programId: '11111111111111111111111111111111',
+        solDelta: '0.123456789',
+        success: true,
+      },
+      {
+        agentId: agent.id,
+        signature: 'sig-2',
+        slot: 101,
+        blockTime: inside,
+        programId: '11111111111111111111111111111111',
+        solDelta: '0.000000001',
+        success: true,
+      },
+    ]);
+
+    const res = await getTimeseries(ctx, '?metric=solDelta');
+    const body = (await res.json()) as TimeseriesBody;
+    const nonZero = body.points.filter((p) => p.value !== '0' && p.value !== 0);
+    expect(nonZero).toHaveLength(1);
+    // Stored as string so 9 decimals survive the JSON round-trip.
+    expect(typeof nonZero[0]?.value).toBe('string');
+    expect(Number.parseFloat(nonZero[0]?.value as string)).toBeCloseTo(0.12345679, 8);
+  });
+
+  it('successRate is null in empty buckets and a ratio elsewhere', async () => {
+    const agent = await createAgent(ctx, 'A', 'So11111111111111111111111111111111111111112');
+    const now = new Date();
+    const inside = new Date(now.getTime() - 1 * 60 * 60 * 1000).toISOString();
+
+    await ctx.testDb.db.insert(agentTransactions).values([
+      {
+        agentId: agent.id,
+        signature: 'sig-ok',
+        slot: 100,
+        blockTime: inside,
+        programId: '11111111111111111111111111111111',
+        solDelta: '0.1',
+        success: true,
+      },
+      {
+        agentId: agent.id,
+        signature: 'sig-fail',
+        slot: 101,
+        blockTime: inside,
+        programId: '11111111111111111111111111111111',
+        solDelta: '0.1',
+        success: false,
+      },
+    ]);
+
+    const res = await getTimeseries(ctx, '?metric=successRate');
+    const body = (await res.json()) as TimeseriesBody;
+    const withData = body.points.filter((p) => p.value !== null);
+    const withoutData = body.points.filter((p) => p.value === null);
+    expect(withData).toHaveLength(1);
+    expect(withData[0]?.value).toBeCloseTo(0.5, 6);
+    // Every other bucket must carry null — a bucket with zero tx has no rate.
+    expect(withoutData.length).toBeGreaterThan(0);
+  });
+
+  it('7d/1d window returns 7 or 8 daily points', async () => {
+    const res = await getTimeseries(ctx, '?window=7d&bucket=1d');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as TimeseriesBody;
+    expect(body.window).toBe('7d');
+    expect(body.bucket).toBe('1d');
+    expect(body.points.length).toBeGreaterThanOrEqual(7);
+    expect(body.points.length).toBeLessThanOrEqual(8);
+  });
+
+  it('excludes tx outside the window', async () => {
+    const agent = await createAgent(ctx, 'A', 'So11111111111111111111111111111111111111112');
+    const now = new Date();
+    const outside = new Date(now.getTime() - 48 * 60 * 60 * 1000).toISOString();
+
+    await ctx.testDb.db.insert(agentTransactions).values({
+      agentId: agent.id,
+      signature: 'sig-old',
+      slot: 100,
+      blockTime: outside,
+      programId: '11111111111111111111111111111111',
+      solDelta: '99.000000000',
+      success: true,
+    });
+
+    const res = await getTimeseries(ctx, '?window=24h&bucket=1h&metric=tx');
+    const body = (await res.json()) as TimeseriesBody;
+    for (const p of body.points) expect(p.value).toBe(0);
+  });
+
+  it("never counts another user's tx", async () => {
+    const aliceAgent = await createAgent(
+      ctx,
+      'Alice',
+      'So11111111111111111111111111111111111111112',
+    );
+    const inside = new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString();
+    await ctx.testDb.db.insert(agentTransactions).values({
+      agentId: aliceAgent.id,
+      signature: 'alice-sig',
+      slot: 100,
+      blockTime: inside,
+      programId: '11111111111111111111111111111111',
+      solDelta: '1.0',
+      success: true,
+    });
+
+    const bobApp = buildApp({
+      db: ctx.testDb.db,
+      verifier: makeVerifier('did:privy:user-bob'),
+      sseBus: createSseBus(),
+      logger: silentLogger,
+    });
+    const res = await bobApp.request('/api/stats/timeseries?metric=tx', {
+      headers: { Authorization: BEARER },
+    });
+    const body = (await res.json()) as TimeseriesBody;
+    for (const p of body.points) expect(p.value).toBe(0);
+  });
+});
