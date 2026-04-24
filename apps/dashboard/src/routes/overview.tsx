@@ -3,6 +3,7 @@ import { LiveTicker, type TickerItem, type TickerKind } from '@/components/LiveT
 import { Sparkline } from '@/components/Sparkline';
 import { apiClient } from '@/lib/api-client';
 import { useTimeseries } from '@/lib/use-timeseries';
+import { useUserStream } from '@/lib/use-user-stream';
 import { cn } from '@/lib/utils';
 import type { Alert } from '@agentscope/shared';
 import { useQuery } from '@tanstack/react-query';
@@ -46,6 +47,14 @@ const ALERT_LIMIT = 20;
  * `alerts` keys automatically refresh the KPIs — no extra wiring needed.
  */
 export function OverviewPage() {
+  // 13.14: subscribe to /api/stream so tx/alert events push
+  // invalidations into react-query. Prior to this, alerts and stats
+  // refetched every 30s; with SSE in place the ticker now updates in
+  // well under a second and the poll is gone. Background tabs still
+  // refresh on refocus via react-query's built-in refetchOnWindowFocus,
+  // and the hook reconnects with exponential backoff on any drop.
+  useUserStream();
+
   const agentsQuery = useQuery({
     queryKey: ['agents'],
     queryFn: () => apiClient.get<{ agents: AgentRow[] }>('/api/agents'),
@@ -54,13 +63,11 @@ export function OverviewPage() {
   const alertsQuery = useQuery({
     queryKey: ['alerts', { limit: ALERT_LIMIT }],
     queryFn: () => apiClient.get<{ alerts: AlertRow[] }>(`/api/alerts?limit=${ALERT_LIMIT}`),
-    refetchInterval: 30_000,
   });
 
   const statsQuery = useQuery({
     queryKey: ['stats', 'overview'],
     queryFn: () => apiClient.get<OverviewStats>('/api/stats/overview'),
-    refetchInterval: 30_000,
   });
 
   const txSeries = useTimeseries({ metric: 'tx' });
