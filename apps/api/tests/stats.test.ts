@@ -376,7 +376,10 @@ describe('GET /api/stats/timeseries', () => {
     const values = nonZero.map((p) => p.value).sort();
     expect(values).toEqual([1, 2]);
     // Total across all points equals the total tx we seeded.
-    const total = body.points.reduce((sum, p) => sum + (typeof p.value === 'number' ? p.value : 0), 0);
+    const total = body.points.reduce(
+      (sum, p) => sum + (typeof p.value === 'number' ? p.value : 0),
+      0,
+    );
     expect(total).toBe(3);
   });
 
@@ -526,7 +529,7 @@ describe('GET /api/stats/timeseries', () => {
     expect(perAgentTotal).toBe(1);
   });
 
-  it("does not leak across tenants even when agentId is known", async () => {
+  it('does not leak across tenants even when agentId is known', async () => {
     const aliceAgent = await createAgent(
       ctx,
       'Alice',

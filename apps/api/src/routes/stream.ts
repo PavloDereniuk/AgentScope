@@ -21,8 +21,8 @@
 
 import type { Database } from '@agentscope/db';
 import { Hono } from 'hono';
-import { ensureUser } from '../lib/users';
 import type { SseBus } from '../lib/sse-bus';
+import { ensureUser } from '../lib/users';
 import type { ApiEnv } from '../middleware/auth';
 
 const KEEPALIVE_MS = 30_000;

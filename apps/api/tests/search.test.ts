@@ -263,7 +263,9 @@ describe('GET /api/search', () => {
     // each 44 chars to stay within the schema bounds.
     const base58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
     for (let i = 0; i < 25; i++) {
-      const wallet = `So${base58[i % base58.length]!.repeat(42)}`;
+      const ch = base58[i % base58.length];
+      if (!ch) throw new Error('base58 index out of range');
+      const wallet = `So${ch.repeat(42)}`;
       await createAgent(ctx, `${shared}-${i}`, wallet);
     }
 

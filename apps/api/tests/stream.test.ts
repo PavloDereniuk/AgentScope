@@ -12,7 +12,6 @@
  */
 
 import { agents } from '@agentscope/db';
-import { eq } from 'drizzle-orm';
 import pino from 'pino';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/index';
@@ -114,7 +113,7 @@ describe('GET /api/stream', () => {
     expect(res.status).toBe(401);
   });
 
-  it('delivers events from any of the user\'s agents', async () => {
+  it("delivers events from any of the user's agents", async () => {
     // Seed two agents for the same user and open a single /api/stream.
     // Both events must reach the handler because fan-out is keyed on
     // userId, not agentId.
@@ -141,18 +140,19 @@ describe('GET /api/stream', () => {
         ingestToken: 'tok-a2',
       })
       .returning({ id: agents.id });
+    if (!a1 || !a2) throw new Error('seed agents failed');
 
     const events = await collectEvents(ctx.app, 2, () => {
       ctx.bus.publish({
         type: 'tx.new',
-        agentId: a1!.id,
+        agentId: a1.id,
         userId: user.id,
         signature: 'sig-1',
         at: new Date().toISOString(),
       });
       ctx.bus.publish({
         type: 'tx.new',
-        agentId: a2!.id,
+        agentId: a2.id,
         userId: user.id,
         signature: 'sig-2',
         at: new Date().toISOString(),
@@ -160,10 +160,10 @@ describe('GET /api/stream', () => {
     });
 
     expect(events).toHaveLength(2);
-    expect(events.map((e) => e.agentId).sort()).toEqual([a1!.id, a2!.id].sort());
+    expect(events.map((e) => e.agentId).sort()).toEqual([a1.id, a2.id].sort());
   });
 
-  it("picks up a newly-created agent without reconnect", async () => {
+  it('picks up a newly-created agent without reconnect', async () => {
     // Open the stream with zero agents for this user, then insert a
     // fresh agent row and publish an event for it. The global bus
     // subscription is keyed on userId, so the event reaches the
@@ -182,9 +182,10 @@ describe('GET /api/stream', () => {
           ingestToken: 'tok-fresh',
         })
         .returning({ id: agents.id });
+      if (!fresh) throw new Error('seed fresh agent failed');
       ctx.bus.publish({
         type: 'tx.new',
-        agentId: fresh!.id,
+        agentId: fresh.id,
         userId: user.id,
         signature: 'sig-late',
         at: new Date().toISOString(),
@@ -214,7 +215,8 @@ describe('GET /api/stream', () => {
       headers: { Authorization: BEARER },
       signal: controller.signal,
     });
-    const reader = res.body!.getReader();
+    if (!res.body) throw new Error('bob stream has no body');
+    const reader = res.body.getReader();
     const decoder = new TextDecoder();
 
     // Consume the handshake so the subscription is definitely active
@@ -248,7 +250,9 @@ describe('GET /api/stream', () => {
     }
 
     // If a frame did arrive, it had better not be Alice's tx.
-    const chunk = decoder.decode(raceResult.got!.value);
+    const arrived = raceResult.got;
+    if (!arrived) throw new Error('non-timeout branch but no frame value');
+    const chunk = decoder.decode(arrived.value);
     expect(chunk).not.toContain('alice-sig');
     // Reference bobUser to quiet the unused-variable lint without
     // weakening the assertion above.
