@@ -54,6 +54,15 @@ const envSchema = z.object({
    * Example: `https://agentscope-dashboard.vercel.app,https://agentscope.vercel.app`.
    */
   DASHBOARD_ORIGINS: z.string().optional().default(''),
+  /**
+   * Hard cap on agents one user can own (Epic 14 Phase 3 — abuse
+   * hardening). Stops a single Privy account from sink-holing the
+   * Helius free-tier budget and Supabase row budget during the public
+   * beta. Default 2 is tight but honest — real users can delete an
+   * agent to register another; in-repo demo walkthroughs never need
+   * more than 2 concurrent agents.
+   */
+  MAX_AGENTS_PER_USER: z.coerce.number().int().positive().default(2),
 });
 
 export type Config = z.infer<typeof envSchema>;

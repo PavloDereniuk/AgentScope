@@ -17,6 +17,7 @@
 import { createTelegramSender } from '@agentscope/alerter';
 import type { DefaultThresholds } from '@agentscope/detector';
 import { getKaminoLoadWarnings } from '@agentscope/parser';
+import { createAdminTelegramSender, startAbuseMonitor } from './abuse-monitor';
 import { backfillWallet } from './backfill';
 import { loadConfig } from './config';
 import { startCron } from './cron';
@@ -185,6 +186,21 @@ async function main(): Promise<void> {
   });
   logger.info('cron evaluator started');
 
+  // 14.16 — abuse signup-spike monitor. Runs even without Telegram creds
+  // (logs-only mode) so local dev still shows the signal; production
+  // alerts when TELEGRAM_BOT_TOKEN + TELEGRAM_ADMIN_CHAT_ID are both
+  // set.
+  const adminSender =
+    config.TELEGRAM_BOT_TOKEN && config.TELEGRAM_ADMIN_CHAT_ID
+      ? createAdminTelegramSender(config.TELEGRAM_BOT_TOKEN, config.TELEGRAM_ADMIN_CHAT_ID)
+      : undefined;
+  const abuseMonitor = startAbuseMonitor({
+    db,
+    logger,
+    ...(adminSender ? { sendAdminMessage: adminSender } : {}),
+  });
+  logger.info({ adminAlerts: Boolean(adminSender) }, 'abuse monitor started');
+
   // Start Telegram bot long-poll worker for the /start <code> deep-link
   // flow (Epic 14 Phase 2). Skipped when no bot token is configured —
   // the dashboard's "Link Telegram" button degrades to a manual chat_id
@@ -222,6 +238,7 @@ async function main(): Promise<void> {
     logger.info({ signal }, 'shutting down');
     clearInterval(reconcileTimer);
     cron.stop();
+    abuseMonitor.stop();
     registry.stop();
     Promise.resolve(reconciling)
       .catch(() => undefined)

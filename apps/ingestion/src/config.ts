@@ -31,6 +31,14 @@ const envSchema = z.object({
   /** Telegram bot token (BotFather). Required to deliver alerts via Telegram. */
   TELEGRAM_BOT_TOKEN: z.string().min(1).optional(),
   /**
+   * Chat where platform-wide admin notifications go (Epic 14 Phase 3
+   * task 14.16 — abuse signup-spike alert). Unset in dev/tests → the
+   * abuse monitor runs in log-only mode without emitting a Telegram
+   * message. Must NOT reuse `TELEGRAM_DEFAULT_CHAT_ID`: the admin chat
+   * is for ops pings, not for re-routing user alerts.
+   */
+  TELEGRAM_ADMIN_CHAT_ID: z.string().min(1).optional(),
+  /**
    * @deprecated since Epic 14 Phase 1. Per-agent chat_id now travels on
    * each AlertMessage via `agents.telegram_chat_id`; the sender no longer
    * falls back to this env var (would re-route new users' alerts to the

@@ -1220,3 +1220,128 @@ describe('GET /api/agents/:id/transactions', () => {
     ]);
   });
 });
+
+// Epic 14 Phase 3 — hard cap on agents per user (task 14.14). Separate
+// describe so we can override maxAgentsPerUser without touching the
+// default `setup()` helper the rest of the suite relies on.
+describe('POST /api/agents — per-user cap', () => {
+  async function setupWithCap(max: number): Promise<TestApp> {
+    const testDb = await createTestDatabase();
+    const app = buildApp({
+      db: testDb.db,
+      verifier: makeVerifier(),
+      sseBus: createSseBus(),
+      logger: silentLogger,
+      maxAgentsPerUser: max,
+    });
+    return { app, testDb };
+  }
+
+  function createBody(i: number) {
+    const BASE58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+    return JSON.stringify({
+      walletPubkey: `${BASE58[i % BASE58.length]}${'1'.repeat(31)}`,
+      name: `Agent ${i}`,
+      framework: 'custom',
+      agentType: 'other',
+    });
+  }
+
+  it('allows up to cap and rejects the (cap+1)-th with 403', async () => {
+    const ctx = await setupWithCap(2);
+    try {
+      for (let i = 0; i < 2; i++) {
+        const res = await ctx.app.request('/api/agents', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: BEARER },
+          body: createBody(i),
+        });
+        expect(res.status, `create ${i}`).toBe(201);
+      }
+      const blocked = await ctx.app.request('/api/agents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: BEARER },
+        body: createBody(2),
+      });
+      expect(blocked.status).toBe(403);
+      const body = (await blocked.json()) as { error: { message: string } };
+      expect(body.error.message).toMatch(/limit.*2/);
+    } finally {
+      await ctx.testDb.close();
+    }
+  });
+
+  it('below cap still returns 201 (regression guard)', async () => {
+    const ctx = await setupWithCap(5);
+    try {
+      const res = await ctx.app.request('/api/agents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: BEARER },
+        body: createBody(0),
+      });
+      expect(res.status).toBe(201);
+    } finally {
+      await ctx.testDb.close();
+    }
+  });
+
+  it('caps are scoped per user — user B is unaffected by user A hitting cap', async () => {
+    const testDb = await createTestDatabase();
+    try {
+      // Two separate Privy DIDs, toggled per request via a closure over
+      // the verifier — keeps the cap scoped to users.id, not shared.
+      let currentUser = 'did:privy:cap-A';
+      const verifier: AuthVerifier = {
+        async verify() {
+          return { userId: currentUser };
+        },
+      };
+      const app = buildApp({
+        db: testDb.db,
+        verifier,
+        sseBus: createSseBus(),
+        logger: silentLogger,
+        maxAgentsPerUser: 1,
+      });
+
+      // A fills cap
+      const aFirst = await app.request('/api/agents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: BEARER },
+        body: createBody(0),
+      });
+      expect(aFirst.status).toBe(201);
+      const aBlocked = await app.request('/api/agents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: BEARER },
+        body: createBody(1),
+      });
+      expect(aBlocked.status).toBe(403);
+
+      // B starts fresh, should still be allowed
+      currentUser = 'did:privy:cap-B';
+      const bFirst = await app.request('/api/agents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: BEARER },
+        body: createBody(2),
+      });
+      expect(bFirst.status).toBe(201);
+    } finally {
+      await testDb.close();
+    }
+  });
+
+  it('GET /api/agents exposes maxAgents so the dashboard can hide Add button at cap', async () => {
+    const ctx = await setupWithCap(2);
+    try {
+      const res = await ctx.app.request('/api/agents', {
+        headers: { Authorization: BEARER },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { agents: unknown[]; maxAgents: number | null };
+      expect(body.maxAgents).toBe(2);
+    } finally {
+      await ctx.testDb.close();
+    }
+  });
+});

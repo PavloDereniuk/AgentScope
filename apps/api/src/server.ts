@@ -41,6 +41,11 @@ if (config.TELEGRAM_BOT_TOKEN) {
 // MVP scale (one container).
 const agentCreateLimiter = createRateLimiter({ limit: 10, windowMs: 60 * 60_000 });
 const otlpLimiter = createRateLimiter({ limit: 100, windowMs: 60_000 });
+// 14.15 — per-IP signup throttle (3 / 24h). Layered in front of the
+// per-user limiter so one IP churning through fresh Privy DIDs still
+// gets 429'd. Railway proxies expose the client IP via x-forwarded-for;
+// local dev without a reverse proxy sees null and skips the check.
+const agentCreateIpLimiter = createRateLimiter({ limit: 3, windowMs: 24 * 60 * 60_000 });
 
 // Parse DASHBOARD_ORIGINS once at boot — trim whitespace and drop
 // empties so a stray comma in the env var doesn't whitelist `''`
@@ -57,7 +62,9 @@ const app = buildApp({
   internalSecret: config.INTERNAL_SECRET,
   alerter,
   agentCreateLimiter,
+  agentCreateIpLimiter,
   otlpLimiter,
+  maxAgentsPerUser: config.MAX_AGENTS_PER_USER,
   ...(config.TELEGRAM_BOT_USERNAME ? { telegramBotUsername: config.TELEGRAM_BOT_USERNAME } : {}),
   ...(allowedOrigins.length > 0 ? { allowedOrigins } : {}),
   logger,

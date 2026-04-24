@@ -25,7 +25,7 @@ import { type Database, agentTransactions, agents, alerts, reasoningLogs } from 
 import { createAgentInputSchema, updateAgentInputSchema } from '@agentscope/shared';
 import { zValidator } from '@hono/zod-validator';
 import { and, asc, desc, eq, gte, lt, lte, or, sql } from 'drizzle-orm';
-import { Hono } from 'hono';
+import { type Context, Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 import { decodeTxCursor, encodeTxCursor } from '../lib/cursor';
@@ -94,6 +94,46 @@ const txListQuerySchema = z
     path: ['from'],
   });
 
+/**
+ * Options grouping the abuse-hardening knobs for the agents router
+ * (Epic 14 Phase 3). Separate from the positional primary deps so tests
+ * can opt-in selectively without threading `undefined` through.
+ */
+export interface AgentsRouterOptions {
+  /**
+   * Hard cap on agents one Privy user can own. Enforced server-side
+   * before the INSERT in POST /. Omitted (or positive infinity) means
+   * no cap — tests can create unlimited agents without overriding env.
+   */
+  maxAgentsPerUser?: number;
+  /**
+   * Per-IP rate limiter mounted as the *first* middleware on POST / so
+   * signup floods from one IP are rejected before they consume the
+   * per-user budget. Key derivation lives in this module (x-forwarded-
+   * for → cf-connecting-ip → null). Absent → no IP throttling.
+   */
+  ipLimiter?: RateLimiter;
+}
+
+/**
+ * Extract the best-guess client IP from the request. Railway sits
+ * behind its own proxy and exposes the chain via `x-forwarded-for`
+ * (first entry is the originating client); Cloudflare-fronted deploys
+ * use `cf-connecting-ip`. Returns `null` when neither header is set —
+ * the middleware treats that as "skip limiter", so the per-user cap
+ * remains the last line of defense.
+ */
+function getClientIp(c: Context<ApiEnv>): string | null {
+  const xff = c.req.header('x-forwarded-for');
+  if (xff) {
+    const first = xff.split(',')[0]?.trim();
+    if (first) return first;
+  }
+  const cf = c.req.header('cf-connecting-ip');
+  if (cf) return cf.trim();
+  return null;
+}
+
 export function createAgentsRouter(
   db: Database,
   sseBus: SseBus,
@@ -104,11 +144,17 @@ export function createAgentsRouter(
    * production. Tests omit it for fast batch seeding.
    */
   createLimiter?: RateLimiter,
+  options: AgentsRouterOptions = {},
 ) {
   const router = new Hono<ApiEnv>();
+  const maxAgentsPerUser = options.maxAgentsPerUser ?? Number.POSITIVE_INFINITY;
 
   router.post(
     '/',
+    // 14.15 — IP layer sits *before* the per-user limiter so one IP
+    // rotating through fresh Privy DIDs can't slip past the budget by
+    // minting new userIds between requests.
+    rateLimitMiddleware(options.ipLimiter ?? NOOP_RATE_LIMITER, getClientIp),
     rateLimitMiddleware(createLimiter ?? NOOP_RATE_LIMITER, (c) => c.get('userId') ?? null),
     zValidator('json', createAgentInputSchema, (result) => {
       if (!result.success) {
@@ -123,6 +169,28 @@ export function createAgentsRouter(
       const body = c.req.valid('json');
 
       const user = await ensureUser(db, privyDid);
+
+      // 14.14 — hard cap per user. Checked *after* ensureUser so the
+      // count includes a brand-new user's zero-row state (first agent
+      // always allowed). The window is non-atomic with the INSERT —
+      // concurrent requests from the same user could in theory both
+      // pass the count check and land two rows over the cap. At MVP
+      // scale (one browser, few clicks) this is acceptable; tightening
+      // would require a `SELECT ... FOR UPDATE` or a Postgres
+      // check-by-trigger, both overkill for a defense-in-depth cap
+      // whose real job is to stop 100× signups, not 3rd-agent races.
+      if (Number.isFinite(maxAgentsPerUser)) {
+        const [row] = await db
+          .select({ count: sql<number>`cast(count(*) as int)` })
+          .from(agents)
+          .where(eq(agents.userId, user.id));
+        const current = row?.count ?? 0;
+        if (current >= maxAgentsPerUser) {
+          throw new HTTPException(403, {
+            message: `agent limit reached (${maxAgentsPerUser} per user)`,
+          });
+        }
+      }
 
       const [agent] = await db
         .insert(agents)
@@ -194,7 +262,12 @@ export function createAgentsRouter(
       };
     });
 
-    return c.json({ agents: enriched });
+    // Expose the per-user cap so the dashboard can proactively hide
+    // the "Register agent" button at cap instead of letting the user
+    // click through to a 403. `null` means unlimited (tests; omitted
+    // env var would yield the default 2, not infinity, in production).
+    const maxAgents = Number.isFinite(maxAgentsPerUser) ? maxAgentsPerUser : null;
+    return c.json({ agents: enriched, maxAgents });
   });
 
   // 3.7 — Single agent + recent_tx_count (24h window) + last_alert.

@@ -66,6 +66,22 @@ export interface AppDeps {
    */
   otlpLimiter?: RateLimiter;
   /**
+   * Hard cap on agents a single user can own. Defaults to
+   * `Number.POSITIVE_INFINITY` when omitted — tests create many agents
+   * per user without opting into the production cap. `server.ts` loads
+   * the real value from `MAX_AGENTS_PER_USER` (default 2).
+   */
+  maxAgentsPerUser?: number;
+  /**
+   * Per-IP rate limiter for POST /api/agents (Epic 14 Phase 3 — abuse
+   * hardening). Layered in *front* of `agentCreateLimiter` so a flood
+   * of fresh Privy signups from one IP gets 429'd before it consumes
+   * the per-user budget. Extracted from `x-forwarded-for` (Railway) or
+   * `cf-connecting-ip` (Cloudflare); requests that expose neither
+   * header are not rate-limited by IP — the per-user cap still applies.
+   */
+  agentCreateIpLimiter?: RateLimiter;
+  /**
    * Browser origins permitted to call the API cross-origin. When the
    * list is empty (local dev, tests) the CORS middleware is not
    * mounted at all, so same-origin callers see no extra headers and no
@@ -110,6 +126,7 @@ export function buildApp(deps: AppDeps) {
   // override through every `buildApp` call to avoid 429s while seeding
   // fixtures.
   const agentCreateLimiter = deps.agentCreateLimiter;
+  const agentCreateIpLimiter = deps.agentCreateIpLimiter;
   const otlpLimiter = deps.otlpLimiter;
 
   // Public: liveness check for Railway, uptime pings, etc.
@@ -138,7 +155,13 @@ export function buildApp(deps: AppDeps) {
   // GET /api/agents and confirms end-to-end pipe + valid token — the
   // anonymous /health above only tells us the process is up.
   api.get('/health', (c) => c.json({ ok: true }));
-  api.route('/agents', createAgentsRouter(deps.db, deps.sseBus, deps.alerter, agentCreateLimiter));
+  api.route(
+    '/agents',
+    createAgentsRouter(deps.db, deps.sseBus, deps.alerter, agentCreateLimiter, {
+      ...(deps.maxAgentsPerUser !== undefined ? { maxAgentsPerUser: deps.maxAgentsPerUser } : {}),
+      ...(agentCreateIpLimiter ? { ipLimiter: agentCreateIpLimiter } : {}),
+    }),
+  );
   api.route('/transactions', createTransactionsRouter(deps.db));
   api.route('/alerts', createAlertsRouter(deps.db));
   api.route('/stats', createStatsRouter(deps.db));

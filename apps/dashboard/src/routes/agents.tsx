@@ -45,10 +45,14 @@ export function AgentsPage() {
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['agents'],
-    queryFn: () => apiClient.get<{ agents: AgentRow[] }>('/api/agents'),
+    queryFn: () => apiClient.get<{ agents: AgentRow[]; maxAgents: number | null }>('/api/agents'),
   });
 
   const agents = data?.agents ?? [];
+  // `maxAgents` is `null` in local dev / tests (unlimited). Only enforce
+  // client-side when the server advertises a concrete cap. E14.14.
+  const maxAgents = data?.maxAgents ?? null;
+  const atCap = maxAgents !== null && agents.length >= maxAgents;
 
   const counts = useMemo<Record<Filter, number>>(() => {
     return {
@@ -82,12 +86,19 @@ export function AgentsPage() {
             Register, monitor & configure your on-chain AI agents.
           </p>
         </div>
-        <div className="flex gap-2">
-          <button type="button" className={btnGhost} disabled title="Coming post-MVP">
-            <Download className="h-3.5 w-3.5" />
-            <span>Export CSV</span>
-          </button>
-          <AddAgentDialog />
+        <div className="flex flex-col items-end gap-1.5">
+          <div className="flex gap-2">
+            <button type="button" className={btnGhost} disabled title="Coming post-MVP">
+              <Download className="h-3.5 w-3.5" />
+              <span>Export CSV</span>
+            </button>
+            {atCap ? null : <AddAgentDialog />}
+          </div>
+          {atCap && maxAgents !== null ? (
+            <p className="font-mono text-[10.5px] text-fg-3">
+              Limit reached ({maxAgents} per account) — delete an agent to add another.
+            </p>
+          ) : null}
         </div>
       </div>
 

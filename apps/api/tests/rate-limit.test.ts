@@ -146,3 +146,58 @@ describe('integration: POST /api/agents enforces 10/hour', () => {
     }
   });
 });
+
+// Epic 14 Phase 3 task 14.15 — per-IP signup throttle. The IP layer is
+// mounted in front of the per-user limiter so one abusive host can't
+// bypass the cap by rotating through fresh Privy DIDs (sybil attack).
+describe('integration: POST /api/agents enforces 3/24h per IP', () => {
+  it('4th create from the same IP is 429 even with fresh userId per request', async () => {
+    const testDb = await createTestDatabase();
+    try {
+      // Each request flips the userId so the per-user limiter could
+      // never produce this 429 on its own — only the IP layer does.
+      let callIndex = 0;
+      const verifier: AuthVerifier = {
+        verify: async () => ({ userId: `did:privy:rotating-${callIndex++}` }),
+      };
+      const app = buildApp({
+        db: testDb.db,
+        verifier,
+        sseBus: createSseBus(),
+        logger: silentLogger,
+        agentCreateIpLimiter: createRateLimiter({ limit: 3, windowMs: 24 * 60 * 60_000 }),
+        // Leave agentCreateLimiter off (NOOP) so the per-user budget is
+        // effectively infinite — the only thing that can 429 us is IP.
+      });
+
+      const BASE58_CHARS = '123456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+      const create = (i: number) =>
+        app.request('/api/agents', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: 'Bearer t',
+            // Railway-style client-IP propagation. First hop in the XFF
+            // chain is the originating client; getClientIp picks that.
+            'x-forwarded-for': '203.0.113.7, 10.0.0.1',
+          },
+          body: JSON.stringify({
+            walletPubkey: `${BASE58_CHARS[i % BASE58_CHARS.length]}${'1'.repeat(31)}`,
+            name: `Agent ${i}`,
+            framework: 'custom',
+            agentType: 'other',
+          }),
+        });
+
+      for (let i = 0; i < 3; i++) {
+        const res = await create(i);
+        expect(res.status, `create ${i}`).toBe(201);
+      }
+      const blocked = await create(3);
+      expect(blocked.status).toBe(429);
+      expect(blocked.headers.get('Retry-After')).toBeTruthy();
+    } finally {
+      await testDb.close();
+    }
+  });
+});
