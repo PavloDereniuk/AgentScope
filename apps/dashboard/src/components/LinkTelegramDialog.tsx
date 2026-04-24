@@ -39,6 +39,10 @@ interface StatusResponse {
   expired?: boolean;
 }
 
+interface PendingResponse {
+  count: number;
+}
+
 const POLL_MS = 2_000;
 
 export interface LinkTelegramDialogProps {
@@ -48,13 +52,23 @@ export interface LinkTelegramDialogProps {
   disabled?: boolean;
 }
 
-type Phase = 'idle' | 'init' | 'awaiting' | 'linked' | 'expired' | 'unsupported' | 'error';
+type Phase =
+  | 'idle'
+  | 'checking'
+  | 'has-pending'
+  | 'init'
+  | 'awaiting'
+  | 'linked'
+  | 'expired'
+  | 'unsupported'
+  | 'error';
 
 export function LinkTelegramDialog({ onLinked, disabled }: LinkTelegramDialogProps) {
   const [open, setOpen] = useState(false);
   const [phase, setPhase] = useState<Phase>('idle');
   const [link, setLink] = useState<InitResponse | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [pendingCount, setPendingCount] = useState(0);
   // Track whether the dialog is still open so an in-flight poll/init can
   // bail out without dispatching state to an unmounted modal.
   const openRef = useRef(open);
@@ -62,7 +76,11 @@ export function LinkTelegramDialog({ onLinked, disabled }: LinkTelegramDialogPro
     openRef.current = open;
   }, [open]);
 
-  // (Re)issue a code whenever the dialog transitions from closed → open.
+  // On open: check /pending first so a re-opened dialog doesn't silently
+  // spawn yet another binding row when the user already has live ones.
+  // Zero pending → auto-issue a fresh code (unchanged UX). Non-zero →
+  // stop on 'has-pending' and let the user explicitly confirm before
+  // paying the DB-write + new-code cost.
   useEffect(() => {
     if (!open) {
       // Reset everything so a re-open starts clean (no stale "linked"
@@ -70,22 +88,50 @@ export function LinkTelegramDialog({ onLinked, disabled }: LinkTelegramDialogPro
       setPhase('idle');
       setLink(null);
       setErrorMsg(null);
+      setPendingCount(0);
       return;
     }
 
     let cancelled = false;
-    setPhase('init');
+    setPhase('checking');
     setErrorMsg(null);
 
     apiClient
+      .get<PendingResponse>('/api/telegram/pending')
+      .then((res) => {
+        if (cancelled || !openRef.current) return;
+        if (res.count > 0) {
+          setPendingCount(res.count);
+          setPhase('has-pending');
+          return;
+        }
+        issueLink({ cancelledRef: () => cancelled });
+      })
+      .catch(() => {
+        // Pending check is a best-effort guard — if it fails (network
+        // blip, 5xx), fall back to the old behaviour and issue a code
+        // straight away rather than blocking the user on a diagnostic.
+        if (cancelled || !openRef.current) return;
+        issueLink({ cancelledRef: () => cancelled });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
+
+  function issueLink({ cancelledRef }: { cancelledRef?: () => boolean } = {}) {
+    setPhase('init');
+    setErrorMsg(null);
+    apiClient
       .post<InitResponse>('/api/telegram/init', {})
       .then((data) => {
-        if (cancelled || !openRef.current) return;
+        if (cancelledRef?.() || !openRef.current) return;
         setLink(data);
         setPhase('awaiting');
       })
       .catch((err: unknown) => {
-        if (cancelled || !openRef.current) return;
+        if (cancelledRef?.() || !openRef.current) return;
         if (err instanceof ApiError && err.status === 503) {
           setPhase('unsupported');
           return;
@@ -93,11 +139,7 @@ export function LinkTelegramDialog({ onLinked, disabled }: LinkTelegramDialogPro
         setPhase('error');
         setErrorMsg(err instanceof Error ? err.message : 'failed to issue link');
       });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [open]);
+  }
 
   // Poll /status while we're awaiting the bot. Stops on link/expire/close.
   useEffect(() => {
@@ -145,22 +187,10 @@ export function LinkTelegramDialog({ onLinked, disabled }: LinkTelegramDialogPro
   }, [phase, link, onLinked]);
 
   function regenerate() {
-    // Re-trigger the open-effect by toggling phase back to init, and
-    // fire a fresh /init request directly.
-    setPhase('init');
-    setErrorMsg(null);
-    apiClient
-      .post<InitResponse>('/api/telegram/init', {})
-      .then((data) => {
-        if (!openRef.current) return;
-        setLink(data);
-        setPhase('awaiting');
-      })
-      .catch((err: unknown) => {
-        if (!openRef.current) return;
-        setPhase('error');
-        setErrorMsg(err instanceof Error ? err.message : 'failed to issue link');
-      });
+    // User explicitly asked for a new code — skip the /pending guard
+    // (they already saw the has-pending screen or the previous one
+    // expired).
+    issueLink();
   }
 
   return (
@@ -181,6 +211,27 @@ export function LinkTelegramDialog({ onLinked, disabled }: LinkTelegramDialogPro
             One click to connect this agent to your personal Telegram chat.
           </DialogDescription>
         </DialogHeader>
+
+        {phase === 'checking' ? (
+          <p className="font-mono text-[12px] text-fg-3">Checking for pending links…</p>
+        ) : null}
+
+        {phase === 'has-pending' ? (
+          <div className="space-y-3">
+            <p className="text-[13px] text-fg-2">
+              You already have{' '}
+              <span className="font-mono text-fg">
+                {pendingCount} pending link{pendingCount === 1 ? '' : 's'}
+              </span>{' '}
+              (≤ 10 min old). Open Telegram and tap any previous{' '}
+              <span className="font-mono text-fg">Start</span> to complete, or generate a new one —
+              the old codes stay valid until they expire.
+            </p>
+            <Button type="button" onClick={regenerate} className="w-full">
+              Generate new link anyway
+            </Button>
+          </div>
+        ) : null}
 
         {phase === 'init' ? (
           <p className="font-mono text-[12px] text-fg-3">Generating link…</p>
