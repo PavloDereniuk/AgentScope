@@ -1,3 +1,4 @@
+import { Sparkline } from '@/components/Sparkline';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -10,6 +11,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { apiClient } from '@/lib/api-client';
+import { useTimeseries } from '@/lib/use-timeseries';
 import { cn } from '@/lib/utils';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Download, Loader2, Plus, Search } from 'lucide-react';
@@ -153,12 +155,13 @@ export function AgentsPage() {
 
       {filtered.length > 0 ? (
         <div className="overflow-x-auto rounded-md border border-line bg-surface-2">
-          <div className="grid min-w-[880px] grid-cols-[28px_minmax(180px,1.6fr)_minmax(140px,1.2fr)_80px_70px_80px_90px_80px] gap-3 border-b border-line px-4 py-2.5 font-mono text-[10px] uppercase tracking-[0.08em] text-fg-3">
+          <div className="grid min-w-[960px] grid-cols-[28px_minmax(180px,1.6fr)_minmax(140px,1.2fr)_80px_70px_70px_80px_90px_80px] gap-3 border-b border-line px-4 py-2.5 font-mono text-[10px] uppercase tracking-[0.08em] text-fg-3">
             <span>#</span>
             <span>agent</span>
             <span>wallet</span>
             <span className="text-right">framework</span>
             <span className="text-right">tx · 24h</span>
+            <span className="text-right">trend</span>
             <span className="text-right">sol · Δ</span>
             <span className="text-right">success</span>
             <span className="text-right">last seen</span>
@@ -167,7 +170,7 @@ export function AgentsPage() {
             <Link
               key={agent.id}
               to={`/agents/${agent.id}`}
-              className="grid min-w-[880px] cursor-pointer grid-cols-[28px_minmax(180px,1.6fr)_minmax(140px,1.2fr)_80px_70px_80px_90px_80px] items-center gap-3 border-b border-line-soft px-4 py-3 transition-colors last:border-b-0 hover:bg-surface-3"
+              className="grid min-w-[960px] cursor-pointer grid-cols-[28px_minmax(180px,1.6fr)_minmax(140px,1.2fr)_80px_70px_70px_80px_90px_80px] items-center gap-3 border-b border-line-soft px-4 py-3 transition-colors last:border-b-0 hover:bg-surface-3"
             >
               <span className="font-mono text-[10px] text-fg-3">
                 {String(i + 1).padStart(2, '0')}
@@ -185,6 +188,7 @@ export function AgentsPage() {
               <span className="text-right font-mono text-[11.5px] text-fg-2">
                 {agent.recentTxCount24h}
               </span>
+              <AgentTxSparkCell agentId={agent.id} />
               <SolDeltaCell value={agent.solDelta24h} />
               <SuccessRateCell rate={agent.successRate24h} />
               <span className="text-right font-mono text-[11px] text-fg-3">
@@ -195,6 +199,25 @@ export function AgentsPage() {
         </div>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * Per-agent 24h tx-count sparkline. Each cell opens its own
+ * `/api/stats/timeseries?agentId=...` query — react-query dedupes and
+ * caches, so re-renders are free. At MVP scale (a handful of agents per
+ * user) the fan-out is fine; a batched endpoint is the natural upgrade
+ * if this page ever has to render dozens of rows.
+ */
+function AgentTxSparkCell({ agentId }: { agentId: string }) {
+  const { sparkPoints, isLoading } = useTimeseries({ agentId, metric: 'tx' });
+  if (isLoading || sparkPoints.length < 2) {
+    return <span className="text-right font-mono text-[11px] text-fg-3">—</span>;
+  }
+  return (
+    <span className="flex items-center justify-end">
+      <Sparkline points={sparkPoints} width={60} height={18} />
+    </span>
   );
 }
 

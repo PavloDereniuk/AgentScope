@@ -272,6 +272,7 @@ interface TimeseriesBody {
   window: '24h' | '7d';
   bucket: '1h' | '1d';
   metric: 'tx' | 'solDelta' | 'successRate';
+  agentId: string | null;
   points: TimeseriesPoint[];
 }
 
@@ -476,6 +477,82 @@ describe('GET /api/stats/timeseries', () => {
     });
 
     const res = await getTimeseries(ctx, '?window=24h&bucket=1h&metric=tx');
+    const body = (await res.json()) as TimeseriesBody;
+    for (const p of body.points) expect(p.value).toBe(0);
+  });
+
+  it('filters to a single agent when agentId is passed', async () => {
+    const a1 = await createAgent(ctx, 'A1', 'So11111111111111111111111111111111111111112');
+    const a2 = await createAgent(ctx, 'A2', 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
+    const inside = new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString();
+
+    await ctx.testDb.db.insert(agentTransactions).values([
+      {
+        agentId: a1.id,
+        signature: 'sig-a1',
+        slot: 100,
+        blockTime: inside,
+        programId: '11111111111111111111111111111111',
+        solDelta: '0.1',
+        success: true,
+      },
+      {
+        agentId: a2.id,
+        signature: 'sig-a2',
+        slot: 101,
+        blockTime: inside,
+        programId: '11111111111111111111111111111111',
+        solDelta: '0.2',
+        success: true,
+      },
+    ]);
+
+    const fleetRes = await getTimeseries(ctx, '?metric=tx');
+    const fleetBody = (await fleetRes.json()) as TimeseriesBody;
+    expect(fleetBody.agentId).toBeNull();
+    const fleetTotal = fleetBody.points.reduce(
+      (s, p) => s + (typeof p.value === 'number' ? p.value : 0),
+      0,
+    );
+    expect(fleetTotal).toBe(2);
+
+    const perAgent = await getTimeseries(ctx, `?metric=tx&agentId=${a1.id}`);
+    const perAgentBody = (await perAgent.json()) as TimeseriesBody;
+    expect(perAgentBody.agentId).toBe(a1.id);
+    const perAgentTotal = perAgentBody.points.reduce(
+      (s, p) => s + (typeof p.value === 'number' ? p.value : 0),
+      0,
+    );
+    expect(perAgentTotal).toBe(1);
+  });
+
+  it("does not leak across tenants even when agentId is known", async () => {
+    const aliceAgent = await createAgent(
+      ctx,
+      'Alice',
+      'So11111111111111111111111111111111111111112',
+    );
+    const inside = new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString();
+    await ctx.testDb.db.insert(agentTransactions).values({
+      agentId: aliceAgent.id,
+      signature: 'alice-filter',
+      slot: 100,
+      blockTime: inside,
+      programId: '11111111111111111111111111111111',
+      solDelta: '1.0',
+      success: true,
+    });
+
+    // Bob — different user — guesses Alice's agentId.
+    const bobApp = buildApp({
+      db: ctx.testDb.db,
+      verifier: makeVerifier('did:privy:user-bob'),
+      sseBus: createSseBus(),
+      logger: silentLogger,
+    });
+    const res = await bobApp.request(`/api/stats/timeseries?metric=tx&agentId=${aliceAgent.id}`, {
+      headers: { Authorization: BEARER },
+    });
     const body = (await res.json()) as TimeseriesBody;
     for (const p of body.points) expect(p.value).toBe(0);
   });

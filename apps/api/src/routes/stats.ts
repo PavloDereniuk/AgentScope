@@ -44,6 +44,13 @@ const timeseriesQuerySchema = z.object({
   window: z.enum(['24h', '7d']).default('24h'),
   bucket: z.enum(['1h', '1d']).default('1h'),
   metric: z.enum(['tx', 'solDelta', 'successRate']).default('tx'),
+  /**
+   * Optional: restrict the series to a single agent. When omitted, the
+   * response aggregates across every agent the user owns. The UUID shape
+   * prevents the dashboard from accidentally probing arbitrary strings;
+   * ownership is still enforced via the INNER JOIN on agents.user_id.
+   */
+  agentId: z.string().uuid().optional(),
 });
 
 /**
@@ -150,7 +157,7 @@ export function createStatsRouter(db: Database) {
     }),
     async (c) => {
       const privyDid = c.get('userId');
-      const { window, bucket, metric } = c.req.valid('query');
+      const { window, bucket, metric, agentId } = c.req.valid('query');
       const user = await ensureUser(db, privyDid);
 
       const since = new Date(Date.now() - WINDOW_MS[window]).toISOString();
@@ -161,6 +168,10 @@ export function createStatsRouter(db: Database) {
       // metrics are computed regardless of `metric` so we can swap the
       // projection without a second query — the per-bucket aggregation
       // cost is identical whichever metric the client asked for.
+      //
+      // The agentId filter is compared with `is not distinct from` guard —
+      // rendering a no-op predicate when `agentId` is null lets the same
+      // query shape serve both the fleet-level and per-agent variants.
       const raw = await db.execute(sql`
         with buckets as (
           select t from generate_series(
@@ -179,6 +190,7 @@ export function createStatsRouter(db: Database) {
           inner join ${agents} on ${agentTransactions.agentId} = ${agents.id}
           where ${agents.userId} = ${user.id}
             and ${agentTransactions.blockTime} >= ${since}
+            and (${agentId ?? null}::uuid is null or ${agentTransactions.agentId} = ${agentId ?? null}::uuid)
           group by 1
         )
         select
@@ -211,7 +223,7 @@ export function createStatsRouter(db: Database) {
         return { t: row.t, value };
       });
 
-      return c.json({ window, bucket, metric, points });
+      return c.json({ window, bucket, metric, agentId: agentId ?? null, points });
     },
   );
 

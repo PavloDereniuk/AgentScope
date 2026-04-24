@@ -1,6 +1,8 @@
 import { Kpi, KpiRow } from '@/components/Kpi';
 import { LiveTicker, type TickerItem, type TickerKind } from '@/components/LiveTicker';
+import { Sparkline } from '@/components/Sparkline';
 import { apiClient } from '@/lib/api-client';
+import { useTimeseries } from '@/lib/use-timeseries';
 import { cn } from '@/lib/utils';
 import type { Alert } from '@agentscope/shared';
 import { useQuery } from '@tanstack/react-query';
@@ -60,6 +62,9 @@ export function OverviewPage() {
     queryFn: () => apiClient.get<OverviewStats>('/api/stats/overview'),
     refetchInterval: 30_000,
   });
+
+  const txSeries = useTimeseries({ metric: 'tx' });
+  const pnlSeries = useTimeseries({ metric: 'solDelta' });
 
   const agents = agentsQuery.data?.agents ?? [];
   const alerts = alertsQuery.data?.alerts ?? [];
@@ -147,12 +152,14 @@ export function OverviewPage() {
           value={stats ? stats.tx24h : '…'}
           delta={stats ? `${agents.length} agents tracked` : 'loading'}
           deltaKind="dim"
+          spark={txSeries.sparkPoints}
         />
         <Kpi
           label="Cumulative PnL"
           value={stats ? formatSol(pnl24h) : '…'}
           delta={pnlDelta}
           deltaKind={pnlKind}
+          spark={pnlSeries.sparkPoints}
         />
         <Kpi
           label="Active Agents"
@@ -226,6 +233,7 @@ export function OverviewPage() {
           <MiniStat
             label="Live / Stale / Failed"
             value={`${liveCount} · ${staleCount} · ${failedCount}`}
+            spark={txSeries.sparkPoints}
           />
           <MiniStat
             label="Alert severities"
@@ -233,7 +241,7 @@ export function OverviewPage() {
               alerts.length - criticalAlerts.length - warningAlerts.length
             }`}
           />
-          <MiniStat label="Registered agents" value={agents.length} />
+          <MiniStat label="Registered agents" value={agents.length} spark={pnlSeries.sparkPoints} />
         </div>
       </Card>
     </div>
@@ -290,14 +298,25 @@ function StatusBadge({ status }: { status: 'live' | 'stale' | 'failed' }) {
   );
 }
 
-function MiniStat({ label, value }: { label: string; value: React.ReactNode }) {
-  // No sparkline until the backend exposes a real 24h time series for these
-  // KPIs — rendering a flat line from a single snapshot would misrepresent
-  // the data in a live demo.
+interface MiniStatProps {
+  label: string;
+  value: React.ReactNode;
+  spark?: number[];
+}
+
+function MiniStat({ label, value, spark }: MiniStatProps) {
+  // 13.10 wired the Sparkline to real buckets from /api/stats/timeseries.
+  // Short series (< 2 points, or all-zero fleet) cause Sparkline to render
+  // nothing, which is correct: a flat zero line would misrepresent the data.
   return (
-    <div>
+    <div className="relative">
       <div className="font-mono text-[10px] uppercase tracking-[0.1em] text-fg-3">{label}</div>
       <div className="mt-2 font-mono text-lg">{value}</div>
+      {spark && spark.length >= 2 ? (
+        <div className="absolute right-0 top-0">
+          <Sparkline points={spark} width={80} height={28} />
+        </div>
+      ) : null}
     </div>
   );
 }
