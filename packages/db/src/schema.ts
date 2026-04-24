@@ -239,10 +239,49 @@ export const alerts = pgTable(
   }),
 );
 
+// ─── telegram_bindings ─────────────────────────────────────────────────────
+// One-time codes that link a Telegram chat to a user via the /start <code>
+// bot deep-link flow (Epic 14 Phase 2). The dashboard creates a binding,
+// shows the user a t.me/<bot>?start=<code> link, the bot resolves the code
+// when the user opens it, writes chat_id + linked_at, and the dashboard
+// polls /api/telegram/status until linked=true.
+//
+// "TTL" is enforced at lookup time — `created_at > now() - interval '10 min'`
+// for unlinked bindings. A periodic janitor in ingestion deletes stale rows
+// (Supabase free has no pg_cron, so we cannot use a real TTL trigger).
+
+export const telegramBindings = pgTable(
+  'telegram_bindings',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** Short opaque code embedded in the t.me deep link. Unique. */
+    bindingCode: text('binding_code').notNull(),
+    /** Set by the bot worker when the user opens /start <code>. */
+    chatId: text('chat_id'),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
+      .notNull()
+      .defaultNow(),
+    linkedAt: timestamp('linked_at', { withTimezone: true, mode: 'string' }),
+  },
+  (t) => ({
+    bindingCodeUnique: uniqueIndex('telegram_bindings_code_unique').on(t.bindingCode),
+    userIdx: index('telegram_bindings_user_idx').on(t.userId),
+    createdAtIdx: index('telegram_bindings_created_at_idx').on(t.createdAt),
+  }),
+);
+
 // ─── Relations (for type-safe joins) ───────────────────────────────────────
 
 export const usersRelations = relations(users, ({ many }) => ({
   agents: many(agents),
+  telegramBindings: many(telegramBindings),
+}));
+
+export const telegramBindingsRelations = relations(telegramBindings, ({ one }) => ({
+  user: one(users, { fields: [telegramBindings.userId], references: [users.id] }),
 }));
 
 export const agentsRelations = relations(agents, ({ one, many }) => ({
@@ -276,3 +315,5 @@ export type ReasoningLogRow = typeof reasoningLogs.$inferSelect;
 export type NewReasoningLogRow = typeof reasoningLogs.$inferInsert;
 export type AlertRow = typeof alerts.$inferSelect;
 export type NewAlertRow = typeof alerts.$inferInsert;
+export type TelegramBindingRow = typeof telegramBindings.$inferSelect;
+export type NewTelegramBindingRow = typeof telegramBindings.$inferInsert;

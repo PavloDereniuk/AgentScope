@@ -32,6 +32,7 @@ import { decodeTxCursor, encodeTxCursor } from '../lib/cursor';
 import type { SseBus } from '../lib/sse-bus';
 import { ensureUser } from '../lib/users';
 import type { ApiEnv } from '../middleware/auth';
+import { NOOP_RATE_LIMITER, type RateLimiter, rateLimitMiddleware } from '../middleware/rate-limit';
 
 /**
  * Opaque token issued to an agent's OTel exporter. 192 bits of entropy
@@ -93,11 +94,22 @@ const txListQuerySchema = z
     path: ['from'],
   });
 
-export function createAgentsRouter(db: Database, sseBus: SseBus, alerter?: DeliverDeps) {
+export function createAgentsRouter(
+  db: Database,
+  sseBus: SseBus,
+  alerter?: DeliverDeps,
+  /**
+   * Optional rate limiter for `POST /`. Defaults to no limit when
+   * undefined — `app.ts` wires up a 10/hour-per-user limiter in
+   * production. Tests omit it for fast batch seeding.
+   */
+  createLimiter?: RateLimiter,
+) {
   const router = new Hono<ApiEnv>();
 
   router.post(
     '/',
+    rateLimitMiddleware(createLimiter ?? NOOP_RATE_LIMITER, (c) => c.get('userId') ?? null),
     zValidator('json', createAgentInputSchema, (result) => {
       if (!result.success) {
         const message = result.error.issues

@@ -62,6 +62,7 @@ async function setup(): Promise<TwoUserApp> {
     verifier: makeMultiUserVerifier(),
     sseBus: createSseBus(),
     logger: silentLogger,
+    telegramBotUsername: 'agentscope_test_bot',
   });
   return { app, testDb };
 }
@@ -245,5 +246,33 @@ describe('Cross-tenant isolation — user B must never see user A data', () => {
       headers: { Authorization: BEARER_ALICE },
     });
     expect(check.status).toBe(200);
+  });
+
+  it("GET /api/telegram/status — Bob cannot poll Alice's binding code", async () => {
+    // Alice issues a binding.
+    const initRes = await ctx.app.request('/api/telegram/init', {
+      method: 'POST',
+      headers: { Authorization: BEARER_ALICE },
+    });
+    const aliceInit = (await initRes.json()) as { code: string };
+
+    // Alice sees the live binding.
+    const aliceRes = await ctx.app.request(
+      `/api/telegram/status?code=${encodeURIComponent(aliceInit.code)}`,
+      { headers: { Authorization: BEARER_ALICE } },
+    );
+    const aliceStatus = (await aliceRes.json()) as { linked: boolean; expired?: boolean };
+    expect(aliceStatus.linked).toBe(false);
+    expect(aliceStatus.expired).toBe(false);
+
+    // Bob cannot — same code, scoped to user_id, returns expired (the
+    // canonical "not for you" response).
+    const bobRes = await ctx.app.request(
+      `/api/telegram/status?code=${encodeURIComponent(aliceInit.code)}`,
+      { headers: { Authorization: BEARER_BOB } },
+    );
+    const bobStatus = (await bobRes.json()) as { linked: boolean; expired?: boolean };
+    expect(bobStatus.linked).toBe(false);
+    expect(bobStatus.expired).toBe(true);
   });
 });

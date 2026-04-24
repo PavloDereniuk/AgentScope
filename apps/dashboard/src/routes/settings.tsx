@@ -1,3 +1,4 @@
+import { LinkTelegramDialog } from '@/components/LinkTelegramDialog';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -13,7 +14,7 @@ import { cn } from '@/lib/utils';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Bell, Copy, Loader2, Save, Trash2 } from 'lucide-react';
 import type { FormEvent } from 'react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 
@@ -49,6 +50,10 @@ export function SettingsPage() {
   const [telegramChatIdError, setTelegramChatIdError] = useState<string | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'error'>('idle');
+  // Ref to the chat_id input so LinkTelegramDialog can prefill it without
+  // promoting the field to controlled state (the rest of the form is
+  // FormData-driven and converting one field would force converting all).
+  const telegramChatIdInputRef = useRef<HTMLInputElement | null>(null);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 
@@ -313,26 +318,37 @@ export function SettingsPage() {
                 <div>
                   <div className="mb-1.5 flex items-center justify-between">
                     <FieldLabel>Telegram chat ID</FieldLabel>
-                    <button
-                      type="button"
-                      onClick={() => testAlertMutation.mutate()}
-                      disabled={!selectedId || testAlertMutation.isPending}
-                      className={cn(
-                        'inline-flex h-6 items-center gap-1.5 rounded-sm border border-line px-2',
-                        'font-mono text-[10.5px] text-fg-2 hover:border-fg-3 hover:text-fg',
-                        'disabled:opacity-50 disabled:cursor-not-allowed',
-                      )}
-                    >
-                      {testAlertMutation.isPending ? (
-                        <Loader2 className="h-2.5 w-2.5 animate-spin" />
-                      ) : (
-                        <Bell className="h-2.5 w-2.5" />
-                      )}
-                      Send test alert
-                    </button>
+                    <div className="flex items-center gap-1.5">
+                      <LinkTelegramDialog
+                        disabled={!selectedId}
+                        onLinked={(chatId) => {
+                          if (telegramChatIdInputRef.current) {
+                            telegramChatIdInputRef.current.value = chatId;
+                          }
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => testAlertMutation.mutate()}
+                        disabled={!selectedId || testAlertMutation.isPending}
+                        className={cn(
+                          'inline-flex h-6 items-center gap-1.5 rounded-sm border border-line px-2',
+                          'font-mono text-[10.5px] text-fg-2 hover:border-fg-3 hover:text-fg',
+                          'disabled:opacity-50 disabled:cursor-not-allowed',
+                        )}
+                      >
+                        {testAlertMutation.isPending ? (
+                          <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                        ) : (
+                          <Bell className="h-2.5 w-2.5" />
+                        )}
+                        Send test alert
+                      </button>
+                    </div>
                   </div>
                   <div className="flex items-center rounded-[5px] border border-line bg-surface-2 px-2.5 py-1.5">
                     <input
+                      ref={telegramChatIdInputRef}
                       name="telegramChatId"
                       type="text"
                       inputMode="numeric"
@@ -342,7 +358,8 @@ export function SettingsPage() {
                     />
                   </div>
                   <p className="mt-2 font-mono text-[11px] text-fg-3">
-                    Get your chat_id: message{' '}
+                    One-click: tap <span className="font-mono text-fg">Link Telegram</span>. Manual:
+                    message{' '}
                     <a
                       href="https://t.me/userinfobot"
                       target="_blank"
@@ -351,7 +368,7 @@ export function SettingsPage() {
                     >
                       @userinfobot
                     </a>{' '}
-                    on Telegram. Empty → falls back to server-side default.
+                    and paste the numeric id.
                   </p>
                 </div>
                 <div>

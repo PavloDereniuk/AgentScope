@@ -31,6 +31,7 @@ import { zValidator } from '@hono/zod-validator';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import type { Logger } from '../logger';
+import type { RateLimiter } from '../middleware/rate-limit';
 import { extractAgentToken, resolveAgentByToken } from '../otlp/auth';
 import { persistSpans } from '../otlp/persist';
 import { type ExportTraceServiceRequest, exportTraceServiceRequestSchema } from '../otlp/schema';
@@ -38,6 +39,13 @@ import { type ExportTraceServiceRequest, exportTraceServiceRequestSchema } from 
 interface OtlpRouterDeps {
   logger: Logger;
   db: Database;
+  /**
+   * Optional rate limiter keyed by agent.token. Defaults to no limit;
+   * `app.ts` injects a 100/min-per-token limiter in production.
+   * Applied after auth so an invalid token still surfaces as 401, not
+   * 429 — invalid tokens shouldn't poison the legitimate budget.
+   */
+  rateLimit?: RateLimiter;
 }
 
 /**
@@ -62,7 +70,7 @@ export function countSpans(body: ExportTraceServiceRequest): {
   return { resourceSpans: resourceSpans.length, scopeSpans, spans };
 }
 
-export function createOtlpRouter({ logger, db }: OtlpRouterDeps) {
+export function createOtlpRouter({ logger, db, rateLimit }: OtlpRouterDeps) {
   const router = new Hono();
 
   router.post(
@@ -91,6 +99,30 @@ export function createOtlpRouter({ logger, db }: OtlpRouterDeps) {
       const resolved = await resolveAgentByToken(db, token);
       if (!resolved) {
         throw new HTTPException(401, { message: 'invalid agent token' });
+      }
+
+      // Rate-limit AFTER auth so invalid tokens don't get to chew through
+      // the legitimate per-token budget (or, worse, mask probing attempts).
+      // Keyed by agent.token (not agentId) so a leaked token can't bypass
+      // the cap by minting fresh agent rows.
+      if (rateLimit) {
+        const decision = rateLimit.take(token);
+        if (!decision.ok) {
+          logger.warn(
+            { agentId: resolved.agentId, retryAfterSec: decision.retryAfterSec },
+            'otlp traces rate-limited',
+          );
+          throw new HTTPException(429, {
+            message: 'rate limit exceeded',
+            res: new Response(JSON.stringify({ error: { message: 'rate limit exceeded' } }), {
+              status: 429,
+              headers: {
+                'Content-Type': 'application/json',
+                'Retry-After': String(decision.retryAfterSec),
+              },
+            }),
+          });
+        }
       }
 
       const counts = countSpans(body);

@@ -15,7 +15,14 @@ import { PGlite } from '@electric-sql/pglite';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { agentTransactions, agents, alerts, reasoningLogs, users } from '../src/schema';
+import {
+  agentTransactions,
+  agents,
+  alerts,
+  reasoningLogs,
+  telegramBindings,
+  users,
+} from '../src/schema';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS_DIR = join(__dirname, '..', 'src', 'migrations');
@@ -206,6 +213,35 @@ describe('drizzle CRUD round-trips', () => {
     expect(txAfter).toHaveLength(0);
     expect(reasonAfter).toHaveLength(0);
     expect(alertAfter).toHaveLength(0);
+  });
+
+  it('telegram_bindings round-trip and unique binding_code', async () => {
+    const [user] = await db.insert(users).values({ privyDid: 'did:privy:tg_user' }).returning();
+    if (!user) throw new Error('user insert failed');
+
+    const [binding] = await db
+      .insert(telegramBindings)
+      .values({ userId: user.id, bindingCode: 'abc123' })
+      .returning();
+    expect(binding?.bindingCode).toBe('abc123');
+    expect(binding?.chatId).toBeNull();
+    expect(binding?.linkedAt).toBeNull();
+
+    await db
+      .update(telegramBindings)
+      .set({ chatId: '987654', linkedAt: new Date().toISOString() })
+      .where(eq(telegramBindings.id, binding?.id ?? ''));
+
+    const [linked] = await db
+      .select()
+      .from(telegramBindings)
+      .where(eq(telegramBindings.id, binding?.id ?? ''));
+    expect(linked?.chatId).toBe('987654');
+    expect(linked?.linkedAt).not.toBeNull();
+
+    await expect(
+      db.insert(telegramBindings).values({ userId: user.id, bindingCode: 'abc123' }),
+    ).rejects.toThrow();
   });
 
   it('enforces unique (user_id, wallet_pubkey) on agents', async () => {

@@ -27,6 +27,13 @@ const envSchema = z.object({
    */
   TELEGRAM_BOT_TOKEN: z.string().optional(),
   /**
+   * Telegram bot username (no leading @). Used to build the t.me deep link
+   * returned by POST /api/telegram/init (task 14.11). Optional — when
+   * unset, /init returns 503 and the dashboard falls back to the manual
+   * chat_id input on Settings.
+   */
+  TELEGRAM_BOT_USERNAME: z.string().optional(),
+  /**
    * @deprecated since Epic 14 Phase 1. Per-agent chat_id now travels on
    * each AlertMessage via `agents.telegram_chat_id`; the sender no longer
    * falls back to this env var (would re-route new users' alerts to the

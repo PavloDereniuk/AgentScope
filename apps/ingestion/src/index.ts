@@ -27,6 +27,7 @@ import { logger } from './logger';
 import { persistTx } from './persist';
 import type { PersistContext } from './persist';
 import { createWalletRegistry } from './registry';
+import { startTelegramBot } from './telegram-bot';
 import { createWsStream } from './ws-stream';
 
 /** Sensible production defaults — agents may override per-rule via alertRules. */
@@ -184,6 +185,16 @@ async function main(): Promise<void> {
   });
   logger.info('cron evaluator started');
 
+  // Start Telegram bot long-poll worker for the /start <code> deep-link
+  // flow (Epic 14 Phase 2). Skipped when no bot token is configured —
+  // the dashboard's "Link Telegram" button degrades to a manual chat_id
+  // input on the same Settings page (still functional, just one extra
+  // copy-paste). Single-instance assumption: do not horizontally scale
+  // ingestion or two pods will race for getUpdates ownership.
+  const telegramBot = config.TELEGRAM_BOT_TOKEN
+    ? startTelegramBot({ db, logger, botToken: config.TELEGRAM_BOT_TOKEN })
+    : null;
+
   // Graceful shutdown handlers. Wait for any in-flight reconcile so we
   // don't cut the stream mid-subscribe — otherwise the fresh process
   // may inherit dangling server-side state on restart. Also wait (up to
@@ -215,6 +226,7 @@ async function main(): Promise<void> {
     Promise.resolve(reconciling)
       .catch(() => undefined)
       .then(() => drainPersists())
+      .then(() => telegramBot?.stop())
       .then(() => stream.close())
       .catch((err) => logger.error({ err }, 'stream close failed'))
       .finally(() => process.exit(0));

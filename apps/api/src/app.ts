@@ -20,6 +20,7 @@ import { type SseBus, busEventSchema } from './lib/sse-bus';
 import { type Logger, logger as defaultLogger } from './logger';
 import { type ApiEnv, requireAuth } from './middleware/auth';
 import { registerErrorHandlers } from './middleware/error';
+import type { RateLimiter } from './middleware/rate-limit';
 import { createAgentsRouter } from './routes/agents';
 import { createAlertsRouter } from './routes/alerts';
 import { createOtlpRouter } from './routes/otlp';
@@ -27,6 +28,7 @@ import { createReasoningRouter } from './routes/reasoning';
 import { createSearchRouter } from './routes/search';
 import { createStatsRouter } from './routes/stats';
 import { createStreamRouter } from './routes/stream';
+import { createTelegramRouter } from './routes/telegram';
 import { createTransactionsRouter } from './routes/transactions';
 
 export interface AppDeps {
@@ -45,6 +47,23 @@ export interface AppDeps {
    * not configured'}` so environments without Telegram creds stay bootable.
    */
   alerter?: DeliverDeps;
+  /**
+   * Telegram bot username (no leading @). Used to build the t.me deep link
+   * returned by POST /api/telegram/init. Falls back to TELEGRAM_BOT_USERNAME
+   * env var inside the router. When neither is set, /init returns 503.
+   */
+  telegramBotUsername?: string;
+  /**
+   * Override for the agent-create rate limiter (10/hour/userId by default).
+   * Tests pass a high-limit limiter — or omit and accept the default —
+   * to avoid 429ing batch fixture seeders.
+   */
+  agentCreateLimiter?: RateLimiter;
+  /**
+   * Override for the OTLP /v1/traces rate limiter (100/min/agent.token).
+   * Same pattern as agentCreateLimiter.
+   */
+  otlpLimiter?: RateLimiter;
   logger?: Logger;
 }
 
@@ -54,6 +73,15 @@ export function buildApp(deps: AppDeps) {
 
   registerErrorHandlers(app, log);
 
+  // Per-budget limiters are wired explicitly by the production composition
+  // root (`server.ts`) so tests can opt out by simply not passing them.
+  // The dedicated `tests/rate-limit.test.ts` proves the limiter math; the
+  // 200+ functional tests would otherwise have to thread a high-limit
+  // override through every `buildApp` call to avoid 429s while seeding
+  // fixtures.
+  const agentCreateLimiter = deps.agentCreateLimiter;
+  const otlpLimiter = deps.otlpLimiter;
+
   // Public: liveness check for Railway, uptime pings, etc.
   app.get('/health', (c) => c.json({ ok: true }));
 
@@ -62,7 +90,14 @@ export function buildApp(deps: AppDeps) {
   // /api because it uses its own agent-token auth (task 4.3):
   // the agent's OTel Resource must carry an `agent.token` attribute
   // whose value matches `agents.ingest_token`.
-  app.route('/v1', createOtlpRouter({ logger: log, db: deps.db }));
+  app.route(
+    '/v1',
+    createOtlpRouter({
+      logger: log,
+      db: deps.db,
+      ...(otlpLimiter ? { rateLimit: otlpLimiter } : {}),
+    }),
+  );
 
   // Every /api/* route is authenticated. The auth middleware populates
   // `c.var.userId` so downstream routes can resolve the real users.id
@@ -73,13 +108,19 @@ export function buildApp(deps: AppDeps) {
   // GET /api/agents and confirms end-to-end pipe + valid token — the
   // anonymous /health above only tells us the process is up.
   api.get('/health', (c) => c.json({ ok: true }));
-  api.route('/agents', createAgentsRouter(deps.db, deps.sseBus, deps.alerter));
+  api.route('/agents', createAgentsRouter(deps.db, deps.sseBus, deps.alerter, agentCreateLimiter));
   api.route('/transactions', createTransactionsRouter(deps.db));
   api.route('/alerts', createAlertsRouter(deps.db));
   api.route('/stats', createStatsRouter(deps.db));
   api.route('/reasoning', createReasoningRouter(deps.db));
   api.route('/search', createSearchRouter(deps.db));
   api.route('/stream', createStreamRouter(deps.db, deps.sseBus));
+  api.route(
+    '/telegram',
+    createTelegramRouter(deps.db, {
+      ...(deps.telegramBotUsername ? { botUsername: deps.telegramBotUsername } : {}),
+    }),
+  );
 
   app.route('/api', api);
 

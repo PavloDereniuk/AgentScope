@@ -12,6 +12,7 @@ import { loadConfig } from './config';
 import { createPrivyVerifier } from './lib/auth-verifier';
 import { createSseBus } from './lib/sse-bus';
 import { logger } from './logger';
+import { createRateLimiter } from './middleware/rate-limit';
 
 const config = loadConfig();
 
@@ -34,12 +35,22 @@ if (config.TELEGRAM_BOT_TOKEN) {
   alerter.telegram = createTelegramSender({ botToken: config.TELEGRAM_BOT_TOKEN });
 }
 
+// Production rate limiters (task 14.13). Single-instance assumption — counters
+// live in this process's heap. When Railway is scaled out, swap for Redis
+// INCR + EXPIRE; until then, each pod has its own budget which is fine for
+// MVP scale (one container).
+const agentCreateLimiter = createRateLimiter({ limit: 10, windowMs: 60 * 60_000 });
+const otlpLimiter = createRateLimiter({ limit: 100, windowMs: 60_000 });
+
 const app = buildApp({
   db,
   verifier,
   sseBus,
   internalSecret: config.INTERNAL_SECRET,
   alerter,
+  agentCreateLimiter,
+  otlpLimiter,
+  ...(config.TELEGRAM_BOT_USERNAME ? { telegramBotUsername: config.TELEGRAM_BOT_USERNAME } : {}),
   logger,
 });
 
