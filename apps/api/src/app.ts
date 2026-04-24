@@ -150,6 +150,23 @@ export function buildApp(deps: AppDeps) {
   // `c.var.userId` so downstream routes can resolve the real users.id
   // via `ensureUser` without touching headers directly.
   const api = new Hono<ApiEnv>();
+  // Block CDN / intermediary caching of authenticated responses. Railway
+  // fronts this service with a Fastly edge; without an explicit directive
+  // it happily reused a cached 200 body across users once a single
+  // authenticated GET landed. `private, no-store` keeps responses in the
+  // user's own browser only, and `Vary: Authorization` hardens the cache
+  // key against token-mixing if some intermediary ignores `no-store`.
+  //
+  // Mounted *before* `requireAuth` so the headers ride along on 401
+  // rejections too — an unauth'd 401 cached by a CDN would prevent the
+  // real 200 from ever reaching a dashboard that subsequently authed.
+  // Handlers that need different semantics (SSE streams set their own
+  // `Cache-Control: no-cache`) override by calling `c.header()` later.
+  api.use('*', async (c, next) => {
+    c.header('Cache-Control', 'private, no-store');
+    c.header('Vary', 'Authorization');
+    await next();
+  });
   api.use('*', requireAuth(deps.verifier, log));
   // Authenticated heartbeat for the dashboard's live-pill. Cheaper than
   // GET /api/agents and confirms end-to-end pipe + valid token — the
