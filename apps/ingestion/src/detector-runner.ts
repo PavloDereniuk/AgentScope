@@ -107,6 +107,7 @@ export async function runTxDetector(
     .select({
       alertRules: agents.alertRules,
       name: agents.name,
+      userId: agents.userId,
       telegramChatId: agents.telegramChatId,
       webhookUrl: agents.webhookUrl,
     })
@@ -116,6 +117,7 @@ export async function runTxDetector(
 
   const alertRules = (agent?.alertRules ?? {}) as AlertRuleThresholds;
   const agentName = agent?.name ?? 'Unknown Agent';
+  const userId = agent?.userId ?? null;
   const telegramChatId = agent?.telegramChatId ?? null;
   const webhookUrl = agent?.webhookUrl ?? null;
 
@@ -167,13 +169,18 @@ export async function runTxDetector(
     inserted.map((row) => [correlationKey(row.ruleName, row.dedupeKey), row]),
   );
 
-  // Publish alert.new events for SSE (6.15).
+  // Publish alert.new events for SSE (6.15). 13.13 added the per-user
+  // fan-out channel; skip publish if userId is missing (agent row was
+  // deleted between detection and publish — rare, but avoids emitting
+  // a half-routed event).
   for (const result of results) {
     const row = insertedByKey.get(correlationKey(result.ruleName, result.dedupeKey ?? null));
     if (!row) continue;
+    if (!userId) continue;
     deps.publishEvent?.({
       type: 'alert.new',
       agentId,
+      userId,
       alertId: row.id,
       severity: result.severity,
       at: row.triggeredAt,

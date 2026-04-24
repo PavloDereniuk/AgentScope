@@ -26,6 +26,7 @@ import { createOtlpRouter } from './routes/otlp';
 import { createReasoningRouter } from './routes/reasoning';
 import { createSearchRouter } from './routes/search';
 import { createStatsRouter } from './routes/stats';
+import { createStreamRouter } from './routes/stream';
 import { createTransactionsRouter } from './routes/transactions';
 
 export interface AppDeps {
@@ -78,6 +79,7 @@ export function buildApp(deps: AppDeps) {
   api.route('/stats', createStatsRouter(deps.db));
   api.route('/reasoning', createReasoningRouter(deps.db));
   api.route('/search', createSearchRouter(deps.db));
+  api.route('/stream', createStreamRouter(deps.db, deps.sseBus));
 
   app.route('/api', api);
 

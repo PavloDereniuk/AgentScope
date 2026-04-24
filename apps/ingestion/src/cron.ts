@@ -93,6 +93,7 @@ export async function runCronCycle(deps: CronDeps): Promise<number> {
     .select({
       id: agents.id,
       name: agents.name,
+      userId: agents.userId,
       alertRules: agents.alertRules,
       telegramChatId: agents.telegramChatId,
       webhookUrl: agents.webhookUrl,
@@ -180,12 +181,14 @@ export async function runCronCycle(deps: CronDeps): Promise<number> {
     );
 
     // Publish alert.new on the SSE bus so dashboards refresh live.
+    // 13.13 added the per-user fan-out channel, so include userId.
     for (const result of results) {
       const row = insertedByKey.get(correlationKey(result.ruleName, result.dedupeKey ?? null));
       if (!row) continue;
       deps.publishEvent?.({
         type: 'alert.new',
         agentId: agent.id,
+        userId: agent.userId,
         alertId: row.id,
         severity: result.severity,
         at: row.triggeredAt,

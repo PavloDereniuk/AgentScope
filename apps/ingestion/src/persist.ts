@@ -189,13 +189,22 @@ export async function persistTx(ctx: PersistContext, tx: TxUpdate): Promise<numb
       'persisted tx',
     );
 
-    // Publish tx.new event for SSE (6.15).
-    ctx.publishEvent?.({
-      type: 'tx.new',
-      agentId,
-      signature: tx.signature,
-      at: new Date().toISOString(),
-    });
+    // Publish tx.new event for SSE (6.15). 13.13 added the per-user
+    // fan-out channel, so we now also carry userId so the bus can
+    // deliver to /api/stream subscribers. `userIdFor` is populated at
+    // registry refresh; if an agent was created in the current tick and
+    // hasn't been refreshed yet, we skip the publish rather than emit a
+    // half-routed event.
+    const userId = ctx.registry.userIdFor(agentId);
+    if (userId) {
+      ctx.publishEvent?.({
+        type: 'tx.new',
+        agentId,
+        userId,
+        signature: tx.signature,
+        at: new Date().toISOString(),
+      });
+    }
 
     // Run tx-triggered detector rules (5.9).
     if (ctx.detector) {
