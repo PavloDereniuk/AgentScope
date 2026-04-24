@@ -14,6 +14,7 @@ import type { DeliverDeps } from '@agentscope/alerter';
 import type { Database } from '@agentscope/db';
 import { zValidator } from '@hono/zod-validator';
 import { Hono } from 'hono';
+import { cors } from 'hono/cors';
 import { HTTPException } from 'hono/http-exception';
 import type { AuthVerifier } from './lib/auth-verifier';
 import { type SseBus, busEventSchema } from './lib/sse-bus';
@@ -64,6 +65,14 @@ export interface AppDeps {
    * Same pattern as agentCreateLimiter.
    */
   otlpLimiter?: RateLimiter;
+  /**
+   * Browser origins permitted to call the API cross-origin. When the
+   * list is empty (local dev, tests) the CORS middleware is not
+   * mounted at all, so same-origin callers see no extra headers and no
+   * OPTIONS handshake. Production composition root (`server.ts`) reads
+   * this from `DASHBOARD_ORIGINS` env var.
+   */
+  allowedOrigins?: string[];
   logger?: Logger;
 }
 
@@ -72,6 +81,27 @@ export function buildApp(deps: AppDeps) {
   const app = new Hono<ApiEnv>();
 
   registerErrorHandlers(app, log);
+
+  // CORS is only mounted when at least one origin is whitelisted. This
+  // keeps local dev and the test suite entirely same-origin (no extra
+  // headers, no preflight round-trips). Production wires the Vercel
+  // dashboard domain(s) via DASHBOARD_ORIGINS. We whitelist
+  // `Authorization` + `Content-Type` because the Privy JWT rides on
+  // every request and several routes (POST/PATCH) send JSON bodies;
+  // credentials stay disabled — we use Bearer tokens, never cookies.
+  const allowedOrigins = deps.allowedOrigins ?? [];
+  if (allowedOrigins.length > 0) {
+    app.use(
+      '*',
+      cors({
+        origin: allowedOrigins,
+        allowHeaders: ['Authorization', 'Content-Type'],
+        allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+        maxAge: 600,
+        credentials: false,
+      }),
+    );
+  }
 
   // Per-budget limiters are wired explicitly by the production composition
   // root (`server.ts`) so tests can opt out by simply not passing them.

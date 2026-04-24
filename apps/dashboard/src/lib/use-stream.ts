@@ -1,6 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { getAccessToken } from './api-client';
+import { resolveApiUrl } from './api-url';
 
 interface StreamEvent {
   type: 'connected' | 'tx.new' | 'alert.new';
@@ -52,7 +53,7 @@ export function useStream(agentId: string | undefined) {
 
       let response: Response;
       try {
-        response = await fetch(`/api/agents/${agentId}/stream`, {
+        response = await fetch(resolveApiUrl(`/api/agents/${agentId}/stream`), {
           headers,
           signal: controller.signal,
         });

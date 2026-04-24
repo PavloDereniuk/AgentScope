@@ -1,3 +1,5 @@
+import { resolveApiUrl } from './api-url';
+
 export class ApiError extends Error {
   constructor(
     public readonly status: number,
@@ -37,7 +39,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     init.body = JSON.stringify(body);
   }
 
-  const res = await fetch(path, { ...init, signal: AbortSignal.timeout(30_000) });
+  const res = await fetch(resolveApiUrl(path), { ...init, signal: AbortSignal.timeout(30_000) });
 
   if (res.status === 204) {
     return undefined as T;

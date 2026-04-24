@@ -41,6 +41,19 @@ const envSchema = z.object({
    * fail validation. Remove after one release cycle.
    */
   TELEGRAM_DEFAULT_CHAT_ID: z.string().optional(),
+  /**
+   * Comma-separated list of browser origins allowed to call the API
+   * cross-origin. In production, the dashboard runs on Vercel under a
+   * different host than the API on Railway, so the browser requires a
+   * matching `Access-Control-Allow-Origin` on every response.
+   *
+   * Leave unset in local dev — the Vite dev-proxy in `apps/dashboard`
+   * keeps requests same-origin, so no CORS headers are needed. Empty
+   * string is treated the same as unset; parsed values are trimmed.
+   *
+   * Example: `https://agentscope-dashboard.vercel.app,https://agentscope.vercel.app`.
+   */
+  DASHBOARD_ORIGINS: z.string().optional().default(''),
 });
 
 export type Config = z.infer<typeof envSchema>;

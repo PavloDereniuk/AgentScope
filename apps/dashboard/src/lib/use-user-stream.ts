@@ -1,6 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { getAccessToken } from './api-client';
+import { resolveApiUrl } from './api-url';
 
 interface StreamEvent {
   type: 'connected' | 'tx.new' | 'alert.new';
@@ -65,7 +66,10 @@ export function useUserStream(enabled = true) {
 
       let response: Response;
       try {
-        response = await fetch('/api/stream', { headers, signal: controller.signal });
+        response = await fetch(resolveApiUrl('/api/stream'), {
+          headers,
+          signal: controller.signal,
+        });
       } catch (err) {
         if (controller.signal.aborted) return false;
         // eslint-disable-next-line no-console

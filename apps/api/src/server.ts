@@ -42,6 +42,14 @@ if (config.TELEGRAM_BOT_TOKEN) {
 const agentCreateLimiter = createRateLimiter({ limit: 10, windowMs: 60 * 60_000 });
 const otlpLimiter = createRateLimiter({ limit: 100, windowMs: 60_000 });
 
+// Parse DASHBOARD_ORIGINS once at boot — trim whitespace and drop
+// empties so a stray comma in the env var doesn't whitelist `''`
+// (which hono/cors would then happily echo back as Access-Control-
+// Allow-Origin).
+const allowedOrigins = config.DASHBOARD_ORIGINS.split(',')
+  .map((o) => o.trim())
+  .filter((o) => o.length > 0);
+
 const app = buildApp({
   db,
   verifier,
@@ -51,6 +59,7 @@ const app = buildApp({
   agentCreateLimiter,
   otlpLimiter,
   ...(config.TELEGRAM_BOT_USERNAME ? { telegramBotUsername: config.TELEGRAM_BOT_USERNAME } : {}),
+  ...(allowedOrigins.length > 0 ? { allowedOrigins } : {}),
   logger,
 });
 
