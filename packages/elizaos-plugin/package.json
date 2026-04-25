@@ -1,6 +1,6 @@
 {
   "name": "@agentscopehq/elizaos-plugin",
-  "version": "0.1.0-alpha.0",
+  "version": "0.1.0-alpha.1",
   "description": "Drop-in AgentScope observability plugin for ElizaOS agents — emits OTel reasoning spans to your AgentScope API.",
   "license": "MIT",
   "type": "module",
@@ -16,12 +16,7 @@
   "publishConfig": {
     "access": "public"
   },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/PavloDereniuk/agentscope.git",
-    "directory": "packages/elizaos-plugin"
-  },
-  "homepage": "https://github.com/PavloDereniuk/agentscope#readme",
+  "homepage": "https://agentscope.dev",
   "keywords": ["solana", "agent", "observability", "opentelemetry", "elizaos"],
   "peerDependencies": {
     "@elizaos/core": "*"

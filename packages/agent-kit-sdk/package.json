@@ -1,6 +1,6 @@
 {
   "name": "@agentscopehq/agent-kit-sdk",
-  "version": "0.1.0-alpha.0",
+  "version": "0.1.0-alpha.1",
   "description": "AgentScope observability wrapper for Solana Agent Kit — hooks every tool call into OpenTelemetry spans the AgentScope API can ingest.",
   "license": "MIT",
   "type": "module",
@@ -16,12 +16,7 @@
   "publishConfig": {
     "access": "public"
   },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/PavloDereniuk/agentscope.git",
-    "directory": "packages/agent-kit-sdk"
-  },
-  "homepage": "https://github.com/PavloDereniuk/agentscope#readme",
+  "homepage": "https://agentscope.dev",
   "keywords": ["solana", "agent", "observability", "opentelemetry", "solana-agent-kit"],
   "peerDependencies": {
     "solana-agent-kit": "*"

@@ -48,8 +48,6 @@ Spans ship to `/v1/traces` via OTLP/HTTP using the agent token as the bearer.
 ## Links
 
 - **Dashboard / docs:** https://agentscope.dev
-- **Source:** https://github.com/PavloDereniuk/agentscope/tree/main/packages/elizaos-plugin
-- **Issues:** https://github.com/PavloDereniuk/agentscope/issues
 
 ## License
 

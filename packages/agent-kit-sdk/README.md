@@ -50,8 +50,6 @@ const sig = await traced('swap', async () => {
 ## Links
 
 - **Dashboard / docs:** https://agentscope.dev
-- **Source:** https://github.com/PavloDereniuk/agentscope/tree/main/packages/agent-kit-sdk
-- **Issues:** https://github.com/PavloDereniuk/agentscope/issues
 
 ## License
 
