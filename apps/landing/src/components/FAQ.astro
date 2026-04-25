@@ -1,0 +1,154 @@
+---
+// Pre-signup FAQ. Native <details>/<summary> — zero JS, no a11y debt.
+// Order tracks the questions Colosseum judges and beta testers asked
+// most often during 2026-04 hallway tests.
+
+const items = [
+  {
+    q: 'Why not Solscan?',
+    a: 'Solscan shows transactions; AgentScope shows the reasoning chain that produced them. We correlate every span with its tx, surface latencies, and fire alerts on rule breaches — Solscan is a block explorer, not an APM.',
+  },
+  {
+    q: 'How much does it cost?',
+    a: 'Free during the public beta. Mainnet ingest, 2 agents per account, all rules enabled. Pricing tiers will appear after Colosseum demo day, with the free tier preserved.',
+  },
+  {
+    q: 'Devnet or mainnet?',
+    a: 'Mainnet only. The detector and parsers are tuned for live Jupiter v6 swaps and Kamino Lend deposits — devnet liquidity is too thin for the rules to be meaningful.',
+  },
+  {
+    q: 'What is a reasoning chain?',
+    a: 'An OpenTelemetry trace: a tree of spans your agent emits as it plans and executes. AgentScope renders the tree, attaches durations and errors, and links each leaf to the resulting transaction.',
+  },
+  {
+    q: 'How does tx ↔ span correlation work?',
+    a: 'You add a single attribute to the span that fires the swap: solana.tx.signature. Our ingestion job joins on that signature when the parsed tx lands, so the dashboard shows them side-by-side.',
+  },
+  {
+    q: 'Why a per-agent token instead of one global API key?',
+    a: 'Blast radius. A leaked agent token can only ingest spans for that one agent — no listing, no tx replay, no other tenants. We follow OpenTelemetry idioms (resource attribute) so the token survives proxy hops without custom headers.',
+  },
+  {
+    q: 'Is AgentScope open source?',
+    a: 'Yes — MIT, repo opens publicly after Colosseum Frontier wraps (May 2026). The SDKs are already on npm under @agentscopehq/*.',
+  },
+  {
+    q: 'Self-host or SaaS?',
+    a: 'Both will be supported. The hackathon build runs on Railway + Supabase free tier; a docker-compose for the full stack is on the post-MVP roadmap. Nothing in the design assumes managed infra.',
+  },
+];
+---
+
+<section class="section shell" id="faq">
+  <div class="section-label"><span class="dot"></span>05 — FAQ</div>
+
+  <div class="faq-head">
+    <h2>
+      Eight questions,<br />
+      <span class="dim">straight answers.</span>
+    </h2>
+    <p>
+      The shortlist judges and beta testers actually ask before signing up.
+      Need more? <a href="/quickstart" class="faq-link">Read the quickstart</a>.
+    </p>
+  </div>
+
+  <div class="faq-list">
+    {items.map((item) => (
+      <details class="faq-item">
+        <summary>
+          <span class="faq-q">{item.q}</span>
+          <span class="faq-chev" aria-hidden="true">+</span>
+        </summary>
+        <div class="faq-a">{item.a}</div>
+      </details>
+    ))}
+  </div>
+</section>
+
+<style>
+  .faq-head {
+    max-width: 720px;
+    margin: 0 auto 48px;
+    text-align: center;
+  }
+  .faq-head h2 {
+    font-size: clamp(32px, 3.5vw, 48px);
+    font-weight: 600;
+    letter-spacing: -0.025em;
+    line-height: 1.05;
+    margin-bottom: 16px;
+  }
+  .faq-head h2 .dim {
+    color: var(--fg-3);
+  }
+  .faq-head p {
+    color: var(--fg-2);
+    line-height: 1.55;
+    font-size: 15px;
+  }
+  .faq-link {
+    color: var(--accent);
+    border-bottom: 1px solid color-mix(in oklch, var(--accent) 40%, transparent);
+    transition: border-color 0.15s ease;
+  }
+  .faq-link:hover {
+    border-color: var(--accent);
+  }
+
+  .faq-list {
+    display: flex;
+    flex-direction: column;
+    border-top: 1px solid var(--line);
+    max-width: 880px;
+    margin: 0 auto;
+  }
+  .faq-item {
+    border-bottom: 1px solid var(--line);
+  }
+  .faq-item summary {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    padding: 22px 4px;
+    cursor: pointer;
+    list-style: none;
+    transition: color 0.15s ease;
+  }
+  .faq-item summary::-webkit-details-marker {
+    display: none;
+  }
+  .faq-item summary:hover {
+    color: var(--fg);
+  }
+  .faq-q {
+    font-size: 17px;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+    color: var(--fg);
+  }
+  .faq-chev {
+    font-family: var(--font-mono);
+    font-size: 22px;
+    color: var(--fg-3);
+    transition: transform 0.2s ease, color 0.15s ease;
+    flex-shrink: 0;
+    line-height: 1;
+  }
+  .faq-item[open] .faq-chev {
+    transform: rotate(45deg);
+    color: var(--accent);
+  }
+  .faq-a {
+    padding: 0 4px 24px;
+    color: var(--fg-2);
+    line-height: 1.65;
+    max-width: 760px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .faq-chev {
+      transition: none;
+    }
+  }
+</style>

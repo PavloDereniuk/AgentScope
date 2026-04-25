@@ -1,0 +1,246 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import Nav from '../components/Nav.astro';
+import Footer from '../components/Footer.astro';
+
+const DASHBOARD_URL =
+  import.meta.env.PUBLIC_DASHBOARD_URL ?? 'https://agentscope-dashboard.vercel.app';
+---
+
+<BaseLayout
+  title="AgentScope — Quickstart"
+  description="Four steps from zero to a live reasoning trace. Register an agent, install the SDK, instrument your code, see traces stream in."
+>
+  <Nav />
+
+  <main>
+    <section class="section shell qs-section">
+      <div class="section-label"><span class="dot"></span>QUICKSTART</div>
+
+      <header class="qs-header">
+        <h1>
+          Live in <em>4 steps.</em><br />
+          <span class="dim">// from zero to a streaming trace.</span>
+        </h1>
+        <p class="qs-lede">
+          AgentScope is OpenTelemetry under the hood, so any HTTP-capable agent
+          can ship spans. Below: the smallest path for ElizaOS, Solana Agent
+          Kit, and a one-shot <span class="kw">curl</span>.
+        </p>
+        <div class="qs-cta-row">
+          <a href={DASHBOARD_URL} class="btn btn-primary btn-lg">Open dashboard →</a>
+          <a href="#step-1" class="btn btn-ghost btn-lg">Read the steps</a>
+        </div>
+      </header>
+
+      <ol class="qs-steps">
+        {/* 01 — Register */}
+        <li class="qs-step" id="step-1">
+          <div class="qs-num">01</div>
+          <div class="qs-body">
+            <h2>Register your agent</h2>
+            <p>
+              Sign in to the dashboard, click <span class="kw">Register agent</span>,
+              and fill in name + wallet pubkey. You'll get a per-agent
+              <span class="kw">ingest token</span> on the detail page — copy it,
+              keep it server-side.
+            </p>
+            <p class="qs-hint">
+              Free tier caps at 2 agents per account during the public beta.
+            </p>
+            <div class="qs-actions">
+              <a href={DASHBOARD_URL + '/agents'} class="btn btn-ghost">Open dashboard →</a>
+            </div>
+          </div>
+        </li>
+
+        {/* 02 — Install */}
+        <li class="qs-step" id="step-2">
+          <div class="qs-num">02</div>
+          <div class="qs-body">
+            <h2>Install the SDK</h2>
+            <p>
+              Pick the package that matches your stack. Both ship under
+              <span class="kw">@agentscopehq/*</span> on npm — pinned to
+              <span class="kw">@alpha</span> until <span class="kw">1.0</span>.
+            </p>
+            <div class="term qs-term">
+              <div class="term-head">
+                <div class="term-dots"><span></span><span></span><span></span></div>
+                <span>shell</span>
+                <span class="dim">npm registry</span>
+              </div>
+              <pre class="term-body qs-body-code"><code><span class="comment"># ElizaOS agents</span>
+<span class="prompt">$</span> pnpm add @agentscopehq/elizaos-plugin@alpha
+
+<span class="comment"># Solana Agent Kit (or any async TypeScript)</span>
+<span class="prompt">$</span> pnpm add @agentscopehq/agent-kit-sdk@alpha</code></pre>
+            </div>
+          </div>
+        </li>
+
+        {/* 03 — Instrument (tabbed) */}
+        <li class="qs-step" id="step-3">
+          <div class="qs-num">03</div>
+          <div class="qs-body">
+            <h2>Instrument your agent</h2>
+            <p>
+              One <span class="kw">init</span> call at boot, then wrap each
+              action. Nested <span class="fn">traced()</span> calls auto-parent
+              into a tree.
+            </p>
+
+            <div class="qs-tabs" data-tabs="instrument">
+              <div class="qs-tab-row" role="tablist" aria-label="SDK choice">
+                <button type="button" role="tab" data-tab="elizaos" aria-selected="true">ElizaOS</button>
+                <button type="button" role="tab" data-tab="agent-kit" aria-selected="false">Agent Kit</button>
+                <button type="button" role="tab" data-tab="curl" aria-selected="false">curl</button>
+              </div>
+
+              {/* ElizaOS panel */}
+              <div class="qs-tab-panel" data-panel="elizaos" role="tabpanel">
+                <div class="term qs-term">
+                  <div class="term-head">
+                    <div class="term-dots"><span></span><span></span><span></span></div>
+                    <span>src/agent/index.ts</span>
+                    <span class="dim">@agentscopehq/elizaos-plugin</span>
+                  </div>
+                  <pre class="term-body qs-body-code"><code><span class="kw">import</span> {'{ '}<span class="fn">initAgentScope</span>, <span class="fn">wrapActions</span>{' }'} <span class="kw">from</span> <span class="str">'@agentscopehq/elizaos-plugin'</span>;
+
+<span class="kw">const</span> sdk = <span class="fn">initAgentScope</span>({'({'}
+  apiUrl: process.env.<span class="fn">AGENTSCOPE_API_URL</span>!,
+  agentToken: process.env.<span class="fn">AGENTSCOPE_TOKEN</span>!,
+{'})'};
+
+<span class="kw">export const</span> myPlugin = {'{'}
+  name: <span class="str">'my-trading-plugin'</span>,
+  actions: <span class="fn">wrapActions</span>([tradeAction, analyzeAction]),
+{'}'};
+
+process.on(<span class="str">'SIGTERM'</span>, () =&gt; sdk.<span class="fn">shutdown</span>());</code></pre>
+                </div>
+              </div>
+
+              {/* Agent Kit panel */}
+              <div class="qs-tab-panel" data-panel="agent-kit" role="tabpanel" hidden>
+                <div class="term qs-term">
+                  <div class="term-head">
+                    <div class="term-dots"><span></span><span></span><span></span></div>
+                    <span>src/agent/index.ts</span>
+                    <span class="dim">@agentscopehq/agent-kit-sdk</span>
+                  </div>
+                  <pre class="term-body qs-body-code"><code><span class="kw">import</span> {'{ '}<span class="fn">initAgentScope</span>, <span class="fn">traced</span>{' }'} <span class="kw">from</span> <span class="str">'@agentscopehq/agent-kit-sdk'</span>;
+
+<span class="fn">initAgentScope</span>({'({'}
+  apiUrl: process.env.<span class="fn">AGENTSCOPE_API_URL</span>!,
+  agentToken: process.env.<span class="fn">AGENTSCOPE_TOKEN</span>!,
+{'})'};
+
+<span class="comment">// Wrap any async action — nested traced() calls auto-parent.</span>
+<span class="kw">const</span> sig = <span class="kw">await</span> <span class="fn">traced</span>(<span class="str">'execute_trade'</span>, () =&gt; kit.<span class="fn">trade</span>(mint, amount, <span class="str">'buy'</span>), {'{'}
+  <span class="str">'solana.mint'</span>: mint,
+  <span class="str">'trade.amount_sol'</span>: amount,
+{'}'});</code></pre>
+                </div>
+              </div>
+
+              {/* curl panel */}
+              <div class="qs-tab-panel" data-panel="curl" role="tabpanel" hidden>
+                <div class="term qs-term">
+                  <div class="term-head">
+                    <div class="term-dots"><span></span><span></span><span></span></div>
+                    <span>POST /v1/traces</span>
+                    <span class="dim">OTLP/HTTP · JSON</span>
+                  </div>
+                  <pre class="term-body qs-body-code"><code><span class="prompt">$</span> curl -X POST $AGENTSCOPE_API_URL/v1/traces \
+  -H <span class="str">"Content-Type: application/json"</span> \
+  -d <span class="str">'&lbrace;
+    "resourceSpans": [&lbrace;
+      "resource": &lbrace;
+        "attributes": [
+          &lbrace; "key": "agent.token", "value": &lbrace; "stringValue": "$AGENTSCOPE_TOKEN" &rbrace; &rbrace;
+        ]
+      &rbrace;,
+      "scopeSpans": [&lbrace;
+        "spans": [&lbrace;
+          "traceId": "5b8aa5a2d2c872e8321cf37308d69df2",
+          "spanId":  "051581bf3cb55c13",
+          "name":    "execute_trade",
+          "startTimeUnixNano": "1700000000000000000",
+          "endTimeUnixNano":   "1700000001000000000"
+        &rbrace;]
+      &rbrace;]
+    &rbrace;]
+  &rbrace;'</span></code></pre>
+                </div>
+                <p class="qs-hint">
+                  Works from any language. <span class="kw">agent.token</span>{' '}
+                  rides as an OTel <span class="fn">resource</span> attribute,
+                  not an HTTP header — survives proxy hops.
+                </p>
+              </div>
+            </div>
+          </div>
+        </li>
+
+        {/* 04 — See traces */}
+        <li class="qs-step" id="step-4">
+          <div class="qs-num">04</div>
+          <div class="qs-body">
+            <h2>See traces in the dashboard</h2>
+            <p>
+              Boot your agent. Within seconds you'll see spans land in the
+              <span class="kw">Reasoning</span> view, on-chain transactions
+              parsed and timestamped under <span class="kw">Transactions</span>,
+              and any rule breaches piped to Telegram.
+            </p>
+            <ul class="qs-checklist">
+              <li>
+                <span class="qs-check">✓</span>
+                Reasoning tree with parent/child spans, durations, errors
+              </li>
+              <li>
+                <span class="qs-check">✓</span>
+                Tx ↔ span correlation via <span class="kw">solana.tx.signature</span>
+              </li>
+              <li>
+                <span class="qs-check">✓</span>
+                5 anomaly rules out of the box: gas, slippage, drawdown, failure
+                rate, idle wallet
+              </li>
+            </ul>
+            <div class="qs-actions">
+              <a href={DASHBOARD_URL} class="btn btn-primary">Open dashboard →</a>
+            </div>
+          </div>
+        </li>
+      </ol>
+    </section>
+  </main>
+
+  <Footer />
+</BaseLayout>
+
+<script>
+  // Tab switcher for /quickstart step 03 — pure DOM, no framework.
+  const groups = document.querySelectorAll<HTMLElement>('[data-tabs]');
+  for (const group of groups) {
+    const tabs = group.querySelectorAll<HTMLButtonElement>('[data-tab]');
+    const panels = group.querySelectorAll<HTMLElement>('[data-panel]');
+    for (const tab of tabs) {
+      tab.addEventListener('click', () => {
+        const target = tab.dataset.tab;
+        for (const t of tabs) {
+          t.setAttribute('aria-selected', t === tab ? 'true' : 'false');
+        }
+        for (const p of panels) {
+          if (p.dataset.panel === target) {
+            p.removeAttribute('hidden');
+          } else {
+            p.setAttribute('hidden', '');
+          }
+        }
+      });
+    }
+  }
+</script>

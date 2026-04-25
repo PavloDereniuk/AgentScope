@@ -1,3 +1,4 @@
+import { IntegrationSnippet } from '@/components/IntegrationSnippet';
 import { Kpi, KpiRow } from '@/components/Kpi';
 import { TxDrawer } from '@/components/TxDrawer';
 import { PnlChart } from '@/components/pnl-chart';
@@ -12,6 +13,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { apiClient } from '@/lib/api-client';
+import { getPublicApiUrl } from '@/lib/api-url';
 import { useStream } from '@/lib/use-stream';
 import { cn } from '@/lib/utils';
 import { formatAlertSummary, formatRuleTitle } from '@agentscope/shared';
@@ -30,6 +32,7 @@ interface AgentDetail {
   tags: string[];
   createdAt: string;
   updatedAt: string;
+  ingestToken?: string;
 }
 
 interface AlertRow {
@@ -235,6 +238,14 @@ export function AgentDetailPage() {
             </DialogContent>
           </Dialog>
         </div>
+      </div>
+
+      <div className="mb-5">
+        <IntegrationSnippet
+          apiUrl={getPublicApiUrl()}
+          agentToken={agent.ingestToken}
+          hasTraffic={recentTxCount > 0}
+        />
       </div>
 
       <KpiRow>

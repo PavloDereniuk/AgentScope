@@ -5,10 +5,13 @@ interface Props {
 
 const { repoUrl = 'https://github.com/PavloDereniuk/agentscope' } = Astro.props;
 
+// Section anchors are root-relative so they keep working on cross-page
+// routes like /quickstart (where no #features section exists locally).
 const links = [
-  { href: '#features', label: 'Features', id: 'features' },
-  { href: '#integrate', label: 'Integrate', id: 'integrate' },
-  { href: '#preview', label: 'Preview', id: 'preview' },
+  { href: '/#features', label: 'Features', id: 'features' },
+  { href: '/#integrate', label: 'Integrate', id: 'integrate' },
+  { href: '/#preview', label: 'Preview', id: 'preview' },
+  { href: '/quickstart', label: 'Docs', id: 'docs' },
 ];
 ---
 

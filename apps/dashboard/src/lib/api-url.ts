@@ -30,3 +30,14 @@ export function resolveApiUrl(path: string): string {
   }
   return BASE + path;
 }
+
+/**
+ * Returns the absolute public API origin to embed in user-facing
+ * snippets (Quickstart copy/paste). In dev (no VITE_API_BASE_URL) the
+ * dashboard talks to the API through the Vite proxy, so BASE is empty;
+ * we fall back to the local API origin so the snippet remains runnable
+ * outside the browser.
+ */
+export function getPublicApiUrl(): string {
+  return BASE || 'http://localhost:3000';
+}

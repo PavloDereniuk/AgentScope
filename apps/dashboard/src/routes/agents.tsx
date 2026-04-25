@@ -1,3 +1,4 @@
+import { IntegrationSnippet } from '@/components/IntegrationSnippet';
 import { Sparkline } from '@/components/Sparkline';
 import { Button } from '@/components/ui/button';
 import {
@@ -11,6 +12,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { apiClient } from '@/lib/api-client';
+import { getPublicApiUrl } from '@/lib/api-url';
 import { useTimeseries } from '@/lib/use-timeseries';
 import { cn } from '@/lib/utils';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -152,14 +154,23 @@ export function AgentsPage() {
         <p className="font-mono text-xs text-crit">Failed to load: {(error as Error).message}</p>
       )}
 
-      {!isLoading && filtered.length === 0 ? (
+      {!isLoading && agents.length === 0 ? (
+        <div className="space-y-4 rounded-md border border-line bg-surface-2 p-8">
+          <div className="space-y-1.5">
+            <h2 className="text-lg font-semibold tracking-tight">Register your first agent</h2>
+            <p className="text-[13px] text-fg-3">
+              Click <span className="font-mono text-fg-2">Register agent</span> above to mint an
+              ingest token, then drop these three lines into your agent's bootstrap.
+            </p>
+          </div>
+          <IntegrationSnippet apiUrl={getPublicApiUrl()} />
+        </div>
+      ) : null}
+
+      {!isLoading && agents.length > 0 && filtered.length === 0 ? (
         <div className="rounded-md border border-line bg-surface-2 px-8 py-16 text-center">
           <p className="text-[13px] text-fg-3">
-            {search
-              ? 'No agents match your search.'
-              : filter === 'all'
-                ? 'No agents registered yet.'
-                : `No ${filter} agents.`}
+            {search ? 'No agents match your search.' : `No ${filter} agents.`}
           </p>
         </div>
       ) : null}
