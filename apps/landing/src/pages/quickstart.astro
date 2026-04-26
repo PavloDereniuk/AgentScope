@@ -5,6 +5,12 @@ import Footer from '../components/Footer.astro';
 
 const DASHBOARD_URL =
   import.meta.env.PUBLIC_DASHBOARD_URL ?? 'https://agentscope-dashboard.vercel.app';
+
+// Keep in sync with packages/detector/src/rules/*. The count and labels
+// render below in the "what you'll see" checklist; deriving from one
+// list prevents the count drifting out of sync with the labels when a
+// new rule lands.
+const ANOMALY_RULES = ['gas', 'slippage', 'drawdown', 'failure rate', 'idle wallet'];
 ---
 
 <BaseLayout
@@ -205,8 +211,7 @@ process.on(<span class="str">'SIGTERM'</span>, () =&gt; sdk.<span class="fn">shu
               </li>
               <li>
                 <span class="qs-check">✓</span>
-                5 anomaly rules out of the box: gas, slippage, drawdown, failure
-                rate, idle wallet
+                {ANOMALY_RULES.length} anomaly rules out of the box: {ANOMALY_RULES.join(', ')}
               </li>
             </ul>
             <div class="qs-actions">

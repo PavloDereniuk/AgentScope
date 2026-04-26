@@ -16,10 +16,40 @@
  * of bug at the source.
  */
 
-const RAW_BASE = import.meta.env.VITE_API_BASE_URL ?? '';
-// Strip trailing slash so callers can keep passing leading-slash paths
-// without producing `https://host//api/agents`.
-const BASE = RAW_BASE.replace(/\/+$/, '');
+/**
+ * Validate VITE_API_BASE_URL at module load. The value is embedded into
+ * user-facing copy/paste snippets (curl, agent-kit) via getPublicApiUrl,
+ * and into every fetch issued by the dashboard. A typo or
+ * `javascript:`/`data:` value would silently break onboarding or, worse,
+ * end up rendered inside a curl example. Mirrors the
+ * resolveLandingUrl pattern used for VITE_LANDING_URL.
+ *
+ * Empty input is the canonical "use Vite dev-proxy" signal — never a
+ * misconfiguration. We only fall back (with a console.warn) when the
+ * value is non-empty but unparseable or has a non-http(s) protocol.
+ */
+function resolveApiBase(raw: unknown): string {
+  if (typeof raw !== 'string') return '';
+  const trimmed = raw.replace(/\/+$/, '');
+  if (trimmed === '') return '';
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      console.warn(
+        `[api-url] VITE_API_BASE_URL has invalid protocol "${parsed.protocol}", falling back to dev proxy`,
+      );
+      return '';
+    }
+    return trimmed;
+  } catch {
+    console.warn(
+      `[api-url] VITE_API_BASE_URL is not a valid URL ("${raw}"), falling back to dev proxy`,
+    );
+    return '';
+  }
+}
+
+const BASE = resolveApiBase(import.meta.env.VITE_API_BASE_URL);
 
 export function resolveApiUrl(path: string): string {
   // Callers always pass absolute paths (starting with '/') — keep that

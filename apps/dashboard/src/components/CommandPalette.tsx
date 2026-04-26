@@ -79,7 +79,13 @@ export function CommandPalette() {
 
   const searchQuery = useQuery({
     queryKey: ['search', debounced],
-    queryFn: () => apiClient.get<SearchResponse>(`/api/search?q=${encodeURIComponent(debounced)}`),
+    queryFn: () => {
+      // URLSearchParams handles encoding for us — manual
+      // `encodeURIComponent` is correct today but creeps toward bugs the
+      // moment a second key shows up (sort order, double-encoded `&`).
+      const params = new URLSearchParams({ q: debounced });
+      return apiClient.get<SearchResponse>(`/api/search?${params.toString()}`);
+    },
     enabled: open && debounced.length > 0,
     staleTime: 30_000,
   });
@@ -93,12 +99,14 @@ export function CommandPalette() {
   }, [results.length, highlighted]);
 
   function go(hit: SearchHit) {
-    const path =
-      hit.type === 'agent'
-        ? `/agents/${hit.id}`
-        : hit.type === 'tx'
-          ? `/agents?tx=${encodeURIComponent(hit.id)}`
-          : `/reasoning?trace=${encodeURIComponent(hit.id)}`;
+    let path: string;
+    if (hit.type === 'agent') {
+      path = `/agents/${hit.id}`;
+    } else if (hit.type === 'tx') {
+      path = `/agents?${new URLSearchParams({ tx: hit.id }).toString()}`;
+    } else {
+      path = `/reasoning?${new URLSearchParams({ trace: hit.id }).toString()}`;
+    }
     setOpen(false);
     navigate(path);
   }

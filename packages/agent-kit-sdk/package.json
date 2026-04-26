@@ -17,6 +17,14 @@
     "access": "public"
   },
   "homepage": "https://agentscope.dev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/PavloDereniuk/AgentScope.git",
+    "directory": "packages/agent-kit-sdk"
+  },
+  "bugs": {
+    "url": "https://github.com/PavloDereniuk/AgentScope/issues"
+  },
   "keywords": ["solana", "agent", "observability", "opentelemetry", "solana-agent-kit"],
   "peerDependencies": {
     "solana-agent-kit": "*"

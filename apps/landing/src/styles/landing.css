@@ -967,9 +967,12 @@ h1.hero-title .mono {
 }
 
 /* Footer */
+/* The outer border-top was intentionally removed to keep the footer
+   visually flush with the section above (minimal redesign, Epic 11).
+   The .footer-bottom row below still carries its own border-top, which
+   acts as the actual divider inside the footer block. */
 footer {
   padding: 56px 0 40px;
-  /* border-top: 1px solid var(--line); */
 }
 .footer-grid {
   display: grid;
@@ -1006,8 +1009,11 @@ footer {
 }
 .footer-bottom {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
+  /* gap kicks in only when the row wraps on narrow viewports —
+     space-between governs spacing on the desktop one-line layout. */
   gap: 16px;
   padding-top: 24px;
   border-top: 1px solid var(--line);

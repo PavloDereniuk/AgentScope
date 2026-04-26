@@ -75,6 +75,10 @@ export function shouldAlert(
 ): boolean {
   if (count < threshold) return false;
   if (lastAlertAt === null) return true;
+  // Defensive: a clock that ran backward (NTP correction, mocked test
+  // fixtures with reversed timestamps) would otherwise produce a
+  // negative delta that trivially clears any cooldown.
+  if (now < lastAlertAt) return false;
   return now - lastAlertAt >= cooldownMs;
 }
 

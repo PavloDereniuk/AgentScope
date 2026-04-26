@@ -1,24 +1,8 @@
 import { sql } from 'drizzle-orm';
 import { createDb } from '../src/client';
+import { requireLocalDb } from './_guard';
 
-const url = process.env['DATABASE_URL'];
-if (!url) throw new Error('DATABASE_URL is required');
-
-const lowerUrl = url.toLowerCase();
-const isHostedProd =
-  lowerUrl.includes('supabase.co') ||
-  lowerUrl.includes('supabase.com') ||
-  lowerUrl.includes('railway.app') ||
-  lowerUrl.includes('amazonaws.com') ||
-  lowerUrl.includes('neon.tech');
-
-if (isHostedProd && process.env['AGENTSCOPE_ALLOW_PROD_DUMP'] !== '1') {
-  console.error(
-    '[show-agent-tokens] refusing to run against hosted host. ' +
-      'Set AGENTSCOPE_ALLOW_PROD_DUMP=1 if you really mean it.',
-  );
-  process.exit(1);
-}
+const url = requireLocalDb('show-agent-tokens');
 
 const reveal = process.env['AGENTSCOPE_ALLOW_TOKEN_DUMP'] === '1';
 if (reveal) {

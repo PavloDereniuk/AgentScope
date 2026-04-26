@@ -1,8 +1,8 @@
 import { sql } from 'drizzle-orm';
 import { createDb } from '../src/client';
+import { requireLocalDb } from './_guard';
 
-const url = process.env['DATABASE_URL'];
-if (!url) throw new Error('DATABASE_URL is required');
+const url = requireLocalDb('trader-count');
 const db = createDb({ connectionString: url });
 
 const WALLET = '8h9SSbj4GqUhmUENQpLNvt1LBPwveLLYobCSbZs6r75U';
