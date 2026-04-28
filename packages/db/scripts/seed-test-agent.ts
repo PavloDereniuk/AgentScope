@@ -47,7 +47,7 @@ async function main() {
   } else {
     const inserted = await db
       .insert(users)
-      .values({ privyDid, email: 'test@agentscope.dev' })
+      .values({ privyDid, email: 'test@agentscopehq.dev' })
       .returning({ id: users.id });
     if (!inserted[0]) throw new Error('user insert failed');
     userId = inserted[0].id;

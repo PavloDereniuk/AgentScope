@@ -20,7 +20,7 @@ Requires Node 20+. Works with any SolanaAgentKit instance; `solana-agent-kit` is
 import { initAgentScope, traced } from '@agentscopehq/agent-kit-sdk';
 
 initAgentScope({
-  apiUrl: process.env.AGENTSCOPE_API_URL,        // https://api.agentscope.dev
+  apiUrl: process.env.AGENTSCOPE_API_URL,        // https://api.agentscopehq.dev
   agentToken: process.env.AGENTSCOPE_AGENT_TOKEN, // from dashboard Settings
 });
 
@@ -49,7 +49,7 @@ const sig = await traced('swap', async () => {
 
 ## Links
 
-- **Dashboard / docs:** https://agentscope.dev
+- **Dashboard / docs:** https://agentscopehq.dev
 
 ## License
 

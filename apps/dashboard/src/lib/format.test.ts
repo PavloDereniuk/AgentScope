@@ -20,7 +20,7 @@ describe('relativeTime', () => {
 
 describe('computeInitials', () => {
   it('takes the local part of an email', () => {
-    expect(computeInitials('pavlo@agentscope.dev')).toBe('PA');
+    expect(computeInitials('pavlo@agentscopehq.dev')).toBe('PA');
   });
   it('uppercases and slices raw identifiers', () => {
     expect(computeInitials('solana7fK')).toBe('SO');

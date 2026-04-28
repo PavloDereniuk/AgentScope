@@ -16,7 +16,7 @@
   "publishConfig": {
     "access": "public"
   },
-  "homepage": "https://agentscope.dev",
+  "homepage": "https://agentscopehq.dev",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/PavloDereniuk/AgentScope.git",

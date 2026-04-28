@@ -21,7 +21,7 @@ const {
   density = 'normal',
 } = Astro.props;
 
-const siteUrl = import.meta.env.PUBLIC_SITE_URL ?? 'https://agentscope-landing.vercel.app';
+const siteUrl = import.meta.env.PUBLIC_SITE_URL ?? 'https://agentscopehq.dev';
 const canonical = new URL(Astro.url.pathname, siteUrl).href;
 const ogImageUrl = new URL(ogImage, siteUrl).href;
 ---

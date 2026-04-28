@@ -20,7 +20,7 @@ Requires Node 20+ and an existing `@elizaos/core` install.
 import { initAgentScope, wrapActions } from '@agentscopehq/elizaos-plugin';
 
 const sdk = initAgentScope({
-  apiUrl: process.env.AGENTSCOPE_API_URL,      // https://api.agentscope.dev
+  apiUrl: process.env.AGENTSCOPE_API_URL,      // https://api.agentscopehq.dev
   agentToken: process.env.AGENTSCOPE_AGENT_TOKEN, // from dashboard Settings
 });
 
@@ -47,7 +47,7 @@ Spans ship to `/v1/traces` via OTLP/HTTP using the agent token as the bearer.
 
 ## Links
 
-- **Dashboard / docs:** https://agentscope.dev
+- **Dashboard / docs:** https://agentscopehq.dev
 
 ## License
 
