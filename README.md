@@ -20,6 +20,14 @@ Network: Solana **mainnet**. DB: Supabase Postgres (prod). Auth: Privy.
 
 ---
 
+## Weekly demo videos
+
+| Week | Date | Highlights | Link |
+|---|---|---|---|
+| Week 3 | 2026-04-26 | Production deploy, redesigned landing + dashboard, npm SDKs published, in-product onboarding, one-click Telegram, real-time SSE | [youtu.be/YhruKTGZEyU](https://youtu.be/YhruKTGZEyU) |
+
+---
+
 ## Why
 
 - 9000+ AI agents already deployed on Solana (Alchemy, 2026)
