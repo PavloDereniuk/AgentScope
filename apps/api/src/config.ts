@@ -51,7 +51,7 @@ const envSchema = z.object({
    * keeps requests same-origin, so no CORS headers are needed. Empty
    * string is treated the same as unset; parsed values are trimmed.
    *
-   * Example: `https://agentscope-dashboard.vercel.app,https://agentscope.vercel.app`.
+   * Example: `https://app.agentscopehq.dev,https://agentscopehq.dev`.
    */
   DASHBOARD_ORIGINS: z.string().optional().default(''),
   /**

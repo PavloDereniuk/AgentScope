@@ -11,9 +11,9 @@
 
 | Service | URL |
 |---|---|
-| Landing | [agentscope-landing.vercel.app](https://agentscope-landing.vercel.app) |
-| Dashboard | [agentscope-dashboard.vercel.app](https://agentscope-dashboard.vercel.app) |
-| API | [agentscope-api-v2-production.up.railway.app](https://agentscope-api-v2-production.up.railway.app/health) |
+| Landing | [agentscopehq.dev](https://agentscopehq.dev) |
+| Dashboard | [app.agentscopehq.dev](https://app.agentscopehq.dev) |
+| API | [api.agentscopehq.dev](https://api.agentscopehq.dev/health) |
 | Ingestion | Railway worker (mainnet WebSocket + 60s cron) |
 
 Network: Solana **mainnet**. DB: Supabase Postgres (prod). Auth: Privy.
@@ -117,7 +117,7 @@ docs/DEPLOY.md                 — full deploy runbook + env matrix
 
 ## REST API (`apps/api`)
 
-Base URL: `http://localhost:3000` (dev) / `https://agentscope-api-v2-production.up.railway.app` (prod)
+Base URL: `http://localhost:3000` (dev) / `https://api.agentscopehq.dev` (prod)
 
 ### Public
 
@@ -311,7 +311,7 @@ pnpm add @agentscopehq/elizaos-plugin@alpha
 import { initAgentScope, wrapActions } from '@agentscopehq/elizaos-plugin';
 
 const sdk = initAgentScope({
-  apiUrl: 'https://agentscope-api-v2-production.up.railway.app',
+  apiUrl: 'https://api.agentscopehq.dev',
   agentToken: process.env.AGENTSCOPE_AGENT_TOKEN,
 });
 
@@ -349,7 +349,7 @@ pnpm add @agentscopehq/agent-kit-sdk@alpha
 import { initAgentScope, traced } from '@agentscopehq/agent-kit-sdk';
 
 const sdk = initAgentScope({
-  apiUrl: 'https://agentscope-api-v2-production.up.railway.app',
+  apiUrl: 'https://api.agentscopehq.dev',
   agentToken: process.env.AGENTSCOPE_AGENT_TOKEN,
 });
 

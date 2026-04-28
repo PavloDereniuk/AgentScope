@@ -4,7 +4,7 @@
  * - In local dev (VITE_API_BASE_URL unset) we return the path unchanged
  *   so the Vite dev-proxy in `vite.config.ts` forwards `/api/*` and
  *   `/v1/*` to the API on localhost:3000 — no CORS needed.
- * - In production (VITE_API_BASE_URL=https://agentscope-api-...up.railway.app)
+ * - In production (VITE_API_BASE_URL=https://api.agentscopehq.dev)
  *   we prefix the path so the browser issues a cross-origin request
  *   directly against Railway. The API's CORS middleware whitelists the
  *   dashboard origin(s) so the browser lets the response through.
