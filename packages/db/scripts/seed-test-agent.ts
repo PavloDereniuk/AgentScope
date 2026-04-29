@@ -10,9 +10,13 @@ import { randomUUID } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
 import { createDb } from '../src/client';
 import { agents, users } from '../src/schema';
+import { requireLocalDb } from './_guard';
 
-const url = process.env['DATABASE_URL'];
-if (!url) throw new Error('DATABASE_URL is required');
+// Refuse to seed test rows into a hosted Postgres unless the operator has
+// explicitly opted in via AGENTSCOPE_ALLOW_PROD_DUMP=1. Test users/agents
+// landing in prod are recoverable but still pollute multi-tenant metrics
+// and require a manual cleanup pass — defense-in-depth.
+const url = requireLocalDb('seed-test-agent');
 
 // Caller MUST provide a real Solana wallet pubkey via AGENT_WALLET env.
 // Earlier versions defaulted to a program ID (SPL Token Program), which

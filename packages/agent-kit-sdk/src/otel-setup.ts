@@ -3,7 +3,7 @@ import { resourceFromAttributes } from '@opentelemetry/resources';
 import { NodeSDK } from '@opentelemetry/sdk-node';
 
 export interface AgentScopeConfig {
-  /** Base URL of your AgentScope API, e.g. https://api.agentscope.io */
+  /** Base URL of your AgentScope API, e.g. https://api.agentscopehq.dev */
   apiUrl: string;
   /** Ingest token from the AgentScope dashboard (agents.ingest_token) */
   agentToken: string;

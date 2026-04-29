@@ -2,7 +2,7 @@
  * Minimal example: Solana Agent Kit + AgentScope observability.
  *
  * Run with:
- *   AGENTSCOPE_API_URL=https://api.agentscope.io \
+ *   AGENTSCOPE_API_URL=https://api.agentscopehq.dev \
  *   AGENTSCOPE_AGENT_TOKEN=<your-token> \
  *   npx tsx examples/agent-kit-trader.ts
  */

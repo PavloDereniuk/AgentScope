@@ -56,6 +56,18 @@ const DEFAULT_WINDOW_MS = 10 * 60_000;
 const DEFAULT_COOLDOWN_MS = 30 * 60_000;
 const DEFAULT_INTERVAL_MS = 5 * 60_000;
 
+// Mirrors the canonical truncation in `@agentscope/alerter` (telegram.ts).
+// Telegram's sendMessage rejects text > 4096 UTF-16 units with HTTP 400.
+// Kept inline here because the admin sender is platform-wide (no AlertMessage
+// shape) and we don't want to widen the alerter's public surface for one caller.
+const TELEGRAM_MAX_CHARS = 4096;
+const TELEGRAM_SAFE_CHARS = 4000;
+function truncateForTelegram(text: string): string {
+  if (text.length <= TELEGRAM_MAX_CHARS) return text;
+  const marker = '\n…[truncated]';
+  return text.slice(0, TELEGRAM_SAFE_CHARS - marker.length) + marker;
+}
+
 /**
  * Pure cooldown gate. Split out of the runtime so we can unit-test the
  * "fire once, then stay quiet for cooldownMs" policy without spinning
@@ -98,6 +110,12 @@ export async function runAbuseCheck(
   const threshold = deps.threshold ?? DEFAULT_THRESHOLD;
   const windowMs = deps.windowMs ?? DEFAULT_WINDOW_MS;
   const cooldownMs = deps.cooldownMs ?? DEFAULT_COOLDOWN_MS;
+
+  // Mirrors the detector-rule guard pattern: a misconfigured threshold (0 or
+  // negative) would trivially fire on every tick because `count >= 0` is
+  // always true. Bail before the count query — also avoids generating Telegram
+  // spam if a future env-driven override is set incorrectly.
+  if (threshold <= 0 || windowMs <= 0) return;
 
   const since = new Date(now - windowMs).toISOString();
   const [row] = await deps.db
@@ -184,10 +202,11 @@ export function createAdminTelegramSender(
 ): (text: string) => Promise<void> {
   const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
   return async (text: string): Promise<void> => {
+    const safeText = truncateForTelegram(text);
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: chatId, text }),
+      body: JSON.stringify({ chat_id: chatId, text: safeText }),
       signal: AbortSignal.timeout(10_000),
     });
     if (!res.ok) {

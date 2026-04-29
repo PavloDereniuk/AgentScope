@@ -88,6 +88,12 @@ export function createStreamRouter(db: Database, sseBus: SseBus) {
         headers: {
           'Content-Type': 'text/event-stream',
           'Cache-Control': 'no-cache',
+          // Preserve the per-request Vary header set by the global no-store
+          // middleware in app.ts: returning a `new Response` here bypasses
+          // Hono's c.header() merge, so we must reapply it explicitly to
+          // keep cache keys partitioned by Authorization on intermediaries
+          // that ignore Cache-Control directives on text/event-stream.
+          Vary: 'Authorization',
           Connection: 'keep-alive',
         },
       },

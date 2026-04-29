@@ -38,8 +38,12 @@ const BINDING_CODE_BYTES = 9;
  */
 const BOT_USERNAME_ENV = process.env.TELEGRAM_BOT_USERNAME ?? '';
 
+// Generated codes are always exactly 12 base64url chars (9 random bytes).
+// Pinning the schema length matches the generator and rejects malformed
+// inputs at the validation boundary instead of letting them fall through
+// to a guaranteed-empty DB lookup.
 const statusQuerySchema = z.object({
-  code: z.string().min(8).max(64),
+  code: z.string().length(12),
 });
 
 function generateBindingCode(): string {
