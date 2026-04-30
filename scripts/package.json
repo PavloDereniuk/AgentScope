@@ -18,7 +18,8 @@
     "inspect-trader-tx": "tsx --env-file=../.env inspect-trader-tx.ts",
     "inspect-alerts-duplicates": "tsx --env-file=../.env inspect-alerts-duplicates.ts",
     "verify-alerts-dedupe-index": "tsx --env-file=../.env verify-alerts-dedupe-index.ts",
-    "count-stale-alerts": "tsx --env-file=../.env count-stale-alerts.ts"
+    "count-stale-alerts": "tsx --env-file=../.env count-stale-alerts.ts",
+    "live-agent-kit": "tsx live-agent-kit.ts"
   },
   "dependencies": {
     "@agentscopehq/agent-kit-sdk": "workspace:*",
