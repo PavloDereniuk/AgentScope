@@ -113,6 +113,14 @@ export interface AgentsRouterOptions {
    * for → cf-connecting-ip → null). Absent → no IP throttling.
    */
   ipLimiter?: RateLimiter;
+  /**
+   * Privy DIDs that bypass `maxAgentsPerUser` entirely. Intended for the
+   * platform owner / load-test accounts. Other abuse defenses (per-IP
+   * throttle, agent-create rate limiter) still apply — only the count
+   * cap is skipped, and the GET response surfaces `maxAgents: null` so
+   * the dashboard never hides the "Register agent" button for them.
+   */
+  ownerPrivyDids?: Set<string>;
 }
 
 /**
@@ -148,6 +156,7 @@ export function createAgentsRouter(
 ) {
   const router = new Hono<ApiEnv>();
   const maxAgentsPerUser = options.maxAgentsPerUser ?? Number.POSITIVE_INFINITY;
+  const ownerPrivyDids = options.ownerPrivyDids ?? new Set<string>();
 
   router.post(
     '/',
@@ -179,7 +188,13 @@ export function createAgentsRouter(
       // would require a `SELECT ... FOR UPDATE` or a Postgres
       // check-by-trigger, both overkill for a defense-in-depth cap
       // whose real job is to stop 100× signups, not 3rd-agent races.
-      if (Number.isFinite(maxAgentsPerUser)) {
+      //
+      // Owner DIDs bypass the cap entirely so the platform owner can
+      // run concurrent live-validation agents without bumping the
+      // public-beta cap for everyone. The count query is also skipped
+      // — owners never need it, and skipping saves a round-trip on the
+      // hot path of repeated agent registration.
+      if (Number.isFinite(maxAgentsPerUser) && !ownerPrivyDids.has(privyDid)) {
         const [row] = await db
           .select({ count: sql<number>`cast(count(*) as int)` })
           .from(agents)
@@ -266,7 +281,10 @@ export function createAgentsRouter(
     // the "Register agent" button at cap instead of letting the user
     // click through to a 403. `null` means unlimited (tests; omitted
     // env var would yield the default 2, not infinity, in production).
-    const maxAgents = Number.isFinite(maxAgentsPerUser) ? maxAgentsPerUser : null;
+    // Owner DIDs see `null` here too so the dashboard never hides the
+    // Add button for them — mirrors the POST-side bypass above.
+    const isOwner = ownerPrivyDids.has(privyDid);
+    const maxAgents = !isOwner && Number.isFinite(maxAgentsPerUser) ? maxAgentsPerUser : null;
     return c.json({ agents: enriched, maxAgents });
   });
 

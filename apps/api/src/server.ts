@@ -65,6 +65,7 @@ const app = buildApp({
   agentCreateIpLimiter,
   otlpLimiter,
   maxAgentsPerUser: config.MAX_AGENTS_PER_USER,
+  ...(config.OWNER_PRIVY_DID_SET.size > 0 ? { ownerPrivyDids: config.OWNER_PRIVY_DID_SET } : {}),
   ...(config.TELEGRAM_BOT_USERNAME ? { telegramBotUsername: config.TELEGRAM_BOT_USERNAME } : {}),
   ...(allowedOrigins.length > 0 ? { allowedOrigins } : {}),
   logger,

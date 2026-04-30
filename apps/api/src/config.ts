@@ -63,9 +63,21 @@ const envSchema = z.object({
    * more than 2 concurrent agents.
    */
   MAX_AGENTS_PER_USER: z.coerce.number().int().positive().default(2),
+  /**
+   * Comma-separated Privy DIDs that bypass `MAX_AGENTS_PER_USER`
+   * entirely. Intended for the platform owner / internal load-test
+   * accounts that need to spin up many concurrent agents without
+   * loosening the cap for the general public.
+   *
+   * Empty / unset → no whitelist; the cap applies to everyone.
+   * Other abuse defenses (per-IP throttle, signup-spike monitor,
+   * rate limiter on POST /api/agents) still apply to whitelisted
+   * users — only the count cap is skipped.
+   */
+  OWNER_PRIVY_DIDS: z.string().optional().default(''),
 });
 
-export type Config = z.infer<typeof envSchema>;
+export type Config = z.infer<typeof envSchema> & { OWNER_PRIVY_DID_SET: Set<string> };
 
 export function loadConfig(): Config {
   const parsed = envSchema.safeParse(process.env);
@@ -75,5 +87,12 @@ export function loadConfig(): Config {
       .join('\n');
     throw new Error(`Invalid environment variables:\n${issues}`);
   }
-  return parsed.data;
+  // Pre-compute the owner DID set so each agent-create request does a
+  // single Set#has lookup instead of re-splitting the string per call.
+  const ownerDids = new Set(
+    parsed.data.OWNER_PRIVY_DIDS.split(',')
+      .map((d) => d.trim())
+      .filter((d) => d.length > 0),
+  );
+  return { ...parsed.data, OWNER_PRIVY_DID_SET: ownerDids };
 }

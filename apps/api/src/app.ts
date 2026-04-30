@@ -74,6 +74,12 @@ export interface AppDeps {
    */
   maxAgentsPerUser?: number;
   /**
+   * Privy DIDs that bypass `maxAgentsPerUser` entirely (owner / load-test
+   * accounts). Empty/omitted → cap applies to every user. Wired from
+   * `OWNER_PRIVY_DIDS` env var via `loadConfig()`.
+   */
+  ownerPrivyDids?: Set<string>;
+  /**
    * Per-IP rate limiter for POST /api/agents (Epic 14 Phase 3 — abuse
    * hardening). Layered in *front* of `agentCreateLimiter` so a flood
    * of fresh Privy signups from one IP gets 429'd before it consumes
@@ -194,6 +200,7 @@ export function buildApp(deps: AppDeps) {
     createAgentsRouter(deps.db, deps.sseBus, deps.alerter, agentCreateLimiter, {
       ...(deps.maxAgentsPerUser !== undefined ? { maxAgentsPerUser: deps.maxAgentsPerUser } : {}),
       ...(agentCreateIpLimiter ? { ipLimiter: agentCreateIpLimiter } : {}),
+      ...(deps.ownerPrivyDids ? { ownerPrivyDids: deps.ownerPrivyDids } : {}),
     }),
   );
   api.route('/transactions', createTransactionsRouter(deps.db));

@@ -1345,3 +1345,127 @@ describe('POST /api/agents — per-user cap', () => {
     }
   });
 });
+
+// Owner whitelist — DIDs in OWNER_PRIVY_DIDS bypass the per-user cap
+// entirely so the platform owner can run many concurrent live-validation
+// agents without bumping the public-beta cap for everyone.
+describe('POST /api/agents — owner DID whitelist', () => {
+  const OWNER_DID = 'did:privy:owner-test';
+  const NORMAL_DID = 'did:privy:normal-test';
+
+  function buildBody(i: number) {
+    const BASE58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+    return JSON.stringify({
+      walletPubkey: `${BASE58[i % BASE58.length]}${'1'.repeat(31)}`,
+      name: `Owner Agent ${i}`,
+      framework: 'custom',
+      agentType: 'other',
+    });
+  }
+
+  it('whitelisted DID can create more agents than the cap allows', async () => {
+    const testDb = await createTestDatabase();
+    try {
+      const app = buildApp({
+        db: testDb.db,
+        verifier: makeVerifier(OWNER_DID),
+        sseBus: createSseBus(),
+        logger: silentLogger,
+        maxAgentsPerUser: 2,
+        ownerPrivyDids: new Set([OWNER_DID]),
+      });
+
+      // Create 5 — well past the cap of 2 — every one should succeed.
+      for (let i = 0; i < 5; i++) {
+        const res = await app.request('/api/agents', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: BEARER },
+          body: buildBody(i),
+        });
+        expect(res.status, `owner create ${i}`).toBe(201);
+      }
+    } finally {
+      await testDb.close();
+    }
+  });
+
+  it('non-whitelisted DID still hits the cap when others bypass it', async () => {
+    const testDb = await createTestDatabase();
+    try {
+      // Verifier returns the *normal* DID, but the whitelist contains a
+      // *different* DID — proves the bypass is keyed on actual identity,
+      // not on whitelist presence in general.
+      const app = buildApp({
+        db: testDb.db,
+        verifier: makeVerifier(NORMAL_DID),
+        sseBus: createSseBus(),
+        logger: silentLogger,
+        maxAgentsPerUser: 2,
+        ownerPrivyDids: new Set([OWNER_DID]),
+      });
+
+      for (let i = 0; i < 2; i++) {
+        const res = await app.request('/api/agents', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: BEARER },
+          body: buildBody(i),
+        });
+        expect(res.status, `normal create ${i}`).toBe(201);
+      }
+      const blocked = await app.request('/api/agents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: BEARER },
+        body: buildBody(2),
+      });
+      expect(blocked.status).toBe(403);
+    } finally {
+      await testDb.close();
+    }
+  });
+
+  it('GET /api/agents returns maxAgents:null for owner so dashboard never hides Add button', async () => {
+    const testDb = await createTestDatabase();
+    try {
+      const app = buildApp({
+        db: testDb.db,
+        verifier: makeVerifier(OWNER_DID),
+        sseBus: createSseBus(),
+        logger: silentLogger,
+        maxAgentsPerUser: 2,
+        ownerPrivyDids: new Set([OWNER_DID]),
+      });
+
+      const res = await app.request('/api/agents', {
+        headers: { Authorization: BEARER },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { agents: unknown[]; maxAgents: number | null };
+      expect(body.maxAgents).toBeNull();
+    } finally {
+      await testDb.close();
+    }
+  });
+
+  it('GET /api/agents still returns maxAgents=cap for non-owner under same wiring', async () => {
+    const testDb = await createTestDatabase();
+    try {
+      const app = buildApp({
+        db: testDb.db,
+        verifier: makeVerifier(NORMAL_DID),
+        sseBus: createSseBus(),
+        logger: silentLogger,
+        maxAgentsPerUser: 2,
+        ownerPrivyDids: new Set([OWNER_DID]),
+      });
+
+      const res = await app.request('/api/agents', {
+        headers: { Authorization: BEARER },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { agents: unknown[]; maxAgents: number | null };
+      expect(body.maxAgents).toBe(2);
+    } finally {
+      await testDb.close();
+    }
+  });
+});
