@@ -24,6 +24,7 @@ import { registerErrorHandlers } from './middleware/error';
 import type { RateLimiter } from './middleware/rate-limit';
 import { createAgentsRouter } from './routes/agents';
 import { createAlertsRouter } from './routes/alerts';
+import { createIngestRouter } from './routes/ingest';
 import { createOtlpRouter } from './routes/otlp';
 import { createReasoningRouter } from './routes/reasoning';
 import { createSearchRouter } from './routes/search';
@@ -142,6 +143,22 @@ export function buildApp(deps: AppDeps) {
     createOtlpRouter({
       logger: log,
       db: deps.db,
+      ...(otlpLimiter ? { rateLimit: otlpLimiter } : {}),
+    }),
+  );
+
+  // L0 ingest: flat-JSON `POST /v1/spans` for non-Node agents and
+  // demos that prefer a single curl call over wiring an OTel SDK.
+  // Mounted alongside `/v1/traces` and shares the same per-token rate
+  // limiter so an agent cannot bypass the OTLP budget by switching
+  // surfaces. Auth uses standard `Authorization: Bearer ...` instead
+  // of the OTel resource-attribute idiom — see routes/ingest.ts for
+  // the rationale.
+  app.route(
+    '/v1',
+    createIngestRouter({
+      db: deps.db,
+      logger: log,
       ...(otlpLimiter ? { rateLimit: otlpLimiter } : {}),
     }),
   );

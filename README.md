@@ -66,7 +66,15 @@ Agent SDKs:
 ```
 
 **Data flow:** Solana tx → WebSocket (Helius) → ingestion → parser → DB → detector → alerter → Telegram
-**Reasoning flow:** Agent OTel SDK → `POST /v1/traces` → OTLP receiver → DB → dashboard reasoning tree
+**Reasoning flow:** Agent → one of three integration tiers → API → DB → dashboard reasoning tree
+
+| Tier | Path | Use case |
+|---|---|---|
+| **L0 — Universal REST** | `POST /v1/spans` (flat JSON, Bearer token) | Any language — Python, Rust, Bash, curl |
+| **L1 — Standard OTLP** | `POST /v1/traces` (OTLP/HTTP, `agent.token` Resource attr) | Any OpenTelemetry-compatible tracer |
+| **L2 — Drop-in SDK** | `wrapActions()` / `traced()` | Node.js — ElizaOS, Solana Agent Kit |
+
+See [docs/QUICKSTART.md](./docs/QUICKSTART.md) for snippets in each tier.
 
 ---
 
