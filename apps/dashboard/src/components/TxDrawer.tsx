@@ -1,21 +1,13 @@
+import { TraceDetailPanel } from '@/components/TraceDetailPanel';
 import { apiClient } from '@/lib/api-client';
+import type { TraceSpan } from '@/lib/build-trace-tree';
 import { cn } from '@/lib/utils';
 import { SOLANA_SIGNATURE_RE } from '@agentscope/shared';
 import { useQuery } from '@tanstack/react-query';
 import { Copy, Download, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
-interface SpanRow {
-  id: string;
-  traceId: string;
-  spanId: string;
-  parentSpanId: string | null;
-  spanName: string;
-  startTime: string;
-  endTime: string;
-  attributes: Record<string, unknown>;
-  txSignature: string | null;
-}
+type SpanRow = TraceSpan;
 
 interface TxDetailResponse {
   transaction: {
@@ -217,23 +209,7 @@ export function TxDrawer({ signature, onClose }: TxDrawerProps) {
               <div className="mb-2 font-mono text-[10.5px] uppercase tracking-[0.08em] text-fg-3">
                 Reasoning Spans · {spans.length}
               </div>
-              {spans.length === 0 ? (
-                <p className="font-mono text-[11px] text-fg-3">No spans correlated with this tx.</p>
-              ) : (
-                <ul className="flex flex-col gap-1 font-mono text-[12px] text-fg-2">
-                  {spans.map((span) => (
-                    <li
-                      key={span.spanId}
-                      className="flex items-center gap-2 border-l border-line-soft pl-2"
-                    >
-                      <span className="truncate text-fg">{span.spanName}</span>
-                      <span className="ml-auto text-[10.5px] tabular-nums text-fg-3">
-                        {spanDuration(span)}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
+              <TraceDetailPanel spans={spans} emptyHint="No spans correlated with this tx." />
             </>
           )}
         </div>
@@ -267,10 +243,4 @@ function StatusPill({ ok }: { ok: boolean }) {
       {ok ? 'success' : 'fail'}
     </span>
   );
-}
-
-function spanDuration(span: SpanRow): string {
-  if (!span.endTime) return '—';
-  const ms = new Date(span.endTime).getTime() - new Date(span.startTime).getTime();
-  return `${Math.max(0, ms)}ms`;
 }

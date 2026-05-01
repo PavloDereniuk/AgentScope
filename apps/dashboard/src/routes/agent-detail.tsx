@@ -1,5 +1,6 @@
 import { IntegrationSnippet } from '@/components/IntegrationSnippet';
 import { Kpi, KpiRow } from '@/components/Kpi';
+import { TraceDrawer } from '@/components/TraceDrawer';
 import { TxDrawer } from '@/components/TxDrawer';
 import { PnlChart } from '@/components/pnl-chart';
 import { Button } from '@/components/ui/button';
@@ -67,6 +68,7 @@ interface TxListResponse {
 
 interface ReasoningLogRow {
   id: string;
+  traceId: string;
   spanId: string;
   spanName: string;
   startTime: string;
@@ -80,6 +82,7 @@ export function AgentDetailPage() {
   const queryClient = useQueryClient();
 
   const [selectedTx, setSelectedTx] = useState<string | null>(null);
+  const [selectedTraceId, setSelectedTraceId] = useState<string | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [walletCopyState, setWalletCopyState] = useState<'idle' | 'copied' | 'error'>('idle');
 
@@ -286,11 +289,18 @@ export function AgentDetailPage() {
             {reasoningData?.reasoningLogs.length ? (
               <ul className="flex flex-col gap-1.5">
                 {reasoningData.reasoningLogs.slice(0, 3).map((span) => (
-                  <li key={span.id} className="flex items-center gap-2">
-                    <span className="truncate text-fg">{span.spanName}</span>
-                    <span className="ml-auto text-[10.5px] tabular-nums text-fg-3">
-                      {formatSpanDuration(span.startTime, span.endTime)}
-                    </span>
+                  <li key={span.id}>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedTraceId(span.traceId)}
+                      className="flex w-full items-center gap-2 rounded px-1 py-0.5 text-left hover:bg-surface-3"
+                      aria-label={`Open trace for ${span.spanName}`}
+                    >
+                      <span className="truncate text-fg">{span.spanName}</span>
+                      <span className="ml-auto text-[10.5px] tabular-nums text-fg-3">
+                        {formatSpanDuration(span.startTime, span.endTime)}
+                      </span>
+                    </button>
                   </li>
                 ))}
                 <li className="pt-2">
@@ -382,6 +392,7 @@ export function AgentDetailPage() {
       </Card>
 
       <TxDrawer signature={selectedTx} onClose={() => setSelectedTx(null)} />
+      <TraceDrawer traceId={selectedTraceId} onClose={() => setSelectedTraceId(null)} />
     </div>
   );
 }

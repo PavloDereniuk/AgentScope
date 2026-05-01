@@ -1,9 +1,10 @@
+import { TraceDetailPanel } from '@/components/TraceDetailPanel';
 import { apiClient } from '@/lib/api-client';
 import type { TraceSummary } from '@/lib/trace-summaries';
 import { cn } from '@/lib/utils';
 import { useQuery } from '@tanstack/react-query';
+import { ChevronDown, ChevronRight } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
 
 interface AgentRow {
   id: string;
@@ -31,6 +32,10 @@ export function ReasoningPage() {
   const agents = agentsQuery.data?.agents ?? [];
   const [agentFilter, setAgentFilter] = useState<string>(ALL_AGENTS);
   const [traceFilter, setTraceFilter] = useState('');
+  // Single-row expand: closing one trace drops its query cache through
+  // the queryKey change in TraceDetailPanel, so memory stays bounded
+  // even when the user clicks through dozens of rows.
+  const [expandedTraceId, setExpandedTraceId] = useState<string | null>(null);
 
   const tracesQuery = useQuery({
     queryKey: ['reasoning', 'traces', agentFilter],
@@ -123,6 +128,7 @@ export function ReasoningPage() {
             <table className="w-full min-w-[820px] border-collapse text-[13px]">
               <thead>
                 <tr>
+                  <Th className="w-7" />
                   <Th>Time</Th>
                   <Th>Agent</Th>
                   <Th>Trace ID</Th>
@@ -133,37 +139,70 @@ export function ReasoningPage() {
                 </tr>
               </thead>
               <tbody>
-                {visibleTraces.map((trace) => (
-                  <tr
-                    key={trace.traceId}
-                    className="cursor-pointer border-b border-line-soft transition-colors last:border-b-0 hover:bg-surface-3"
-                  >
-                    <Td className="font-mono text-fg-3">
-                      {new Date(trace.startTime).toLocaleTimeString()}
-                    </Td>
-                    <Td className="font-mono text-fg-2">
-                      {agentNameById.get(trace.agentId) ?? trace.agentId.slice(0, 8)}
-                    </Td>
-                    <Td className="font-mono text-fg">
-                      {/* Deep-link lands on the agent page — the agent-detail view
-                          does not yet read a traceId query param, so we navigate
-                          without one to avoid advertising a feature that silently
-                          no-ops. Wire the param up on both sides before adding it
-                          back here. */}
-                      <Link to={`/agents/${trace.agentId}`}>{trace.traceId.slice(0, 10)}…</Link>
-                    </Td>
-                    <Td className="font-mono text-fg-2">{trace.rootSpanName}</Td>
-                    <Td className="text-right font-mono tabular-nums text-fg-2">
-                      {trace.spanCount}
-                    </Td>
-                    <Td className="text-right font-mono tabular-nums text-fg-3">
-                      {trace.durationMs !== null ? `${trace.durationMs.toLocaleString()}ms` : '—'}
-                    </Td>
-                    <Td className="text-right">
-                      <TraceStatusBadge error={trace.hasError} />
-                    </Td>
-                  </tr>
-                ))}
+                {visibleTraces.map((trace) => {
+                  const expanded = expandedTraceId === trace.traceId;
+                  return (
+                    <FragmentRow key={trace.traceId}>
+                      <tr
+                        className={cn(
+                          'cursor-pointer border-b border-line-soft transition-colors hover:bg-surface-3',
+                          expanded && 'bg-surface-3',
+                          !expanded && 'last:border-b-0',
+                        )}
+                        onClick={() =>
+                          setExpandedTraceId((cur) =>
+                            cur === trace.traceId ? null : trace.traceId,
+                          )
+                        }
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            setExpandedTraceId((cur) =>
+                              cur === trace.traceId ? null : trace.traceId,
+                            );
+                          }
+                        }}
+                        tabIndex={0}
+                        aria-expanded={expanded}
+                        aria-label={`${expanded ? 'Collapse' : 'Expand'} trace ${trace.traceId}`}
+                      >
+                        <Td>
+                          {expanded ? (
+                            <ChevronDown className="h-3.5 w-3.5 text-fg-3" />
+                          ) : (
+                            <ChevronRight className="h-3.5 w-3.5 text-fg-3" />
+                          )}
+                        </Td>
+                        <Td className="font-mono text-fg-3">
+                          {new Date(trace.startTime).toLocaleTimeString()}
+                        </Td>
+                        <Td className="font-mono text-fg-2">
+                          {agentNameById.get(trace.agentId) ?? trace.agentId.slice(0, 8)}
+                        </Td>
+                        <Td className="font-mono text-fg">{trace.traceId.slice(0, 10)}…</Td>
+                        <Td className="font-mono text-fg-2">{trace.rootSpanName}</Td>
+                        <Td className="text-right font-mono tabular-nums text-fg-2">
+                          {trace.spanCount}
+                        </Td>
+                        <Td className="text-right font-mono tabular-nums text-fg-3">
+                          {trace.durationMs !== null
+                            ? `${trace.durationMs.toLocaleString()}ms`
+                            : '—'}
+                        </Td>
+                        <Td className="text-right">
+                          <TraceStatusBadge error={trace.hasError} />
+                        </Td>
+                      </tr>
+                      {expanded ? (
+                        <tr className="border-b border-line-soft last:border-b-0">
+                          <td colSpan={8} className="bg-surface px-4 py-3">
+                            <TraceDetailPanel traceId={trace.traceId} />
+                          </td>
+                        </tr>
+                      ) : null}
+                    </FragmentRow>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -197,7 +236,13 @@ function Field({
   );
 }
 
-function Th({ children, className }: { children: React.ReactNode; className?: string }) {
+function Th({
+  children,
+  className,
+}: {
+  children?: React.ReactNode;
+  className?: string;
+}) {
   return (
     <th
       className={cn(
@@ -232,4 +277,11 @@ function TraceStatusBadge({ error }: { error: boolean }) {
 
 function EmptyMessage({ text }: { text: string }) {
   return <div className="px-6 py-12 text-center font-mono text-[12px] text-fg-3">{text}</div>;
+}
+
+// React doesn't let a Fragment carry a key inside <tbody> without a
+// component boundary, so we wrap each (row + expand) pair in this
+// trivial helper to keep the JSX flat.
+function FragmentRow({ children }: { children: React.ReactNode }) {
+  return <>{children}</>;
 }
