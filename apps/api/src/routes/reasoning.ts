@@ -1,8 +1,13 @@
 /**
  * Cross-agent reasoning routes (task 13.5).
  *
- * 13.5 — GET /api/reasoning/traces  → summarized traces across every agent
- *         the authenticated user owns.
+ * 13.5 — GET /api/reasoning/traces           → summarized traces across every
+ *         agent the authenticated user owns (one row per traceId).
+ * 15.x — GET /api/reasoning/traces/:traceId  → all raw spans for one trace,
+ *         enriched with the owning agent's name. Powers the expand-row UI on
+ *         the Reasoning Explorer page so callers do not need to know the
+ *         agentId up front (the trace summaries do not surface it as a
+ *         filter, only as a label).
  *
  * The per-agent variant (`GET /api/agents/:id/reasoning`) returns raw spans
  * ordered by startTime — good for a single trace's span tree. The Reasoning
@@ -29,7 +34,7 @@
 
 import { type Database, agents, reasoningLogs } from '@agentscope/db';
 import { zValidator } from '@hono/zod-validator';
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
@@ -38,10 +43,23 @@ import type { ApiEnv } from '../middleware/auth';
 
 const DEFAULT_TRACES_LIMIT = 50;
 const MAX_TRACES_LIMIT = 100;
+// Hard cap on raw spans returned for a single trace. Agents can in
+// principle emit hundreds of spans per trace (deeply nested tool calls
+// + retries) — the dashboard tree handles ~50 comfortably, beyond that
+// it stops being useful as a UI element. Truncation is signaled to the
+// client so it can render a "trace truncated" hint instead of silently
+// hiding spans.
+const MAX_SPANS_PER_TRACE = 500;
 
 const tracesQuerySchema = z.object({
   agentId: z.string().uuid().optional(),
   limit: z.coerce.number().int().min(1).max(MAX_TRACES_LIMIT).default(DEFAULT_TRACES_LIMIT),
+});
+
+const traceIdParamSchema = z.object({
+  // Match the OTLP / L0 ingest contract — 32 lowercase hex chars (16 bytes).
+  // Validated up front so a malformed param can't reach the WHERE clause.
+  traceId: z.string().regex(/^[0-9a-f]{32}$/, 'traceId must be 32 lowercase hex characters'),
 });
 
 export function createReasoningRouter(db: Database) {
@@ -114,6 +132,65 @@ export function createReasoningRouter(db: Database) {
       });
 
       return c.json({ traces });
+    },
+  );
+
+  // GET /api/reasoning/traces/:traceId — raw spans for one trace.
+  //
+  // Ownership: INNER JOIN agents WHERE agents.user_id = $user. A traceId
+  // owned by another user returns 404 so we don't leak existence.
+  // Same shape on "trace not found" and "trace owned by someone else".
+  //
+  // Response includes the owning agent's name + walletPubkey alongside
+  // each span so the client can render "Agent X · span_name" labels
+  // without a second round-trip. (A trace belongs to one agent, so the
+  // labels repeat — repetition is cheaper than another endpoint.)
+  router.get(
+    '/traces/:traceId',
+    zValidator('param', traceIdParamSchema, (result) => {
+      if (!result.success) {
+        const message = result.error.issues
+          .map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`)
+          .join('; ');
+        throw new HTTPException(422, { message });
+      }
+    }),
+    async (c) => {
+      const privyDid = c.get('userId');
+      const { traceId } = c.req.valid('param');
+      const user = await ensureUser(db, privyDid);
+
+      const rows = await db
+        .select({
+          id: reasoningLogs.id,
+          traceId: reasoningLogs.traceId,
+          spanId: reasoningLogs.spanId,
+          parentSpanId: reasoningLogs.parentSpanId,
+          spanName: reasoningLogs.spanName,
+          startTime: reasoningLogs.startTime,
+          endTime: reasoningLogs.endTime,
+          attributes: reasoningLogs.attributes,
+          txSignature: reasoningLogs.txSignature,
+          agentId: reasoningLogs.agentId,
+          agentName: agents.name,
+          agentWalletPubkey: agents.walletPubkey,
+        })
+        .from(reasoningLogs)
+        .innerJoin(agents, eq(reasoningLogs.agentId, agents.id))
+        .where(and(eq(reasoningLogs.traceId, traceId), eq(agents.userId, user.id)))
+        // Fetch one extra row to detect truncation (length > MAX is the
+        // signal). The client never sees that extra row in the response.
+        .orderBy(asc(reasoningLogs.startTime))
+        .limit(MAX_SPANS_PER_TRACE + 1);
+
+      if (rows.length === 0) {
+        throw new HTTPException(404, { message: 'trace not found' });
+      }
+
+      const truncated = rows.length > MAX_SPANS_PER_TRACE;
+      const spans = truncated ? rows.slice(0, MAX_SPANS_PER_TRACE) : rows;
+
+      return c.json({ traceId, spans, truncated });
     },
   );
 
