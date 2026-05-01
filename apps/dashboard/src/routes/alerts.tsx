@@ -1,3 +1,4 @@
+import { markAlertsSeen } from '@/lib/alerts-seen';
 import { apiClient } from '@/lib/api-client';
 import { cn } from '@/lib/utils';
 import {
@@ -8,7 +9,7 @@ import {
 } from '@agentscope/shared';
 import { useQuery } from '@tanstack/react-query';
 import { ChevronDown, ChevronRight, ExternalLink } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 
 type Severity = 'info' | 'warning' | 'critical';
@@ -65,6 +66,21 @@ export function AlertsPage() {
   });
 
   const alerts = data?.alerts ?? [];
+
+  // Mark the global feed as "seen" after every successful fetch on
+  // this page, so the sidebar badge collapses to 0 and stays there
+  // until a brand-new alert arrives. We use the latest triggeredAt
+  // (when present) to avoid race conditions with alerts that arrive
+  // mid-fetch — anything strictly newer than this stamp will still be
+  // counted as unseen by the sidebar.
+  useEffect(() => {
+    if (!data) return;
+    const latest = data.alerts.reduce<number>((max, a) => {
+      const t = new Date(a.triggeredAt).getTime();
+      return Number.isFinite(t) && t > max ? t : max;
+    }, 0);
+    markAlertsSeen(latest > 0 ? latest : Date.now());
+  }, [data]);
 
   const ruleOptions = useMemo(() => {
     const set = new Set(alerts.map((a) => a.ruleName));

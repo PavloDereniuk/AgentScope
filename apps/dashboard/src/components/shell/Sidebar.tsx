@@ -1,3 +1,4 @@
+import { useAlertsSeenAt } from '@/lib/alerts-seen';
 import { apiClient } from '@/lib/api-client';
 import { useAuthActions } from '@/lib/auth-actions';
 import { useAuth } from '@/lib/privy';
@@ -26,6 +27,7 @@ interface AgentRow {
 interface AlertRow {
   id: string;
   severity: string;
+  triggeredAt: string;
 }
 
 interface NavItemDef {
@@ -67,8 +69,15 @@ export function Sidebar() {
     staleTime: 30_000,
   });
 
+  // Badge counts only critical alerts that fired AFTER the user last
+  // visited /alerts. Visiting the page sets the seen-at timestamp, so
+  // the badge collapses to 0 and only re-lights when a fresh alert
+  // arrives.
+  const alertsSeenAt = useAlertsSeenAt();
   const agents = agentsQuery.data?.agents ?? [];
-  const criticalCount = criticalAlertsQuery.data?.alerts.length ?? 0;
+  const criticalCount = (criticalAlertsQuery.data?.alerts ?? []).filter(
+    (a) => new Date(a.triggeredAt).getTime() > alertsSeenAt,
+  ).length;
 
   const email = user?.email?.address;
   const wallet = user?.wallet?.address;
