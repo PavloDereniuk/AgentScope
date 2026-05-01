@@ -13,14 +13,15 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 import { apiClient } from '@/lib/api-client';
 import { getPublicApiUrl } from '@/lib/api-url';
 import { useStream } from '@/lib/use-stream';
 import { cn } from '@/lib/utils';
 import { formatAlertSummary, formatRuleTitle } from '@agentscope/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Copy, Trash2 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { ArrowLeft, Copy, Loader2, Pencil, Trash2 } from 'lucide-react';
+import { type FormEvent, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 
 interface AgentDetail {
@@ -196,6 +197,7 @@ export function AgentDetailPage() {
                 ? 'Copy failed'
                 : 'Copy wallet'}
           </button>
+          <EditAgentDialog agent={agent} />
           <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
             <DialogTrigger asChild>
               <button type="button" className={btnDanger}>
@@ -394,6 +396,131 @@ export function AgentDetailPage() {
       <TxDrawer signature={selectedTx} onClose={() => setSelectedTx(null)} />
       <TraceDrawer traceId={selectedTraceId} onClose={() => setSelectedTraceId(null)} />
     </div>
+  );
+}
+
+// Edit limited to name + tags for MVP. Webhook/telegram/alertRules
+// are also patchable on the API but live in dedicated UI surfaces
+// (Settings → integrations, alerts panel) so we don't duplicate them
+// here.
+function EditAgentDialog({ agent }: { agent: AgentDetail }) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState(agent.name);
+  const [tagsInput, setTagsInput] = useState(agent.tags.join(', '));
+  const queryClient = useQueryClient();
+
+  // Reset local form state whenever the dialog (re)opens or the
+  // underlying agent changes (e.g. live stream pushed new tags).
+  useEffect(() => {
+    if (!open) return;
+    setName(agent.name);
+    setTagsInput(agent.tags.join(', '));
+  }, [open, agent.name, agent.tags]);
+
+  const mutation = useMutation({
+    mutationFn: (body: { name?: string; tags?: string[] }) =>
+      apiClient.patch<{ agent: AgentDetail }>(`/api/agents/${agent.id}`, body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['agent', agent.id] });
+      queryClient.invalidateQueries({ queryKey: ['agents'] });
+      setOpen(false);
+    },
+  });
+
+  function handleSubmit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+
+    const trimmedName = name.trim();
+    const parsedTags = tagsInput
+      .split(',')
+      .map((t) => t.trim())
+      .filter((t) => t.length > 0);
+
+    // Send only fields that actually changed — keeps PATCH genuinely
+    // partial and matches the API's "empty body = no-op" contract.
+    const body: { name?: string; tags?: string[] } = {};
+    if (trimmedName !== agent.name) body.name = trimmedName;
+    const tagsChanged =
+      parsedTags.length !== agent.tags.length || parsedTags.some((t, i) => t !== agent.tags[i]);
+    if (tagsChanged) body.tags = parsedTags;
+
+    if (Object.keys(body).length === 0) {
+      setOpen(false);
+      return;
+    }
+    mutation.mutate(body);
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <button type="button" className={btnGhost}>
+          <Pencil className="h-3.5 w-3.5" />
+          Edit
+        </button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Edit agent</DialogTitle>
+          <DialogDescription>
+            Update display name and tags. Wallet, framework, and type are immutable.
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-2">
+            <label
+              htmlFor="edit-agent-name"
+              className="font-mono text-[10.5px] uppercase tracking-wider text-fg-3"
+            >
+              Name
+            </label>
+            <Input
+              id="edit-agent-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+              minLength={1}
+              maxLength={120}
+            />
+          </div>
+          <div className="space-y-2">
+            <label
+              htmlFor="edit-agent-tags"
+              className="font-mono text-[10.5px] uppercase tracking-wider text-fg-3"
+            >
+              Tags <span className="normal-case tracking-normal text-fg-3">(comma-separated)</span>
+            </label>
+            <Input
+              id="edit-agent-tags"
+              value={tagsInput}
+              onChange={(e) => setTagsInput(e.target.value)}
+              placeholder="trader, kamino, mainnet"
+            />
+          </div>
+          {mutation.error ? (
+            <p className="font-mono text-xs text-crit">
+              {(mutation.error as Error).message || 'Failed to update agent'}
+            </p>
+          ) : null}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                mutation.reset();
+                setOpen(false);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button type="submit" disabled={mutation.isPending}>
+              {mutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Save
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 
