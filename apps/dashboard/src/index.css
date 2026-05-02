@@ -136,6 +136,18 @@
     font-family: inherit;
   }
 
+  /* Native <select> dropdown options render with the OS default white
+     background otherwise — illegible against our dark fg colour. Chrome/
+     Edge honour these on the popup; Firefox/Safari support is partial but
+     degrades to legible (dark text on dark, lighter on hover). */
+  select option {
+    background-color: var(--bg-2);
+    color: var(--fg);
+  }
+  select option:checked {
+    background-color: var(--bg-3);
+  }
+
   /* Thin mono-ish scrollbar that blends into the dark shell */
   ::-webkit-scrollbar {
     width: 10px;
