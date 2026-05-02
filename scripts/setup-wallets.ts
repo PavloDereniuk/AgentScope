@@ -32,7 +32,9 @@ for (const name of WALLETS) {
     );
   } else {
     keypair = Keypair.generate();
-    writeFileSync(path, JSON.stringify(Array.from(keypair.secretKey)));
+    // mode 0o600: secret bytes are owner-readable only on Unix; Windows
+    // ignores the bit harmlessly. Matches gen-curl-wallet / gen-eliza-wallet.
+    writeFileSync(path, JSON.stringify(Array.from(keypair.secretKey)), { mode: 0o600 });
     console.info(`[${name}] generated ${keypair.publicKey.toBase58()}`);
   }
 

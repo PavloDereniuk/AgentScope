@@ -105,6 +105,12 @@ export function createOtlpRouter({ logger, db, rateLimit }: OtlpRouterDeps) {
       // the legitimate per-token budget (or, worse, mask probing attempts).
       // Keyed by agent.token (not agentId) so a leaked token can't bypass
       // the cap by minting fresh agent rows.
+      //
+      // Headers go on `c` directly because the global error handler
+      // rebuilds the response from `HTTPException.message` and ignores
+      // `err.res` — see `middleware/error.ts`. Setting them here lets
+      // the 429 still ship a proper `Retry-After` so OTLP exporters
+      // back off instead of retry-storming the rate-limited token.
       if (rateLimit) {
         const decision = rateLimit.take(token);
         if (!decision.ok) {
@@ -112,16 +118,9 @@ export function createOtlpRouter({ logger, db, rateLimit }: OtlpRouterDeps) {
             { agentId: resolved.agentId, retryAfterSec: decision.retryAfterSec },
             'otlp traces rate-limited',
           );
-          throw new HTTPException(429, {
-            message: 'rate limit exceeded',
-            res: new Response(JSON.stringify({ error: { message: 'rate limit exceeded' } }), {
-              status: 429,
-              headers: {
-                'Content-Type': 'application/json',
-                'Retry-After': String(decision.retryAfterSec),
-              },
-            }),
-          });
+          c.header('Retry-After', String(decision.retryAfterSec));
+          c.header('X-RateLimit-Remaining', '0');
+          throw new HTTPException(429, { message: 'rate limit exceeded' });
         }
       }
 

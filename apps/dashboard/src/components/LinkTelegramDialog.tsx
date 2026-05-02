@@ -146,6 +146,10 @@ export function LinkTelegramDialog({ onLinked, disabled }: LinkTelegramDialogPro
     if (phase !== 'awaiting' || !link) return;
 
     let cancelled = false;
+    // Track the auto-close timer so the effect cleanup can clear it if
+    // the user navigates away within the 1.2s success window — otherwise
+    // the timer leaks and fires setOpen on an unmounted component.
+    let closeTimerId: ReturnType<typeof setTimeout> | null = null;
     const tick = async () => {
       if (cancelled || !openRef.current) return;
       try {
@@ -159,7 +163,7 @@ export function LinkTelegramDialog({ onLinked, disabled }: LinkTelegramDialogPro
           toast.success('Telegram linked. Save settings to finish.');
           // Auto-close after the success state is visible for a beat —
           // gives the user a moment to confirm the chat_id appeared.
-          setTimeout(() => {
+          closeTimerId = setTimeout(() => {
             if (openRef.current) setOpen(false);
           }, 1_200);
           return;
@@ -183,6 +187,7 @@ export function LinkTelegramDialog({ onLinked, disabled }: LinkTelegramDialogPro
     return () => {
       cancelled = true;
       window.clearInterval(id);
+      if (closeTimerId !== null) clearTimeout(closeTimerId);
     };
   }, [phase, link, onLinked]);
 
