@@ -36,14 +36,14 @@ function escHtml(s: string): string {
     .replace(/"/g, '&quot;');
 }
 
-/** Render triggeredAt as "YYYY-MM-DD HH:mm:ss UTC" — stable, locale-independent. */
+/** Render triggeredAt as "YYYY-MM-DD HH:mm UTC" — stable, locale-independent. */
 function formatTimestamp(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
   const pad = (n: number) => String(n).padStart(2, '0');
   return (
     `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ` +
-    `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())} UTC`
+    `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())} UTC`
   );
 }
 
