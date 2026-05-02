@@ -116,6 +116,39 @@ export function formatAlertSummary(
       const thrStr = threshold != null ? ` (threshold: ${fmtMinutes(threshold)})` : '';
       return `Silent for ${fmtMinutes(inactive)}${thrStr}`;
     }
+    case 'decision_swap_mismatch': {
+      const decisionAction = str(payload, 'decisionAction');
+      const swapSide = str(payload, 'swapSide');
+      const decisionAmount = num(payload, 'decisionAmountSol');
+      const swapAmount = num(payload, 'swapAmountSol');
+      const issues = Array.isArray(payload.issues) ? (payload.issues as string[]) : [];
+      if (issues.includes('action_flip') && decisionAction && swapSide) {
+        return `Agent decided ${decisionAction.toUpperCase()} but executed ${swapSide.toUpperCase()}`;
+      }
+      if (issues.includes('amount_mismatch') && decisionAmount != null && swapAmount != null) {
+        const delta = num(payload, 'amountDeltaPct');
+        const deltaStr = delta != null ? ` (${delta.toFixed(1)}% off)` : '';
+        return `Decided ${decisionAmount} SOL, executed ${swapAmount} SOL${deltaStr}`;
+      }
+      return 'Decision and on-chain swap diverged';
+    }
+    case 'stale_oracle': {
+      const market = num(payload, 'marketPriceUsd');
+      const decision = num(payload, 'decisionPriceUsd');
+      const div = num(payload, 'divergencePct');
+      if (market == null || decision == null) return 'Oracle price drift detected';
+      const divStr = div != null ? ` (${div.toFixed(2)}% drift)` : '';
+      return `Market $${market} vs decision $${decision}${divStr}`;
+    }
+    case 'ghost_execution': {
+      const count = num(payload, 'ghostCount');
+      const oldest = num(payload, 'oldestAgeMinutes');
+      if (count == null) return 'Reasoning span has no matching transaction';
+      const oldestStr = oldest != null ? `, oldest ${fmtMinutes(oldest)}` : '';
+      return count === 1
+        ? `1 swap span with no on-chain match${oldestStr}`
+        : `${count} swap spans with no on-chain match${oldestStr}`;
+    }
     default:
       return formatRuleTitle(ruleName);
   }
@@ -178,6 +211,46 @@ export function formatAlertDetails(
       return [
         { label: 'Inactive for', value: fmtMinutes(inactive) },
         { label: 'Threshold', value: fmtMinutes(threshold) },
+      ];
+    }
+    case 'decision_swap_mismatch': {
+      const decisionAction = str(payload, 'decisionAction');
+      const swapSide = str(payload, 'swapSide');
+      const decisionAmount = num(payload, 'decisionAmountSol');
+      const swapAmount = num(payload, 'swapAmountSol');
+      const delta = num(payload, 'amountDeltaPct');
+      const issues = Array.isArray(payload.issues) ? (payload.issues as string[]) : [];
+      return [
+        { label: 'Decided action', value: decisionAction ?? '—' },
+        { label: 'Executed side', value: swapSide ?? '—' },
+        {
+          label: 'Decided amount',
+          value: decisionAmount != null ? `${decisionAmount} SOL` : '—',
+        },
+        { label: 'Executed amount', value: swapAmount != null ? `${swapAmount} SOL` : '—' },
+        { label: 'Delta', value: delta != null ? `${delta.toFixed(2)}%` : '—' },
+        { label: 'Issues', value: issues.length > 0 ? issues.join(', ') : '—' },
+        { label: 'Threshold', value: fmtPct(num(payload, 'thresholdPct')) },
+      ];
+    }
+    case 'stale_oracle': {
+      const market = num(payload, 'marketPriceUsd');
+      const decision = num(payload, 'decisionPriceUsd');
+      return [
+        { label: 'Market price', value: market != null ? `$${market}` : '—' },
+        { label: 'Decision price', value: decision != null ? `$${decision}` : '—' },
+        { label: 'Drift', value: fmtPct(num(payload, 'divergencePct')) },
+        { label: 'Threshold', value: fmtPct(num(payload, 'thresholdPct')) },
+      ];
+    }
+    case 'ghost_execution': {
+      const count = num(payload, 'ghostCount');
+      const age = num(payload, 'oldestAgeMinutes');
+      return [
+        { label: 'Stuck swap spans', value: count != null ? String(count) : '—' },
+        { label: 'Oldest stuck for', value: fmtMinutes(age) },
+        { label: 'Threshold', value: fmtMinutes(num(payload, 'thresholdMinutes')) },
+        { label: 'Oldest signature', value: str(payload, 'oldestSignature') ?? '—' },
       ];
     }
     default:

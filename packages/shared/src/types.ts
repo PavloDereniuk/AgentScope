@@ -24,6 +24,9 @@ export const ALERT_RULE_NAMES = [
   'drawdown',
   'error_rate',
   'stale_agent',
+  'decision_swap_mismatch',
+  'stale_oracle',
+  'ghost_execution',
 ] as const;
 export type AlertRuleName = (typeof ALERT_RULE_NAMES)[number];
 
@@ -76,6 +79,12 @@ export interface AlertRuleThresholds {
   drawdownPctThreshold?: number | undefined;
   errorRatePctThreshold?: number | undefined;
   staleMinutesThreshold?: number | undefined;
+  /** Max acceptable mismatch between decision.amount_sol and swap.amount_sol, in %. */
+  decisionMismatchPctThreshold?: number | undefined;
+  /** Max acceptable divergence between market.price_usd and decision.price_usd, in %. */
+  staleOraclePctThreshold?: number | undefined;
+  /** Minutes an EXECUTE_SWAP span can stay without a persisted tx before flagging as ghost. */
+  ghostExecutionMinutesThreshold?: number | undefined;
 }
 
 export interface Agent {

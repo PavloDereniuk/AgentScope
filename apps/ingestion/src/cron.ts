@@ -24,6 +24,7 @@ import {
   drawdownRule,
   errorRateRule,
   evaluateCron,
+  ghostExecutionRule,
   staleRule,
 } from '@agentscope/detector';
 import type { EvalLogger } from '@agentscope/detector';
@@ -50,7 +51,12 @@ function correlationKey(ruleName: string, dedupeKey: string | null): string {
   return `${ruleName}:${dedupeKey ?? ''}`;
 }
 
-const CRON_RULES: readonly CronRuleDef[] = [drawdownRule, errorRateRule, staleRule];
+const CRON_RULES: readonly CronRuleDef[] = [
+  drawdownRule,
+  errorRateRule,
+  staleRule,
+  ghostExecutionRule,
+];
 
 /**
  * Pick the delivery channel for one agent. `webhook > telegram > skip`.

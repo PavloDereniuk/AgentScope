@@ -100,6 +100,9 @@ export const alertRuleThresholdsSchema = z.object({
   drawdownPctThreshold: z.number().positive().optional(),
   errorRatePctThreshold: z.number().min(0).max(100).optional(),
   staleMinutesThreshold: z.number().int().positive().optional(),
+  decisionMismatchPctThreshold: z.number().positive().optional(),
+  staleOraclePctThreshold: z.number().positive().optional(),
+  ghostExecutionMinutesThreshold: z.number().int().positive().optional(),
 });
 
 /**

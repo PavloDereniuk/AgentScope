@@ -23,16 +23,23 @@ import {
   type DefaultThresholds,
   type TxRuleDef,
   type TxSnapshot,
+  decisionSwapMismatchRule,
   evaluateTx,
   gasRule,
   slippageRule,
+  staleOracleRule,
 } from '@agentscope/detector';
 import type { EvalLogger } from '@agentscope/detector';
 import type { AlertRuleThresholds, DeliveryChannel } from '@agentscope/shared';
 import { eq } from 'drizzle-orm';
 
 /** All tx-triggered rules, evaluated after each persist. */
-const TX_RULES: readonly TxRuleDef[] = [slippageRule, gasRule];
+const TX_RULES: readonly TxRuleDef[] = [
+  slippageRule,
+  gasRule,
+  decisionSwapMismatchRule,
+  staleOracleRule,
+];
 
 /**
  * Stable composite key for RuleResult ↔ inserted-row correlation.
