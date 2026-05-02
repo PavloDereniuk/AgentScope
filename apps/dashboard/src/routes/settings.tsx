@@ -215,7 +215,7 @@ export function SettingsPage() {
 
   return (
     <div className="p-7">
-      <form onSubmit={handleSubmit}>
+      <form key={selectedId} onSubmit={handleSubmit}>
         <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
