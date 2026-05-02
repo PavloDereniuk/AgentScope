@@ -7,7 +7,9 @@
 
 import type { AlertSeverity } from '@agentscope/shared';
 import {
+  formatAlertAction,
   formatAlertDetails,
+  formatAlertImpact,
   formatAlertSummary,
   formatRuleTitle,
   isOnChainSignature,
@@ -45,18 +47,48 @@ function formatTimestamp(iso: string): string {
   );
 }
 
+/**
+ * Render a friendly "X ago" prefix so a non-technical owner can grasp recency
+ * without doing UTC math. Returns an empty string for unparseable input or
+ * future timestamps (clock skew between detector and recipient) — the caller
+ * always appends the absolute UTC timestamp anyway.
+ */
+function formatRelativeTime(iso: string, now: number = Date.now()): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const diffSec = Math.floor((now - d.getTime()) / 1000);
+  if (diffSec < 0) return '';
+  if (diffSec < 5) return 'just now';
+  if (diffSec < 60) return `${diffSec} sec ago`;
+  const min = Math.floor(diffSec / 60);
+  if (min < 60) return min === 1 ? '1 min ago' : `${min} min ago`;
+  const hours = Math.floor(min / 60);
+  if (hours < 24) return hours === 1 ? '1h ago' : `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return days === 1 ? '1d ago' : `${days}d ago`;
+}
+
+/** Capitalize the first character so severity reads as "Warning" not "warning". */
+function titleCaseSeverity(s: AlertSeverity): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
 /** Format an alert into a human-readable Telegram message. */
 export function formatTelegramMessage(msg: AlertMessage): string {
   const icon = SEVERITY_ICON[msg.severity] ?? '📢';
   const title = formatRuleTitle(msg.ruleName);
   const summary = formatAlertSummary(msg.ruleName, msg.payload);
+  const impact = formatAlertImpact(msg.ruleName, msg.payload);
   const details = formatAlertDetails(msg.ruleName, msg.payload);
+  const actions = formatAlertAction(msg.ruleName, msg.payload);
 
   const lines = [
-    `${icon} <b>${escHtml(title)}</b> · ${escHtml(msg.severity)}`,
+    `${icon} <b>${escHtml(title)}</b> · ${escHtml(titleCaseSeverity(msg.severity))}`,
     `Agent: <code>${escHtml(msg.agentName)}</code>`,
     '',
     escHtml(summary),
+    '',
+    `💡 <b>What this means:</b> ${escHtml(impact)}`,
     '',
   ];
 
@@ -70,11 +102,23 @@ export function formatTelegramMessage(msg: AlertMessage): string {
       const url = `https://solscan.io/tx/${encodeURIComponent(sig)}`;
       lines.push(`• Tx: <a href="${escHtml(url)}">${escHtml(sig.slice(0, 16))}...</a>`);
     } else {
-      lines.push(`• Tx: <code>${escHtml(sig.slice(0, 16))}...</code> (demo)`);
+      lines.push(
+        `• Tx: <code>${escHtml(sig.slice(0, 16))}...</code> (test alert — no real transaction)`,
+      );
     }
   }
 
-  lines.push('', `<i>${escHtml(formatTimestamp(msg.triggeredAt))}</i>`);
+  if (actions.length > 0) {
+    lines.push('', '🔧 <b>Suggested actions:</b>');
+    for (const action of actions) {
+      lines.push(`• ${escHtml(action)}`);
+    }
+  }
+
+  const relative = formatRelativeTime(msg.triggeredAt);
+  const absolute = formatTimestamp(msg.triggeredAt);
+  const stamp = relative ? `${relative} · ${absolute}` : absolute;
+  lines.push('', `<i>${escHtml(stamp)}</i>`);
   return truncateForTelegram(lines.join('\n'));
 }
 

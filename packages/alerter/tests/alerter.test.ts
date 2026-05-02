@@ -28,6 +28,8 @@ describe('formatTelegramMessage', () => {
     expect(text).toContain('⚠️');
     expect(text).toContain('Slippage Spike');
     expect(text).toContain('Trading Bot');
+    // Severity is title-cased in the header line, not lowercase
+    expect(text).toContain('Warning');
     // Summary line with human metric
     expect(text).toContain('Swap slipped 12%');
     // Detail rows use human labels, not raw payload keys
@@ -38,19 +40,69 @@ describe('formatTelegramMessage', () => {
     expect(text).not.toMatch(/^Severity: /m);
   });
 
+  it('includes a plain-English impact line and suggested actions', () => {
+    const text = formatTelegramMessage(sampleAlert);
+    expect(text).toContain('What this means:');
+    expect(text).toContain("Your bot's swap executed at a worse price");
+    expect(text).toContain('Suggested actions:');
+    expect(text).toContain('Tighten the slippage cap');
+  });
+
+  it('renders a relative time prefix alongside the absolute UTC stamp', () => {
+    const recent = { ...sampleAlert, triggeredAt: new Date(Date.now() - 90_000).toISOString() };
+    const text = formatTelegramMessage(recent);
+    expect(text).toMatch(/1 min ago · \d{4}-\d{2}-\d{2}/);
+    expect(text).toContain('UTC');
+  });
+
+  it('uses Solana-correct "Fee Spike" title for gas_spike rule', () => {
+    const fee: AlertMessage = {
+      ...sampleAlert,
+      ruleName: 'gas_spike',
+      payload: { ratio: 5, feeLamports: 100_000, medianFeeLamports: 20_000 },
+    };
+    const text = formatTelegramMessage(fee);
+    expect(text).toContain('Fee Spike');
+    expect(text).not.toContain('Gas Spike');
+  });
+
+  it('rewrites ghost_execution summary in plain language', () => {
+    const ghost: AlertMessage = {
+      ...sampleAlert,
+      ruleName: 'ghost_execution',
+      payload: { ghostCount: 1, oldestAgeMinutes: 5 },
+    };
+    const text = formatTelegramMessage(ghost);
+    expect(text).toContain('Swap Never Landed');
+    expect(text).toContain('Bot announced 1 swap but it never landed on-chain');
+  });
+
+  it('rewrites stale_oracle summary as decision vs current market', () => {
+    const stale: AlertMessage = {
+      ...sampleAlert,
+      ruleName: 'stale_oracle',
+      payload: { marketPriceUsd: 102, decisionPriceUsd: 100, divergencePct: 2.5 },
+    };
+    const text = formatTelegramMessage(stale);
+    expect(text).toContain('Stale Price Used');
+    expect(text).toContain('Bot used $100 but market is now $102');
+  });
+
   it('uses critical icon for critical severity', () => {
     const critical = { ...sampleAlert, severity: 'critical' as const };
     const text = formatTelegramMessage(critical);
     expect(text).toContain('🚨');
+    expect(text).toContain('Critical');
   });
 
-  it('marks non-base58 signatures as demo (no link)', () => {
+  it('labels non-base58 signatures as test alert (no link)', () => {
     const demo = {
       ...sampleAlert,
       payload: { ...sampleAlert.payload, signature: 'demo-abc_xyz-not-on-chain' },
     };
     const text = formatTelegramMessage(demo);
-    expect(text).toContain('(demo)');
+    expect(text).toContain('test alert — no real transaction');
+    expect(text).not.toContain('(demo)');
     expect(text).not.toContain('solscan.io');
   });
 });

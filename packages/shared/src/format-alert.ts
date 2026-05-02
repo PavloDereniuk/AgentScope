@@ -51,10 +51,31 @@ function fmtMinutes(v: number | undefined): string {
 }
 
 /**
+ * Curated, user-facing rule titles. Plain English, action-leaning where the
+ * raw enum is jargon (`gas_spike` → "Fee Spike" since Solana doesn't use the
+ * Ethereum "gas" term; `ghost_execution` → "Swap Never Landed" so non-technical
+ * owners understand the impact, not the internal classification). Rule keys
+ * absent from this map fall back to snake_case → Title Case via formatRuleTitle.
+ */
+const RULE_TITLES: Record<string, string> = {
+  slippage_spike: 'Slippage Spike',
+  gas_spike: 'Fee Spike',
+  drawdown: 'Balance Drawdown',
+  error_rate: 'High Error Rate',
+  stale_agent: 'Bot Silent',
+  decision_swap_mismatch: 'Decision/Swap Mismatch',
+  stale_oracle: 'Stale Price Used',
+  ghost_execution: 'Swap Never Landed',
+};
+
+/**
  * Turn a machine rule name ("slippage_spike") into a human title
- * ("Slippage Spike"). Safe fallback for unknown rules.
+ * ("Slippage Spike"). Curated overrides in RULE_TITLES win; otherwise
+ * falls back to snake_case → Title Case.
  */
 export function formatRuleTitle(ruleName: string): string {
+  const override = RULE_TITLES[ruleName];
+  if (override) return override;
   return ruleName
     .split('_')
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
@@ -136,18 +157,18 @@ export function formatAlertSummary(
       const market = num(payload, 'marketPriceUsd');
       const decision = num(payload, 'decisionPriceUsd');
       const div = num(payload, 'divergencePct');
-      if (market == null || decision == null) return 'Oracle price drift detected';
-      const divStr = div != null ? ` (${div.toFixed(2)}% drift)` : '';
-      return `Market $${market} vs decision $${decision}${divStr}`;
+      if (market == null || decision == null) return 'Bot acted on a stale price';
+      const divStr = div != null ? ` — market moved ${div.toFixed(2)}% since` : '';
+      return `Bot used $${decision} but market is now $${market}${divStr}`;
     }
     case 'ghost_execution': {
       const count = num(payload, 'ghostCount');
       const oldest = num(payload, 'oldestAgeMinutes');
-      if (count == null) return 'Reasoning span has no matching transaction';
-      const oldestStr = oldest != null ? `, oldest ${fmtMinutes(oldest)}` : '';
+      if (count == null) return 'Bot announced a swap but it never landed on-chain';
+      const oldestStr = oldest != null ? `, oldest ${fmtMinutes(oldest)} ago` : '';
       return count === 1
-        ? `1 swap span with no on-chain match${oldestStr}`
-        : `${count} swap spans with no on-chain match${oldestStr}`;
+        ? `Bot announced 1 swap but it never landed on-chain${oldestStr}`
+        : `Bot announced ${count} swaps but they never landed on-chain${oldestStr}`;
     }
     default:
       return formatRuleTitle(ruleName);
@@ -260,6 +281,93 @@ export function formatAlertDetails(
           label: k,
           value: typeof v === 'object' && v !== null ? JSON.stringify(v) : String(v),
         }));
+  }
+}
+
+/**
+ * Plain-English explanation of WHAT THIS MEANS for the bot owner.
+ * One sentence, no jargon. Rendered alongside the metric-heavy summary so
+ * a non-technical owner can answer "why should I care?" without opening
+ * the dashboard.
+ */
+export function formatAlertImpact(
+  ruleName: AlertRuleName | string,
+  _payload: Record<string, unknown>,
+): string {
+  switch (ruleName) {
+    case 'slippage_spike':
+      return "Your bot's swap executed at a worse price than its slippage limit allows. The trade likely lost more value than intended.";
+    case 'gas_spike':
+      return 'The bot paid an unusually high transaction fee. Repeat fees at this level will eat into PnL.';
+    case 'error_rate':
+      return 'A high share of recent transactions failed. The bot may be misconfigured or hitting on-chain errors.';
+    case 'drawdown':
+      return "The bot's wallet balance dropped sharply in a short window. This usually signals a losing strategy or a failure mode.";
+    case 'stale_agent':
+      return 'The bot has stopped sending transactions. It may have crashed, been paused, or run out of funds.';
+    case 'decision_swap_mismatch':
+      return "The bot's reasoning said one thing but the on-chain transaction did another. This is a serious integrity issue.";
+    case 'stale_oracle':
+      return 'The bot acted on a price that no longer reflects the market. Trades made on stale data are likely mispriced.';
+    case 'ghost_execution':
+      return 'The bot announced a swap in its reasoning but no matching transaction reached the chain. The trade was likely lost or never submitted.';
+    default:
+      return 'An anomaly was detected in your bot. Open the dashboard for details.';
+  }
+}
+
+/**
+ * 1–2 short, imperative next steps for the bot owner. Empty array means
+ * "no canned guidance for this rule" and the channel should omit the
+ * actions block entirely.
+ */
+export function formatAlertAction(
+  ruleName: AlertRuleName | string,
+  _payload: Record<string, unknown>,
+): string[] {
+  switch (ruleName) {
+    case 'slippage_spike':
+      return [
+        'Open the dashboard and review this swap.',
+        'Tighten the slippage cap or pause the bot if volatility is high.',
+      ];
+    case 'gas_spike':
+      return [
+        'Check current network congestion before more swaps.',
+        "Review the bot's priority fee strategy.",
+      ];
+    case 'error_rate':
+      return [
+        'Open the dashboard and inspect the failed transactions.',
+        'Consider pausing the bot until the cause is found.',
+      ];
+    case 'drawdown':
+      return [
+        'Open the dashboard and review recent activity.',
+        'Pause the bot if the drop is unexpected.',
+      ];
+    case 'stale_agent':
+      return [
+        'Check that the bot process is still running.',
+        'Verify wallet balance and RPC health.',
+      ];
+    case 'decision_swap_mismatch':
+      return [
+        'Open the trace in the dashboard to compare decision vs. transaction.',
+        'Stop the bot until the cause is found.',
+      ];
+    case 'stale_oracle':
+      return [
+        "Verify the bot's oracle / price source is healthy.",
+        'Review recent trades for mispricing losses.',
+      ];
+    case 'ghost_execution':
+      return [
+        "Check the bot's RPC logs for submission failures.",
+        'Verify the wallet has SOL for fees.',
+      ];
+    default:
+      return [];
   }
 }
 
