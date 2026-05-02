@@ -1,8 +1,8 @@
 import { sql } from 'drizzle-orm';
 import { createDb } from '../src/client';
+import { requireLocalDb } from './_guard';
 
-const url = process.env['DATABASE_URL'];
-if (!url) throw new Error('DATABASE_URL is required');
+const url = requireLocalDb('count-tx');
 
 const db = createDb({ connectionString: url });
 const r = await db.execute<{ n: number }>(sql`SELECT count(*)::int AS n FROM agent_transactions`);

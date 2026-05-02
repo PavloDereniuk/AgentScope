@@ -8,9 +8,12 @@
 import { sql } from 'drizzle-orm';
 import { createDb } from '../src/client';
 import { users } from '../src/schema';
+import { requireLocalDb } from './_guard';
 
-const url = process.env['DATABASE_URL'];
-if (!url) throw new Error('DATABASE_URL is required');
+// Destructive: TRUNCATE wipes agent_transactions/reasoning_logs/alerts.
+// Guard prevents accidental data loss on hosted DBs (Supabase/Railway/Neon)
+// — set AGENTSCOPE_ALLOW_PROD_DUMP=1 to override.
+const url = requireLocalDb('reset-test-data');
 
 const db = createDb({ connectionString: url });
 
