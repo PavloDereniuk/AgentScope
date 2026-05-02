@@ -1,3 +1,4 @@
+import { InstructionLabel } from '@/components/InstructionLabel';
 import { TraceDetailPanel } from '@/components/TraceDetailPanel';
 import { apiClient } from '@/lib/api-client';
 import type { TraceSpan } from '@/lib/build-trace-tree';
@@ -147,7 +148,7 @@ export function TxDrawer({ signature, onClose }: TxDrawerProps) {
             <>
               <div className="mb-5 grid grid-cols-2 gap-3">
                 <Field label="Instruction">
-                  <span className="font-mono text-[13px]">{tx.instructionName ?? '(unknown)'}</span>
+                  <InstructionLabel name={tx.instructionName} className="text-[13px]" />
                 </Field>
                 <Field label="Status">
                   <StatusPill ok={tx.success} />

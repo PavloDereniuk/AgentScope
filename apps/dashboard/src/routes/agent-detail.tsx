@@ -1,3 +1,4 @@
+import { InstructionLabel } from '@/components/InstructionLabel';
 import { IntegrationSnippet } from '@/components/IntegrationSnippet';
 import { Kpi, KpiRow } from '@/components/Kpi';
 import { TraceDrawer } from '@/components/TraceDrawer';
@@ -359,7 +360,9 @@ export function AgentDetailPage() {
                       {new Date(tx.blockTime).toLocaleTimeString()}
                     </Td>
                     <Td className="font-mono text-fg">{shortenSignature(tx.signature)}</Td>
-                    <Td className="font-mono text-fg-2">{tx.instructionName ?? '—'}</Td>
+                    <Td className="font-mono">
+                      <InstructionLabel name={tx.instructionName} />
+                    </Td>
                     <Td
                       className={cn(
                         'text-right font-mono tabular-nums',

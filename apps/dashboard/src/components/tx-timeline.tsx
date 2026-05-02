@@ -1,4 +1,4 @@
-import { Badge } from '@/components/ui/badge';
+import { InstructionLabel } from '@/components/InstructionLabel';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ArrowDownUp, CheckCircle2, Landmark, XCircle } from 'lucide-react';
 
@@ -63,9 +63,7 @@ export function TxTimeline({
                 <div className="flex items-center gap-2">
                   <span className="truncate font-mono text-xs">{tx.signature.slice(0, 16)}...</span>
                   {tx.instructionName && (
-                    <Badge variant="outline" className="text-[10px]">
-                      {tx.instructionName}
-                    </Badge>
+                    <InstructionLabel name={tx.instructionName} className="text-[11px]" />
                   )}
                 </div>
                 <p className="text-xs text-muted-foreground">
