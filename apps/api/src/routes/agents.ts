@@ -72,6 +72,7 @@ const AGENT_PUBLIC_COLUMNS = {
   webhookUrl: agents.webhookUrl,
   telegramChatId: agents.telegramChatId,
   alertRules: agents.alertRules,
+  alertsPausedUntil: agents.alertsPausedUntil,
   createdAt: agents.createdAt,
   lastSeenAt: agents.lastSeenAt,
 } as const;
@@ -376,7 +377,7 @@ export function createAgentsRouter(
       type AgentPatch = Partial<
         Pick<
           typeof agents.$inferInsert,
-          'name' | 'tags' | 'webhookUrl' | 'telegramChatId' | 'alertRules'
+          'name' | 'tags' | 'webhookUrl' | 'telegramChatId' | 'alertRules' | 'alertsPausedUntil'
         >
       >;
       const patch: AgentPatch = {};
@@ -385,6 +386,10 @@ export function createAgentsRouter(
       if (body.webhookUrl !== undefined) patch.webhookUrl = body.webhookUrl;
       if (body.telegramChatId !== undefined) patch.telegramChatId = body.telegramChatId;
       if (body.alertRules !== undefined) patch.alertRules = body.alertRules;
+      // null clears the pause (resume now); a future ISO string sets a deadline.
+      // Past values are accepted by the schema and treated as "not paused" by
+      // the gate — no need to reject them here.
+      if (body.alertsPausedUntil !== undefined) patch.alertsPausedUntil = body.alertsPausedUntil;
 
       // Empty body → no-op. Fetch and return current state so clients
       // get a consistent `{agent}` response regardless of payload.
@@ -593,6 +598,12 @@ export function createAgentsRouter(
       // hard-coded Telegram route. `webhook > telegram > 503`.
       // Telegram requires an explicit per-agent chat_id — no deployer-wide
       // fallback (multi-tenant safety).
+      //
+      // Epic 18: the pause gate is intentionally NOT applied here. A "test
+      // alert" is an explicit user action to verify channel credentials,
+      // and silently swallowing it while the agent is paused would leave
+      // the user unable to validate notification setup without resuming
+      // first. The detector path (cron + tx-runner) honours the pause.
       const webhookUrl = agent.webhookUrl ?? null;
       const telegramChatId = agent.telegramChatId ?? null;
       const channel: 'webhook' | 'telegram' | null = webhookUrl

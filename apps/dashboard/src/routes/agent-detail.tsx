@@ -1,6 +1,7 @@
 import { InstructionLabel } from '@/components/InstructionLabel';
 import { IntegrationSnippet } from '@/components/IntegrationSnippet';
 import { Kpi, KpiRow } from '@/components/Kpi';
+import { PausedBadge } from '@/components/PausedBadge';
 import { TraceDrawer } from '@/components/TraceDrawer';
 import { TxDrawer } from '@/components/TxDrawer';
 import { PnlChart } from '@/components/pnl-chart';
@@ -32,6 +33,7 @@ interface AgentDetail {
   framework: string;
   agentType: string;
   status: 'live' | 'stale' | 'failed';
+  alertsPausedUntil: string | null;
   tags: string[];
   createdAt: string;
   updatedAt: string;
@@ -173,6 +175,7 @@ export function AgentDetailPage() {
           <div className="flex flex-wrap items-center gap-2.5">
             <h1 className="text-2xl font-semibold tracking-tight">{agent.name}</h1>
             <StatusBadge status={agent.status} />
+            <PausedBadge alertsPausedUntil={agent.alertsPausedUntil} />
             <TagBadge>{agent.framework}</TagBadge>
             <TagBadge>{agent.agentType}</TagBadge>
           </div>

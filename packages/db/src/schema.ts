@@ -111,6 +111,18 @@ export const agents = pgTable(
     /** Opaque token used by the agent's OTel exporter for /v1/traces. */
     ingestToken: text('ingest_token').notNull(),
     status: agentStatusEnum('status').notNull().default('stale'),
+    /**
+     * Notifications gate (Epic 18). Null = active. Non-null = the alerter
+     * skips delivery while `now() < alerts_paused_until`. Past values
+     * auto-resume without a sweep — the gate compares with `now` at delivery
+     * time. The sentinel `9999-12-31T23:59:59.999Z` is reserved for
+     * "paused indefinitely". Alerts are still inserted into the alerts table
+     * with `delivery_status = 'skipped'` so the feed remains complete.
+     */
+    alertsPausedUntil: timestamp('alerts_paused_until', {
+      withTimezone: true,
+      mode: 'string',
+    }),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
       .notNull()
       .defaultNow(),

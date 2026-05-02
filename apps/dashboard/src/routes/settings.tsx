@@ -11,8 +11,9 @@ import {
 } from '@/components/ui/dialog';
 import { apiClient } from '@/lib/api-client';
 import { cn } from '@/lib/utils';
+import { PAUSE_FOREVER, isAlertsPaused, isPausedForever } from '@agentscope/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Bell, Copy, Loader2, Save, Trash2 } from 'lucide-react';
+import { Bell, Copy, Loader2, PauseCircle, Play, Save, Trash2 } from 'lucide-react';
 import type { FormEvent } from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -24,6 +25,7 @@ interface AgentRow {
   walletPubkey: string;
   webhookUrl: string | null;
   telegramChatId: string | null;
+  alertsPausedUntil: string | null;
   ingestToken?: string;
   alertRules: {
     slippagePctThreshold?: number;
@@ -50,6 +52,11 @@ export function SettingsPage() {
   const [telegramChatIdError, setTelegramChatIdError] = useState<string | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'error'>('idle');
+  // Tracks unsaved edits to delivery-channel fields (telegramChatId,
+  // webhookUrl). The test-alert endpoint reads from the DB, not the form,
+  // so firing it with a dirty form would test stale state. Cleared on save
+  // and on agent switch.
+  const [notificationsDirty, setNotificationsDirty] = useState(false);
   // Ref to the chat_id input so LinkTelegramDialog can prefill it without
   // promoting the field to controlled state (the rest of the form is
   // FormData-driven and converting one field would force converting all).
@@ -83,6 +90,7 @@ export function SettingsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['agents'] });
       queryClient.invalidateQueries({ queryKey: ['agent', selectedId] });
+      setNotificationsDirty(false);
     },
   });
 
@@ -117,11 +125,29 @@ export function SettingsPage() {
     },
   });
 
+  // Epic 18 — Pause/resume notifications. Posts the new `alertsPausedUntil`
+  // value through the same PATCH endpoint as the rest of the settings form
+  // but commits immediately (no "Save changes" press required) — the pause
+  // state is a discrete user action, not a free-form edit.
+  const pauseMutation = useMutation({
+    mutationFn: (alertsPausedUntil: string | null) =>
+      apiClient.patch<{ agent: AgentRow }>(`/api/agents/${selectedId}`, { alertsPausedUntil }),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['agents'] });
+      queryClient.invalidateQueries({ queryKey: ['agent', selectedId] });
+      toast.success(variables === null ? 'Notifications resumed.' : 'Notifications paused.');
+    },
+    onError: (err) => {
+      toast.error(`Failed: ${(err as Error).message}`);
+    },
+  });
+
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally only depend on selectedId
   useEffect(() => {
     if (!selectedId) return;
     setWebhookError(null);
     setTelegramChatIdError(null);
+    setNotificationsDirty(false);
     mutation.reset();
   }, [selectedId]);
 
@@ -315,6 +341,12 @@ export function SettingsPage() {
 
             <Card title="Notifications" meta="delivery channels">
               <div className="grid gap-3.5 px-4 py-4">
+                <PauseControls
+                  selectedId={selectedId}
+                  alertsPausedUntil={selected?.alertsPausedUntil ?? null}
+                  onUpdate={(v) => pauseMutation.mutate(v)}
+                  isPending={pauseMutation.isPending}
+                />
                 <div>
                   <div className="mb-1.5 flex items-center justify-between">
                     <FieldLabel>Telegram chat ID</FieldLabel>
@@ -325,12 +357,18 @@ export function SettingsPage() {
                           if (telegramChatIdInputRef.current) {
                             telegramChatIdInputRef.current.value = chatId;
                           }
+                          setNotificationsDirty(true);
                         }}
                       />
                       <button
                         type="button"
                         onClick={() => testAlertMutation.mutate()}
-                        disabled={!selectedId || testAlertMutation.isPending}
+                        disabled={!selectedId || testAlertMutation.isPending || notificationsDirty}
+                        title={
+                          notificationsDirty
+                            ? 'Save changes first — test alert reads from the saved settings.'
+                            : undefined
+                        }
                         className={cn(
                           'inline-flex h-6 items-center gap-1.5 rounded-sm border border-line px-2',
                           'font-mono text-[10.5px] text-fg-2 hover:border-fg-3 hover:text-fg',
@@ -354,6 +392,7 @@ export function SettingsPage() {
                       inputMode="numeric"
                       placeholder="123456789"
                       defaultValue={selected?.telegramChatId ?? ''}
+                      onChange={() => setNotificationsDirty(true)}
                       className="w-full bg-transparent font-mono text-[12.5px] text-fg outline-none placeholder:text-fg-3"
                     />
                   </div>
@@ -379,6 +418,7 @@ export function SettingsPage() {
                       type="url"
                       placeholder="https://example.com/webhook"
                       defaultValue={selected?.webhookUrl ?? ''}
+                      onChange={() => setNotificationsDirty(true)}
                       className="w-full bg-transparent font-mono text-[12.5px] text-fg outline-none placeholder:text-fg-3"
                     />
                   </div>
@@ -515,6 +555,128 @@ function FieldLabel({ children, hint }: { children: React.ReactNode; hint?: stri
       ) : null}
     </div>
   );
+}
+
+/**
+ * Pause / resume the notification pipeline for one agent. Hits PATCH
+ * directly (independent of the form's Save button) since the user-facing
+ * affordance is a discrete action, not a free-form edit.
+ *
+ * "Forever" maps to the PAUSE_FOREVER ISO sentinel (year 9999) so the
+ * column can stay a single nullable timestamp — see packages/shared/pause.ts.
+ */
+function PauseControls({
+  selectedId,
+  alertsPausedUntil,
+  onUpdate,
+  isPending,
+}: {
+  selectedId: string;
+  alertsPausedUntil: string | null;
+  onUpdate: (alertsPausedUntil: string | null) => void;
+  isPending: boolean;
+}) {
+  const now = new Date();
+  const paused = isAlertsPaused(alertsPausedUntil, now);
+  const forever = isPausedForever(alertsPausedUntil);
+
+  const presets = [
+    { label: '1h', ms: 60 * 60 * 1000 },
+    { label: '24h', ms: 24 * 60 * 60 * 1000 },
+    { label: '7d', ms: 7 * 24 * 60 * 60 * 1000 },
+  ] as const;
+
+  const btnBase = cn(
+    'inline-flex h-6 items-center gap-1 rounded-sm border border-line px-2',
+    'font-mono text-[10.5px] text-fg-2 hover:border-fg-3 hover:text-fg',
+    'disabled:opacity-50 disabled:cursor-not-allowed',
+  );
+
+  if (paused && alertsPausedUntil) {
+    const until = new Date(alertsPausedUntil);
+    const remainingMs = until.getTime() - now.getTime();
+    return (
+      <div className="rounded-[5px] border border-[color:color-mix(in_oklch,var(--warn)_35%,var(--line))] bg-[color:color-mix(in_oklch,var(--warn)_8%,transparent)] px-3 py-2.5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <PauseCircle className="h-3.5 w-3.5 text-warn" />
+            <span className="font-mono text-[11.5px] text-warn">
+              Notifications paused
+              {forever ? ' indefinitely' : ` · resumes in ${humanizeDuration(remainingMs)}`}
+            </span>
+          </div>
+          <button
+            type="button"
+            disabled={isPending || !selectedId}
+            onClick={() => onUpdate(null)}
+            className={btnBase}
+          >
+            {isPending ? (
+              <Loader2 className="h-2.5 w-2.5 animate-spin" />
+            ) : (
+              <Play className="h-2.5 w-2.5" />
+            )}
+            Resume now
+          </button>
+        </div>
+        {!forever ? (
+          <p className="mt-1.5 font-mono text-[11px] text-fg-3">
+            Until {until.toLocaleString()}. Alerts still appear in the feed but are not delivered.
+          </p>
+        ) : (
+          <p className="mt-1.5 font-mono text-[11px] text-fg-3">
+            Alerts still appear in the feed but are not delivered until you resume.
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <FieldLabel hint="alerts still appear in feed when paused">Pause notifications</FieldLabel>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="font-mono text-[11px] text-fg-3">For:</span>
+        {presets.map((p) => (
+          <button
+            key={p.label}
+            type="button"
+            disabled={isPending || !selectedId}
+            onClick={() => onUpdate(new Date(Date.now() + p.ms).toISOString())}
+            className={btnBase}
+          >
+            {p.label}
+          </button>
+        ))}
+        <button
+          type="button"
+          disabled={isPending || !selectedId}
+          onClick={() => onUpdate(PAUSE_FOREVER)}
+          className={btnBase}
+        >
+          Forever
+        </button>
+        {isPending ? <Loader2 className="ml-1 h-3 w-3 animate-spin text-fg-3" /> : null}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Humanizes a positive ms duration as a compact string ("47m", "23h 12m",
+ * "6d 4h"). Returns "<1m" for sub-minute remainders so the UI never shows
+ * an empty string. Negative inputs collapse to "<1m" as well — the caller
+ * should already have filtered them via isAlertsPaused().
+ */
+function humanizeDuration(ms: number): string {
+  if (ms < 60_000) return '<1m';
+  const totalMinutes = Math.floor(ms / 60_000);
+  const days = Math.floor(totalMinutes / (60 * 24));
+  const hours = Math.floor((totalMinutes - days * 60 * 24) / 60);
+  const minutes = totalMinutes - days * 60 * 24 - hours * 60;
+  if (days > 0) return hours > 0 ? `${days}d ${hours}h` : `${days}d`;
+  if (hours > 0) return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+  return `${minutes}m`;
 }
 
 function ThresholdInput({

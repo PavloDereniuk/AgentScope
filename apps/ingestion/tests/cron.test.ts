@@ -227,4 +227,115 @@ describe('cron cycle', () => {
       globalThis.Date = realDate;
     }
   });
+
+  it('skips delivery when agent has alerts_paused_until in the future', async () => {
+    // Fresh state.
+    await db.delete(alerts).where(eq(alerts.agentId, staleAgentId));
+    await db.delete(alerts).where(eq(alerts.agentId, activeAgentId));
+    await db
+      .update(agentTransactions)
+      .set({ blockTime: '2026-04-09T11:29:00Z' })
+      .where(eq(agentTransactions.agentId, staleAgentId));
+    // Pause until one hour after our fake `now`.
+    await db
+      .update(agents)
+      .set({ alertsPausedUntil: '2026-04-09T13:00:00Z' })
+      .where(eq(agents.id, staleAgentId));
+
+    const telegramCalls: AlertMessage[] = [];
+    const telegram: ChannelSender = {
+      async send(msg) {
+        telegramCalls.push(msg);
+        return { success: true, channel: 'telegram' };
+      },
+    };
+
+    const realDate = globalThis.Date;
+    const fakeNow = new Date('2026-04-09T12:00:00Z');
+    globalThis.Date = class extends realDate {
+      constructor(...args: unknown[]) {
+        if (args.length === 0) {
+          super(fakeNow.getTime());
+        } else {
+          // @ts-expect-error — spread into Date ctor
+          super(...args);
+        }
+      }
+      static override now() {
+        return fakeNow.getTime();
+      }
+    } as DateConstructor;
+
+    try {
+      await runCronCycle({ db, logger: silentLogger, defaults, alerter: { telegram } });
+
+      // Telegram MUST NOT have been called for the paused agent.
+      expect(telegramCalls.find((m) => m.agentId === staleAgentId)).toBeUndefined();
+
+      // Alert row should still exist (feed visibility) but be marked
+      // `skipped`, with the channel that *would* have been used recorded.
+      const staleRows = await db.select().from(alerts).where(eq(alerts.agentId, staleAgentId));
+      const staleRow = staleRows.find((a) => a.ruleName === 'stale_agent');
+      expect(staleRow).toBeDefined();
+      expect(staleRow?.deliveryStatus).toBe('skipped');
+      expect(staleRow?.deliveryChannel).toBe('telegram');
+      expect(staleRow?.deliveredAt).toBeNull();
+    } finally {
+      globalThis.Date = realDate;
+      // Reset pause so subsequent tests start clean.
+      await db.update(agents).set({ alertsPausedUntil: null }).where(eq(agents.id, staleAgentId));
+    }
+  });
+
+  it('resumes delivery after alerts_paused_until elapses', async () => {
+    await db.delete(alerts).where(eq(alerts.agentId, staleAgentId));
+    await db
+      .update(agentTransactions)
+      .set({ blockTime: '2026-04-09T11:29:00Z' })
+      .where(eq(agentTransactions.agentId, staleAgentId));
+    // Pause already expired (1 minute before fake `now`).
+    await db
+      .update(agents)
+      .set({ alertsPausedUntil: '2026-04-09T11:59:00Z' })
+      .where(eq(agents.id, staleAgentId));
+
+    const telegramCalls: AlertMessage[] = [];
+    const telegram: ChannelSender = {
+      async send(msg) {
+        telegramCalls.push(msg);
+        return { success: true, channel: 'telegram' };
+      },
+    };
+
+    const realDate = globalThis.Date;
+    const fakeNow = new Date('2026-04-09T12:00:00Z');
+    globalThis.Date = class extends realDate {
+      constructor(...args: unknown[]) {
+        if (args.length === 0) {
+          super(fakeNow.getTime());
+        } else {
+          // @ts-expect-error — spread into Date ctor
+          super(...args);
+        }
+      }
+      static override now() {
+        return fakeNow.getTime();
+      }
+    } as DateConstructor;
+
+    try {
+      await runCronCycle({ db, logger: silentLogger, defaults, alerter: { telegram } });
+
+      // Past pausedUntil → auto-resume, delivery should fire normally.
+      expect(telegramCalls.find((m) => m.agentId === staleAgentId)).toBeDefined();
+
+      const staleRow = (
+        await db.select().from(alerts).where(eq(alerts.agentId, staleAgentId))
+      ).find((a) => a.ruleName === 'stale_agent');
+      expect(staleRow?.deliveryStatus).toBe('delivered');
+    } finally {
+      globalThis.Date = realDate;
+      await db.update(agents).set({ alertsPausedUntil: null }).where(eq(agents.id, staleAgentId));
+    }
+  });
 });

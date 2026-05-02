@@ -1,5 +1,6 @@
 import { Kpi, KpiRow } from '@/components/Kpi';
 import { LiveTicker, type TickerItem, type TickerKind } from '@/components/LiveTicker';
+import { PausedBadge } from '@/components/PausedBadge';
 import { Sparkline } from '@/components/Sparkline';
 import { apiClient } from '@/lib/api-client';
 import { useTimeseries } from '@/lib/use-timeseries';
@@ -18,6 +19,7 @@ interface AgentRow {
   framework: string;
   agentType: string;
   status: 'live' | 'stale' | 'failed';
+  alertsPausedUntil: string | null;
   lastSeenAt: string | null;
   createdAt: string;
   recentTxCount24h: number;
@@ -236,6 +238,7 @@ export function OverviewPage() {
                         {agent.name}
                       </span>
                       <StatusBadge status={agent.status} />
+                      <PausedBadge alertsPausedUntil={agent.alertsPausedUntil} />
                     </div>
                     <div className="truncate font-mono text-[11.5px] text-fg-3">
                       {agent.walletPubkey}

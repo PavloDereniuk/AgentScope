@@ -30,8 +30,8 @@ import {
   staleOracleRule,
 } from '@agentscope/detector';
 import type { EvalLogger } from '@agentscope/detector';
-import type { AlertRuleThresholds, DeliveryChannel } from '@agentscope/shared';
-import { eq } from 'drizzle-orm';
+import { type AlertRuleThresholds, type DeliveryChannel, isAlertsPaused } from '@agentscope/shared';
+import { eq, inArray } from 'drizzle-orm';
 
 /** All tx-triggered rules, evaluated after each persist. */
 const TX_RULES: readonly TxRuleDef[] = [
@@ -117,6 +117,7 @@ export async function runTxDetector(
       userId: agents.userId,
       telegramChatId: agents.telegramChatId,
       webhookUrl: agents.webhookUrl,
+      alertsPausedUntil: agents.alertsPausedUntil,
     })
     .from(agents)
     .where(eq(agents.id, agentId))
@@ -127,6 +128,7 @@ export async function runTxDetector(
   const userId = agent?.userId ?? null;
   const telegramChatId = agent?.telegramChatId ?? null;
   const webhookUrl = agent?.webhookUrl ?? null;
+  const alertsPausedUntil = agent?.alertsPausedUntil ?? null;
 
   const results = await evaluateTx(
     TX_RULES,
@@ -203,6 +205,21 @@ export async function runTxDetector(
     const alerter = deps.alerter;
     const channel = pickChannel(alerter, webhookUrl, telegramChatId);
     if (!channel) return results.length;
+
+    // Epic 18: pause gate. Mirror the cron-cycle behaviour — alert rows
+    // were already inserted above, so the dashboard feed stays complete;
+    // here we mark them as `skipped` instead of calling deliver(). Channel
+    // is still recorded (the channel that *would* have been used).
+    if (isAlertsPaused(alertsPausedUntil, new Date())) {
+      const ids = inserted.map((r) => r.id);
+      if (ids.length > 0) {
+        await deps.db
+          .update(alerts)
+          .set({ deliveryStatus: 'skipped', deliveryChannel: channel })
+          .where(inArray(alerts.id, ids));
+      }
+      return results.length;
+    }
 
     // Build a per-agent alerter view: for webhook we swap in a sender
     // bound to *this* agent's URL so deliver() doesn't need to know about

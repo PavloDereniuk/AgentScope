@@ -129,6 +129,7 @@ export const agentSchema = z.object({
   alertRules: alertRuleThresholdsSchema,
   ingestToken: z.string().min(1),
   status: agentStatusSchema,
+  alertsPausedUntil: isoTimestampSchema.nullable(),
   createdAt: isoTimestampSchema,
   lastSeenAt: isoTimestampSchema.nullable(),
 });
@@ -151,6 +152,10 @@ export const updateAgentInputSchema = z
     webhookUrl: z.string().url().nullable(),
     telegramChatId: telegramChatIdSchema.nullable(),
     alertRules: alertRuleThresholdsSchema,
+    // Nullable for "resume now"; isoTimestampSchema enforces ISO-8601 with
+    // offset so dashboards / SDKs can write `9999-12-31T23:59:59.999Z` for
+    // indefinite pause without a separate "forever" sentinel field.
+    alertsPausedUntil: isoTimestampSchema.nullable(),
   })
   .partial();
 

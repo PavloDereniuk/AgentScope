@@ -33,7 +33,7 @@ export type AlertRuleName = (typeof ALERT_RULE_NAMES)[number];
 export const DELIVERY_CHANNELS = ['telegram', 'webhook', 'discord', 'slack'] as const;
 export type DeliveryChannel = (typeof DELIVERY_CHANNELS)[number];
 
-export const DELIVERY_STATUSES = ['pending', 'delivered', 'failed'] as const;
+export const DELIVERY_STATUSES = ['pending', 'delivered', 'failed', 'skipped'] as const;
 export type DeliveryStatus = (typeof DELIVERY_STATUSES)[number];
 
 // ─── Branded primitives ───────────────────────────────────────────────────────
@@ -102,6 +102,14 @@ export interface Agent {
   /** Opaque token used by the agent's OTel exporter to authenticate /v1/traces. */
   ingestToken: string;
   status: AgentStatus;
+  /**
+   * Notifications are paused until this moment (inclusive). Null = active.
+   * Past values auto-resume without a sweep — the gate compares with `now`
+   * at delivery time. The sentinel `9999-12-31T23:59:59.999Z` represents
+   * "paused indefinitely" so the column stays a single timestamp instead
+   * of growing a separate boolean.
+   */
+  alertsPausedUntil: ISOTimestamp | null;
   createdAt: ISOTimestamp;
   lastSeenAt: ISOTimestamp | null;
 }
@@ -123,6 +131,8 @@ export interface UpdateAgentInput {
   webhookUrl?: string | null | undefined;
   telegramChatId?: string | null | undefined;
   alertRules?: AlertRuleThresholds | undefined;
+  /** ISO-8601; null = resume (clear pause); omitted = leave unchanged. */
+  alertsPausedUntil?: ISOTimestamp | null | undefined;
 }
 
 // ─── Transaction ──────────────────────────────────────────────────────────────

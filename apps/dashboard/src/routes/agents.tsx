@@ -1,4 +1,5 @@
 import { IntegrationSnippet } from '@/components/IntegrationSnippet';
+import { PausedBadge } from '@/components/PausedBadge';
 import { Sparkline } from '@/components/Sparkline';
 import { Button } from '@/components/ui/button';
 import {
@@ -31,6 +32,7 @@ interface AgentRow {
   framework: string;
   agentType: string;
   status: 'live' | 'stale' | 'failed';
+  alertsPausedUntil: string | null;
   lastSeenAt: string | null;
   createdAt: string;
   recentTxCount24h: number;
@@ -200,6 +202,7 @@ export function AgentsPage() {
               <div className="flex min-w-0 items-center gap-2">
                 <span className="truncate text-[13.5px] font-medium text-fg">{agent.name}</span>
                 <StatusBadge status={agent.status} />
+                <PausedBadge alertsPausedUntil={agent.alertsPausedUntil} />
               </div>
               <span className="truncate font-mono text-[11.5px] text-fg-3">
                 {agent.walletPubkey}

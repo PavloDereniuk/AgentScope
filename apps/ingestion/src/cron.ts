@@ -28,8 +28,8 @@ import {
   staleRule,
 } from '@agentscope/detector';
 import type { EvalLogger } from '@agentscope/detector';
-import type { AlertRuleThresholds, DeliveryChannel } from '@agentscope/shared';
-import { and, eq, ne } from 'drizzle-orm';
+import { type AlertRuleThresholds, type DeliveryChannel, isAlertsPaused } from '@agentscope/shared';
+import { and, eq, inArray, ne } from 'drizzle-orm';
 
 /**
  * Cron-local logger: EvalLogger (used by evaluateCron) plus warn/info for
@@ -103,6 +103,7 @@ export async function runCronCycle(deps: CronDeps): Promise<number> {
       alertRules: agents.alertRules,
       telegramChatId: agents.telegramChatId,
       webhookUrl: agents.webhookUrl,
+      alertsPausedUntil: agents.alertsPausedUntil,
     })
     .from(agents);
 
@@ -210,6 +211,24 @@ export async function runCronCycle(deps: CronDeps): Promise<number> {
       const telegramChatId = agent.telegramChatId ?? null;
       const webhookUrl = agent.webhookUrl ?? null;
       const channel = pickChannel(alerter, webhookUrl, telegramChatId);
+
+      // Epic 18: pause gate. We still wrote the alert rows above so the
+      // dashboard feed stays complete; here we mark them as `skipped`
+      // instead of calling deliver(). The `deliveryChannel` is recorded
+      // (the channel that *would* have been used) so audit can answer
+      // "where would this have gone?" after pause expires.
+      if (channel && isAlertsPaused(agent.alertsPausedUntil, now)) {
+        await deps.db
+          .update(alerts)
+          .set({ deliveryStatus: 'skipped', deliveryChannel: channel })
+          .where(
+            inArray(
+              alerts.id,
+              inserted.map((r) => r.id),
+            ),
+          );
+        continue;
+      }
 
       if (channel) {
         const perAgentDeps: DeliverDeps = {

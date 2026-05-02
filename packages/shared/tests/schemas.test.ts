@@ -52,6 +52,7 @@ function makeAgent(): Agent {
     alertRules: {},
     ingestToken: 'tok_abc123',
     status: 'live',
+    alertsPausedUntil: null,
     createdAt: VALID_TIMESTAMP,
     lastSeenAt: null,
   });
@@ -200,6 +201,7 @@ describe('agentSchema', () => {
       },
       ingestToken: 'tok_xyz',
       status: 'stale',
+      alertsPausedUntil: null,
       createdAt: VALID_TIMESTAMP,
       lastSeenAt: VALID_TIMESTAMP,
     });
@@ -221,6 +223,7 @@ describe('agentSchema', () => {
         alertRules: {},
         ingestToken: 'tok_x',
         status: 'live',
+        alertsPausedUntil: null,
         createdAt: VALID_TIMESTAMP,
         lastSeenAt: null,
       }),
@@ -242,6 +245,7 @@ describe('agentSchema', () => {
         alertRules: {},
         ingestToken: 'tok_x',
         status: 'live',
+        alertsPausedUntil: null,
         createdAt: VALID_TIMESTAMP,
         lastSeenAt: null,
       }),
