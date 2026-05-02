@@ -367,6 +367,21 @@ const KNOWN_PROGRAMS: ReadonlyMap<string, string> = new Map([
   ['MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr', 'Memo'],
   ['Stake11111111111111111111111111111111111111', 'Stake'],
   ['Vote111111111111111111111111111111111111111', 'Vote'],
+  // Address Lookup Table — referenced by every v0 transaction that uses
+  // ALTs. Verified against the constant in @solana/web3.js (`AddressLookupTableProgram`).
+  ['AddressLookupTab1e1111111111111111111111111', 'Address Lookup Table'],
+  // Metaplex Bubblegum (compressed NFT mints/transfers). Verified against
+  // the program address in metaplex-foundation/mpl-bubblegum (programs/bubblegum).
+  ['BGUMAp9Gq7iTEuizy4pqaxsTyUCBK68MDfK752saRPUY', 'Bubblegum (cNFT)'],
+  // SPL Account Compression — backs Bubblegum's Merkle-tree storage. Verified
+  // against solana-program-library/account-compression/programs/account-compression.
+  ['cmtDvXumGCrqC1Age74AVPhSRVXJMd8PJS91L8KbNCK', 'Account Compression'],
+  // SPL Noop — used by Account Compression to emit log-only events. Verified
+  // against solana-program-library/account-compression/programs/noop.
+  ['noopb9bkMVfRPU8AsbpTUg8AQkHtKwMYZiFUjNRtMmV', 'SPL Noop'],
+  // Metaplex Token Metadata — verified against the address constant in
+  // metaplex-foundation/mpl-token-metadata.
+  ['metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s', 'Token Metadata'],
   // Jupiter v6 — verified against packages/parser/src/jupiter/idl.json (address field)
   // and the constant in jupiter/parser.ts.
   ['JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4', 'Jupiter v6'],

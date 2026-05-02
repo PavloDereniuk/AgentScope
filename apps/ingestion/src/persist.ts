@@ -27,34 +27,52 @@ export interface PersistContext {
 }
 
 /**
- * Pick the most "interesting" parsed instruction in the tx — the
- * primary user-visible operation. We prefer recognized lending /
- * swap ops over utility wrappers (refresh_*, init_*, ATA setup) so
- * the timeline shows "kamino.deposit" instead of "kamino.refresh_reserve".
+ * Program IDs that are pure infrastructure wrappers — they show up
+ * in nearly every tx but never represent the user-intent. We always
+ * deprioritize them when picking a primary instruction so the
+ * dashboard doesn't surface "Compute Budget" for a SOL transfer.
+ *
+ * Note: System Program (1111...) is intentionally NOT here — a
+ * SystemProgram::Transfer is a meaningful primary action.
  */
-/** Program IDs of system/infra programs that never represent the primary user intent. */
-const SYSTEM_PROGRAM_PREFIXES = new Set([
-  'comp', // ComputeBudget
-  '1111', // System Program (1111...)
-  'toke', // Token Program (Toke...)
-  'atas', // ATA Program (ATAs...)
-  'memo', // Memo Program
+const INFRA_PROGRAM_IDS = new Set([
+  'ComputeBudget111111111111111111111111111111',
+  'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL',
+  'Memo1UhkJBfCvE3urwUn9vNyTxWVF2qB2nRF3NsKNFt6',
+  'MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr',
+  'AddressLookupTab1e1111111111111111111111111',
 ]);
 
+/**
+ * Pick the most "interesting" parsed instruction in the tx — the
+ * primary user-visible operation. Priority order:
+ *   1. Decoded protocol op on a non-infra program (jupiter.swap,
+ *      kamino.deposit, system.transfer)
+ *   2. Recognized non-infra (includes kamino.refresh_*, kamino.init_*,
+ *      and bare friendly names like "Bubblegum (cNFT)")
+ *   3. Any non-infra instruction (even <prefix>.unknown — at least we
+ *      know which protocol triggered it)
+ *   4. First instruction overall (pure-infra tx — shows "Compute Budget")
+ */
 function pickPrimaryInstruction(parsed: ParsedTx) {
-  const recognized = parsed.instructions.filter((ix) => !ix.name.endsWith('.unknown'));
-  // Skip refresh / utility instructions when picking the primary.
-  const meaningful = recognized.filter(
-    (ix) => !ix.name.startsWith('kamino.refresh_') && !ix.name.startsWith('kamino.init_'),
-  );
-  if (meaningful[0]) return meaningful[0];
-  if (recognized[0]) return recognized[0];
+  const ixs = parsed.instructions;
+  if (ixs.length === 0) return null;
 
-  // All unknown — prefer non-system programs over ComputeBudget/System/Token.
-  const nonSystem = parsed.instructions.filter(
-    (ix) => !SYSTEM_PROGRAM_PREFIXES.has(ix.name.split('.')[0] ?? ''),
-  );
-  return nonSystem[0] ?? parsed.instructions[0] ?? null;
+  const isInfra = (ix: { programId: string }) => INFRA_PROGRAM_IDS.has(ix.programId);
+  const isUnknown = (ix: { name: string }) => ix.name === 'unknown' || ix.name.endsWith('.unknown');
+  const isUtility = (ix: { name: string }) =>
+    ix.name.startsWith('kamino.refresh_') || ix.name.startsWith('kamino.init_');
+
+  const meaningful = ixs.filter((ix) => !isInfra(ix) && !isUnknown(ix) && !isUtility(ix));
+  if (meaningful[0]) return meaningful[0];
+
+  const recognizedNonInfra = ixs.filter((ix) => !isInfra(ix) && !isUnknown(ix));
+  if (recognizedNonInfra[0]) return recognizedNonInfra[0];
+
+  const nonInfra = ixs.filter((ix) => !isInfra(ix));
+  if (nonInfra[0]) return nonInfra[0];
+
+  return ixs[0] ?? null;
 }
 
 /**

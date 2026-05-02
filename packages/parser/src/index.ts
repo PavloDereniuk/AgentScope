@@ -11,10 +11,12 @@
 // Import for side-effect: parser modules call registerParser at load time
 import './jupiter/parser';
 import './kamino/parser';
+import './system/parser';
 
 export { parseTransaction, registerParser } from './dispatcher';
 export { jupiterParser } from './jupiter/parser';
 export { kaminoParser, getKaminoLoadWarnings } from './kamino/parser';
+export { systemParser } from './system/parser';
 export type {
   ParseInput,
   ParsedInstruction,

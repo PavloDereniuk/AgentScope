@@ -299,6 +299,32 @@ describe('parseTransaction unregistered known programs', () => {
     );
     expect(result.instructions[0]?.name).toBe('xyz1.unknown');
   });
+
+  it('maps Metaplex Bubblegum program id to "Bubblegum (cNFT)"', () => {
+    const BUBBLEGUM = 'BGUMAp9Gq7iTEuizy4pqaxsTyUCBK68MDfK752saRPUY';
+    const result = parseTransaction(
+      makeFixture({
+        accountKeys: [OWNER, BUBBLEGUM],
+        instructions: [{ programIdIndex: 1, accountIndexes: [0], data: new Uint8Array([0]) }],
+        preLamports: [1, 1],
+        postLamports: [1, 1],
+      }),
+    );
+    expect(result.instructions[0]?.name).toBe('Bubblegum (cNFT)');
+  });
+
+  it('maps Address Lookup Table program id to "Address Lookup Table"', () => {
+    const ALT = 'AddressLookupTab1e1111111111111111111111111';
+    const result = parseTransaction(
+      makeFixture({
+        accountKeys: [OWNER, ALT],
+        instructions: [{ programIdIndex: 1, accountIndexes: [0], data: new Uint8Array([0]) }],
+        preLamports: [1, 1],
+        postLamports: [1, 1],
+      }),
+    );
+    expect(result.instructions[0]?.name).toBe('Address Lookup Table');
+  });
 });
 
 // ─── Failed transactions ───────────────────────────────────────────────────
