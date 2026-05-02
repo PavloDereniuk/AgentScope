@@ -66,6 +66,11 @@ const RULE_TITLES: Record<string, string> = {
   decision_swap_mismatch: 'Decision/Swap Mismatch',
   stale_oracle: 'Stale Price Used',
   ghost_execution: 'Swap Never Landed',
+  // Pseudo-rule emitted by POST /api/agents/:id/test-alert. Not part of
+  // ALERT_RULE_NAMES (never persisted), but the formatters must handle it
+  // because it travels through the same telegram/webhook senders that
+  // every real alert uses.
+  test_alert: 'Test Alert',
 };
 
 /**
@@ -170,6 +175,8 @@ export function formatAlertSummary(
         ? `Bot announced 1 swap but it never landed on-chain${oldestStr}`
         : `Bot announced ${count} swaps but they never landed on-chain${oldestStr}`;
     }
+    case 'test_alert':
+      return 'If you can read this, alert delivery is working.';
     default:
       return formatRuleTitle(ruleName);
   }
@@ -274,6 +281,11 @@ export function formatAlertDetails(
         { label: 'Oldest signature', value: str(payload, 'oldestSignature') ?? '—' },
       ];
     }
+    // The smoke-test payload (`isTest`, `source`) is plumbing-only metadata —
+    // dumping it as bullet rows adds noise without telling the user anything
+    // they don't already know from the title and impact line.
+    case 'test_alert':
+      return [];
     default:
       return Object.entries(payload)
         .filter(([k]) => k !== 'signature')
@@ -311,6 +323,8 @@ export function formatAlertImpact(
       return 'The bot acted on a price that no longer reflects the market. Trades made on stale data are likely mispriced.';
     case 'ghost_execution':
       return 'The bot announced a swap in its reasoning but no matching transaction reached the chain. The trade was likely lost or never submitted.';
+    case 'test_alert':
+      return 'This is a smoke test triggered from your dashboard. No real anomaly was detected — no action needed.';
     default:
       return 'An anomaly was detected in your bot. Open the dashboard for details.';
   }
