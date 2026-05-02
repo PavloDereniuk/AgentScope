@@ -19,7 +19,10 @@ if (existsSync(PATH)) {
 
 mkdirSync('../wallets', { recursive: true });
 const kp = Keypair.generate();
-writeFileSync(PATH, JSON.stringify(Array.from(kp.secretKey)));
+// 0o600 keeps the secret key owner-readable only on POSIX. Windows ignores
+// the mode bit harmlessly, but on shared Linux/macOS dev boxes the default
+// 0644 would expose the key to every other user account on the host.
+writeFileSync(PATH, JSON.stringify(Array.from(kp.secretKey)), { mode: 0o600 });
 
 console.log('');
 console.log('  ✓ ElizaOS wallet generated');

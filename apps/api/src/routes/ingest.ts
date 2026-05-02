@@ -79,18 +79,39 @@ const timestampSchema = z.union([
   z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
 ]);
 
+// Caps mirror the OTLP path's intent (apps/api/src/otlp/schema.ts limits the
+// envelope) but adapted for L0's one-span-per-request shape. Without these,
+// Hono's default body parser would accept arbitrarily large JSON, giving a
+// single token a 50 MB-per-request DoS surface even within the 100/min budget.
+const MAX_SPAN_NAME_CHARS = 512;
+const MAX_ATTRIBUTES_BYTES = 65_536;
+
 const ingestSpanSchema = z
   .object({
     traceId: traceIdSchema,
     spanId: spanIdSchema,
     parentSpanId: spanIdSchema.optional(),
-    name: z.string().min(1),
+    name: z.string().min(1).max(MAX_SPAN_NAME_CHARS),
     startTime: timestampSchema,
     endTime: timestampSchema,
     // Free-form key/value bag. Unknown nested shapes are preserved as-is
     // — the dashboard renders them via JSON.stringify, so callers can
-    // attach whatever structured context their agent emits.
-    attributes: z.record(z.string(), z.unknown()).optional(),
+    // attach whatever structured context their agent emits. The size cap
+    // applies to the serialized form so a deeply nested object cannot
+    // smuggle past a per-string-length limit.
+    attributes: z
+      .record(z.string(), z.unknown())
+      .optional()
+      .superRefine((attrs, ctx) => {
+        if (attrs === undefined) return;
+        const size = JSON.stringify(attrs).length;
+        if (size > MAX_ATTRIBUTES_BYTES) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `attributes exceed ${MAX_ATTRIBUTES_BYTES} bytes when serialized (got ${size})`,
+          });
+        }
+      }),
     /**
      * Optional Solana signature for tx ↔ span correlation. Validated
      * up front because the value lands in an indexed column and a
@@ -111,7 +132,19 @@ const ingestSpanSchema = z
       .strict()
       .optional(),
   })
-  .strict();
+  .strict()
+  // Reject reversed time windows up front so we never persist negative
+  // span durations. Reasoning Explorer guards rendering, but the data
+  // would still poison aggregates (avg duration, p95) downstream.
+  .refine(
+    (b) => {
+      const s = typeof b.startTime === 'number' ? b.startTime : Date.parse(b.startTime);
+      const e = typeof b.endTime === 'number' ? b.endTime : Date.parse(b.endTime);
+      if (!Number.isFinite(s) || !Number.isFinite(e)) return true;
+      return s <= e;
+    },
+    { message: 'endTime must be greater than or equal to startTime', path: ['endTime'] },
+  );
 
 export type IngestSpanInput = z.infer<typeof ingestSpanSchema>;
 

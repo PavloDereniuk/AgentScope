@@ -210,8 +210,18 @@ export function SettingsPage() {
     } catch {
       setCopyState('error');
     }
-    window.setTimeout(() => setCopyState('idle'), 1400);
+    // The matching reset timer lives in the useEffect below so it's torn
+    // down with the component instead of leaking a setState-after-unmount.
   }
+
+  // Auto-reset copy state after 1.4 s. Effect cleanup cancels the timer if
+  // the user re-clicks (state already 'copied' → effect re-runs) or
+  // unmounts the page mid-flight, sidestepping the unmount warning.
+  useEffect(() => {
+    if (copyState === 'idle') return;
+    const id = window.setTimeout(() => setCopyState('idle'), 1400);
+    return () => window.clearTimeout(id);
+  }, [copyState]);
 
   return (
     <div className="p-7">

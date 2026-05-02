@@ -100,9 +100,12 @@ export function formatAlertSummary(
       const actual = num(payload, 'actualPct');
       const threshold = num(payload, 'thresholdPct');
       if (actual == null) return 'Swap slippage exceeded threshold';
-      const ratio = threshold && threshold > 0 ? actual / threshold : null;
-      const ratioStr = ratio ? ` — ${ratio.toFixed(1)}× above ${threshold}%` : '';
-      return `Swap slipped ${actual}%${ratioStr} threshold`;
+      // When threshold is missing/zero we fall back to a single-clause
+      // sentence — otherwise the previous template produced the dangling
+      // "Swap slipped 5% threshold" with the connector word missing.
+      if (!threshold || threshold <= 0) return `Swap slipped ${actual}% above threshold`;
+      const ratio = actual / threshold;
+      return `Swap slipped ${actual}% — ${ratio.toFixed(1)}× above ${threshold}% threshold`;
     }
     case 'gas_spike': {
       const ratio = num(payload, 'ratio');

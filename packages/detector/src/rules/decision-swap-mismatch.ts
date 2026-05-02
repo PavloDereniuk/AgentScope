@@ -39,7 +39,12 @@ interface DecisionAttrs {
   spanId: string;
 }
 
-function readDecisionAttrs(attrs: SpanAttributes): DecisionAttrs | null {
+// readDecisionAttrs returns the action+amount pair (no spanId — that lives on
+// the caller's row, not the attribute bag) so a future caller cannot forget
+// to overwrite a placeholder. The call site composes the full DecisionAttrs.
+type DecisionPayload = Omit<DecisionAttrs, 'spanId'>;
+
+function readDecisionAttrs(attrs: SpanAttributes): DecisionPayload | null {
   const action = attrs['decision.action'];
   const amount = attrs['decision.amount_sol'];
   const normalizedAction =
@@ -49,7 +54,6 @@ function readDecisionAttrs(attrs: SpanAttributes): DecisionAttrs | null {
   return {
     action: normalizedAction,
     amountSol: normalizedAmount,
-    spanId: '',
   };
 }
 
@@ -119,6 +123,9 @@ export const decisionSwapMismatchRule: TxRuleDef = {
       }
     }
     if (!decision) return null;
+    // Sanity: if the call-site composition above ever drifts, fail loud
+    // rather than ship an alert with a blank Telegram deep-link.
+    if (!decision.spanId) return null;
 
     const thresholdPct = agent.alertRules.decisionMismatchPctThreshold ?? DEFAULT_MISMATCH_PCT;
     if (thresholdPct <= 0) return null;
