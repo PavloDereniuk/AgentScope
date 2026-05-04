@@ -8,7 +8,7 @@ const DASHBOARD_URL = import.meta.env.PUBLIC_DASHBOARD_URL ?? 'https://app.agent
       <div>
         <div class="hero-eyebrow">
           <span class="pulse"></span>
-          LIVE · SOLANA MAINNET · 9,000+ AGENTS INDEXED
+          15M+ AGENT TX ON SOLANA · ZERO TELEMETRY
         </div>
 
         <h1 class="hero-title">
@@ -29,33 +29,30 @@ const DASHBOARD_URL = import.meta.env.PUBLIC_DASHBOARD_URL ?? 'https://app.agent
         </div>
 
         <div class="hero-meta">
-          <div><strong>&lt; 200ms</strong>P95 ingest latency</div>
-          <div><strong>5</strong>anomaly rules</div>
+          <div><strong>&lt; 1s</strong>SSE latency</div>
+          <div><strong>8</strong>anomaly rules</div>
           <div><strong>2</strong>SDKs: eliza · agent-kit</div>
           <div><strong>OSS</strong>MIT · built in public</div>
         </div>
       </div>
 
       <div class="term-wrap">
-        <div class="term" id="hero-terminal" aria-label="Live reasoning trace stream">
+        <div class="term" id="hero-terminal" aria-label="Live agent event stream">
           <div class="term-head">
             <div class="term-dots"><span></span><span></span><span></span></div>
-            <span class="term-live">live · /v1/traces</span>
+            <span class="term-live">live · /v1/agents/:id/stream</span>
             <span>00:04:12</span>
           </div>
           <div class="term-body">
-            <div><span class="prompt">$</span> <span>agentscope watch agt_7fK2·solana-trader</span></div>
-            <div class="dim">  → subscribed to wallet 7fK2…Qz8n</div>
-            <div class="dim">  → span buffer: otlp/http</div>
+            <div><span class="prompt">$</span> <span>agentscope watch <span class="str">7fK2…Qz8n</span></span></div>
+            <div class="dim">  → subscribed to https://api.agentscopehq.dev</div>
+            <div class="dim">  → press Ctrl+C to exit</div>
             <div>&nbsp;</div>
-            <div><span class="ok">●</span> <span class="comment">[trace 83e2b4]</span> <span class="fn">market_analysis</span> <span class="dim">142ms</span></div>
-            <div>  <span class="comment">└─</span> <span class="fn">fetch_price</span> <span class="str">"SOL/USDC"</span> <span class="dim">38ms</span></div>
-            <div>  <span class="comment">└─</span> <span class="fn">evaluate_strategy</span> <span class="dim">94ms</span></div>
-            <div><span class="ok">●</span> <span class="comment">[trace 83e2b5]</span> <span class="fn">execute_swap</span> <span class="dim">412ms</span></div>
-            <div>  <span class="comment">└─</span> <span class="kw">jupiter.route</span> → <span class="str">"5vKx…Jp9"</span></div>
-            <div>  <span class="comment">└─</span> slippage <span class="ok">0.12%</span> · fee <span class="str">5000</span> lam</div>
-            <div><span class="err">▲</span> <span class="comment">[rule.slippage_spike]</span> <span class="err">1.8%</span> <span class="dim">(threshold 1%)</span></div>
-            <div>  <span class="comment">→</span> telegram.send <span class="ok">ok</span></div>
+            <div><span class="dim">12:34:51</span> <span class="ok">●</span> <span class="kw">tx.new      </span> <span class="str">5vKx3J…ze8Jp9</span></div>
+            <div><span class="dim">12:34:52</span> <span class="ok">●</span> <span class="kw">tx.new      </span> <span class="str">2pqMnV…wXfLxQ</span></div>
+            <div><span class="dim">12:34:54</span> <span class="err">▲</span> <span class="err">alert.warning</span>  <span class="str">slip_a1b</span></div>
+            <div><span class="dim">12:34:58</span> <span class="ok">●</span> <span class="kw">tx.new      </span> <span class="str">9YHrD3…sM8GpR</span></div>
+            <div><span class="dim">12:35:01</span> <span class="err">▲</span> <span class="err">alert.critical</span> <span class="str">slip_b2c</span></div>
             <div>&nbsp;</div>
             <div><span class="prompt">$</span> <span id="term-cursor" aria-hidden="true">_</span></div>
           </div>
