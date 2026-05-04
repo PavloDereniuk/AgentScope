@@ -60,27 +60,71 @@ const ANOMALY_RULES = ['gas', 'slippage', 'drawdown', 'failure rate', 'idle wall
           </div>
         </li>
 
-        {/* 02 — Install */}
+        {/* 02 — Install (tabbed) */}
         <li class="qs-step" id="step-2">
           <div class="qs-num">02</div>
           <div class="qs-body">
             <h2>Install the SDK</h2>
             <p>
-              Pick the package that matches your stack. Both ship under
+              Pick the path that matches your stack. Both SDKs ship under
               <span class="kw">@agentscopehq/*</span> on npm — pinned to
               <span class="kw">@alpha</span> until <span class="kw">1.0</span>.
+              The <span class="kw">curl</span> path skips install entirely — just two
+              env vars and you're ready for step 03.
             </p>
-            <div class="term qs-term">
-              <div class="term-head">
-                <div class="term-dots"><span></span><span></span><span></span></div>
-                <span>shell</span>
-                <span class="dim">npm registry</span>
-              </div>
-              <pre class="term-body qs-body-code"><code><span class="comment"># ElizaOS agents</span>
-<span class="prompt">$</span> pnpm add @agentscopehq/elizaos-plugin@alpha
 
-<span class="comment"># Solana Agent Kit (or any async TypeScript)</span>
+            <div class="qs-tabs" data-tabs="install">
+              <div class="qs-tab-row" role="tablist" aria-label="Install path">
+                <button type="button" role="tab" data-tab="elizaos" aria-selected="true">ElizaOS</button>
+                <button type="button" role="tab" data-tab="agent-kit" aria-selected="false">Agent Kit</button>
+                <button type="button" role="tab" data-tab="curl" aria-selected="false">curl</button>
+              </div>
+
+              {/* ElizaOS panel */}
+              <div class="qs-tab-panel" data-panel="elizaos" role="tabpanel">
+                <div class="term qs-term">
+                  <div class="term-head">
+                    <div class="term-dots"><span></span><span></span><span></span></div>
+                    <span>shell</span>
+                    <span class="dim">npm registry</span>
+                  </div>
+                  <pre class="term-body qs-body-code"><code><span class="comment"># ElizaOS plugin</span>
+<span class="prompt">$</span> pnpm add @agentscopehq/elizaos-plugin@alpha</code></pre>
+                </div>
+              </div>
+
+              {/* Agent Kit panel */}
+              <div class="qs-tab-panel" data-panel="agent-kit" role="tabpanel" hidden>
+                <div class="term qs-term">
+                  <div class="term-head">
+                    <div class="term-dots"><span></span><span></span><span></span></div>
+                    <span>shell</span>
+                    <span class="dim">npm registry</span>
+                  </div>
+                  <pre class="term-body qs-body-code"><code><span class="comment"># Solana Agent Kit (or any async TypeScript)</span>
 <span class="prompt">$</span> pnpm add @agentscopehq/agent-kit-sdk@alpha</code></pre>
+                </div>
+              </div>
+
+              {/* curl panel */}
+              <div class="qs-tab-panel" data-panel="curl" role="tabpanel" hidden>
+                <div class="term qs-term">
+                  <div class="term-head">
+                    <div class="term-dots"><span></span><span></span><span></span></div>
+                    <span>shell</span>
+                    <span class="dim">env setup</span>
+                  </div>
+                  <pre class="term-body qs-body-code"><code><span class="comment"># Nothing to install — every HTTP client works (curl, Python requests, …).</span>
+<span class="comment"># Export the two env vars the step 03 curl example references:</span>
+<span class="prompt">$</span> export AGENTSCOPE_API_URL=<span class="str">"https://api.agentscopehq.dev"</span>
+<span class="prompt">$</span> export AGENTSCOPE_TOKEN=<span class="str">"tok_…"</span>   <span class="comment"># from step 01</span></code></pre>
+                </div>
+                <p class="qs-hint">
+                  Prefer one-shot REST over the full OTLP envelope?
+                  Hit <span class="kw">POST /v1/spans</span> with a flat JSON body —
+                  same auth, no <span class="fn">resourceSpans</span> nesting.
+                </p>
+              </div>
             </div>
           </div>
         </li>
