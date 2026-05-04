@@ -24,6 +24,7 @@ import { registerErrorHandlers } from './middleware/error';
 import type { RateLimiter } from './middleware/rate-limit';
 import { createAgentsRouter } from './routes/agents';
 import { createAlertsRouter } from './routes/alerts';
+import { createCliStreamRouter } from './routes/cli-stream';
 import { createIngestRouter } from './routes/ingest';
 import { createOtlpRouter } from './routes/otlp';
 import { createReasoningRouter } from './routes/reasoning';
@@ -166,6 +167,20 @@ export function buildApp(deps: AppDeps) {
       db: deps.db,
       logger: log,
       ...(otlpLimiter ? { rateLimit: otlpLimiter } : {}),
+    }),
+  );
+
+  // CLI live-tail: `GET /v1/agents/:id/stream` — token-auth'd SSE for
+  // the `agentscope watch` CLI. Sits on the `/v1` surface alongside
+  // ingest so devs reuse the same `AGENTSCOPE_API_URL` +
+  // `AGENTSCOPE_AGENT_TOKEN` pair their SDK already has, with no
+  // separate Privy session token to acquire. See routes/cli-stream.ts.
+  app.route(
+    '/v1',
+    createCliStreamRouter({
+      db: deps.db,
+      sseBus: deps.sseBus,
+      logger: log,
     }),
   );
 
