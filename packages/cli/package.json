@@ -1,0 +1,43 @@
+{
+  "name": "@agentscopehq/cli",
+  "version": "0.1.0-alpha.1",
+  "description": "AgentScope command-line tool — tail your agent's reasoning spans, transactions, and alerts in the terminal.",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "agentscope": "dist/index.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "publishConfig": {
+    "access": "public"
+  },
+  "homepage": "https://agentscopehq.dev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/PavloDereniuk/AgentScope.git",
+    "directory": "packages/cli"
+  },
+  "bugs": {
+    "url": "https://github.com/PavloDereniuk/AgentScope/issues"
+  },
+  "keywords": ["solana", "agent", "observability", "cli", "agentscope"],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "lint": "biome check .",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "test:watch": "vitest watch",
+    "clean": "rm -rf dist .turbo"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0"
+  }
+}
