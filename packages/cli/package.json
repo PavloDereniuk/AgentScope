@@ -1,6 +1,6 @@
 {
   "name": "@agentscopehq/cli",
-  "version": "0.1.0-alpha.1",
+  "version": "0.1.0-alpha.2",
   "description": "AgentScope command-line tool — tail your agent's reasoning spans, transactions, and alerts in the terminal.",
   "license": "MIT",
   "type": "module",
