@@ -117,7 +117,7 @@ const ANOMALY_RULES = ['gas', 'slippage', 'drawdown', 'failure rate', 'idle wall
                   <pre class="term-body qs-body-code"><code><span class="comment"># Nothing to install — every HTTP client works (curl, Python requests, …).</span>
 <span class="comment"># Export the two env vars the step 03 curl example references:</span>
 <span class="prompt">$</span> export AGENTSCOPE_API_URL=<span class="str">"https://api.agentscopehq.dev"</span>
-<span class="prompt">$</span> export AGENTSCOPE_TOKEN=<span class="str">"tok_…"</span>   <span class="comment"># from step 01</span></code></pre>
+<span class="prompt">$</span> export AGENTSCOPE_AGENT_TOKEN=<span class="str">"tok_…"</span>   <span class="comment"># from step 01</span></code></pre>
                 </div>
                 <p class="qs-hint">
                   Prefer one-shot REST over the full OTLP envelope?
@@ -159,7 +159,7 @@ const ANOMALY_RULES = ['gas', 'slippage', 'drawdown', 'failure rate', 'idle wall
 
 <span class="kw">const</span> sdk = <span class="fn">initAgentScope</span>({'({'}
   apiUrl: process.env.<span class="fn">AGENTSCOPE_API_URL</span>!,
-  agentToken: process.env.<span class="fn">AGENTSCOPE_TOKEN</span>!,
+  agentToken: process.env.<span class="fn">AGENTSCOPE_AGENT_TOKEN</span>!,
 {'})'};
 
 <span class="kw">export const</span> myPlugin = {'{'}
@@ -183,7 +183,7 @@ process.on(<span class="str">'SIGTERM'</span>, () =&gt; sdk.<span class="fn">shu
 
 <span class="fn">initAgentScope</span>({'({'}
   apiUrl: process.env.<span class="fn">AGENTSCOPE_API_URL</span>!,
-  agentToken: process.env.<span class="fn">AGENTSCOPE_TOKEN</span>!,
+  agentToken: process.env.<span class="fn">AGENTSCOPE_AGENT_TOKEN</span>!,
 {'})'};
 
 <span class="comment">// Wrap any async action — nested traced() calls auto-parent.</span>
@@ -208,7 +208,7 @@ process.on(<span class="str">'SIGTERM'</span>, () =&gt; sdk.<span class="fn">shu
     "resourceSpans": [&lbrace;
       "resource": &lbrace;
         "attributes": [
-          &lbrace; "key": "agent.token", "value": &lbrace; "stringValue": "$AGENTSCOPE_TOKEN" &rbrace; &rbrace;
+          &lbrace; "key": "agent.token", "value": &lbrace; "stringValue": "$AGENTSCOPE_AGENT_TOKEN" &rbrace; &rbrace;
         ]
       &rbrace;,
       "scopeSpans": [&lbrace;

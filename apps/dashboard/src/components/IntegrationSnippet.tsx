@@ -16,7 +16,7 @@ interface IntegrationSnippetProps {
   apiUrl: string;
   /**
    * Per-agent ingest token. When omitted (e.g. agents-empty-state) the
-   * component renders a placeholder (`process.env.AGENTSCOPE_TOKEN`) plus
+   * component renders a placeholder (`process.env.AGENTSCOPE_AGENT_TOKEN`) plus
    * a banner explaining that the token only exists after registration.
    */
   agentToken?: string | undefined;
@@ -24,8 +24,8 @@ interface IntegrationSnippetProps {
   hasTraffic?: boolean | undefined;
 }
 
-const FALLBACK_API_URL = 'https://api.agentscope.example';
-const TOKEN_PLACEHOLDER = 'process.env.AGENTSCOPE_TOKEN';
+const FALLBACK_API_URL = 'https://api.agentscopehq.dev';
+const TOKEN_PLACEHOLDER = 'process.env.AGENTSCOPE_AGENT_TOKEN';
 
 export function IntegrationSnippet({
   apiUrl,
@@ -89,7 +89,7 @@ export function IntegrationSnippet({
           {tokenIsPlaceholder ? (
             <p className="rounded-[5px] border border-line-soft bg-surface px-3 py-2 font-mono text-[11px] text-fg-3">
               Create an agent first to get your ingest token. The snippet below uses{' '}
-              <code className="text-fg-2">AGENTSCOPE_TOKEN</code> as a placeholder.
+              <code className="text-fg-2">AGENTSCOPE_AGENT_TOKEN</code> as a placeholder.
             </p>
           ) : null}
 
@@ -220,7 +220,7 @@ function buildSnippet(
         "process.on('SIGTERM', () => sdk.shutdown());",
       ].join('\n');
     case 'curl': {
-      const tokenForCurl = tokenIsPlaceholder ? '$AGENTSCOPE_TOKEN' : token;
+      const tokenForCurl = tokenIsPlaceholder ? '$AGENTSCOPE_AGENT_TOKEN' : token;
       return [
         `curl -X POST ${apiUrl}/v1/traces \\`,
         '  -H "Content-Type: application/json" \\',
