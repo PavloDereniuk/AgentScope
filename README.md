@@ -30,10 +30,10 @@ Network: Solana **mainnet**. DB: Supabase Postgres (prod). Auth: Privy.
 
 ## Why
 
-- 9000+ AI agents already deployed on Solana (Alchemy, 2026)
-- 77% of Solana x402 transactions originate from agents
-- $45M lost in an AI Trading Agent breach due to lack of monitoring
-- ElizaOS has 17,600+ GitHub stars — mass adoption with no monitoring layer
+- 15M+ AI-agent on-chain payments processed on Solana (Solana Foundation, March 2026)
+- 49% of all x402 agent-to-agent transactions happen on Solana (SolanaFloor, week ending Feb 9 2026)
+- 99.99% of on-chain transactions in two years will be driven by agents, bots, and LLM-based wallets (Vibhu Norby, Solana Foundation AI Lead, March 2026)
+- &gt;10% hallucination rate across every frontier reasoning model — GPT-5, Claude 4.5, Grok-4 — and the rate scales with reasoning ability (Vectara HHEM benchmark, 2026)
 
 Existing AI observability tools (Braintrust, Langfuse, Arize) monitor LLM calls but not on-chain transactions. Solana explorers see transactions but not agent context or reasoning chains. AgentScope fills the gap.
 

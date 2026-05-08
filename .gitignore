@@ -59,10 +59,19 @@ wallets/
 # Vercel
 .vercel
 
+# npm auth (token interpolated via $NPM_TOKEN at publish time)
+.npmrc
+
 # Misc
 *.pem
 *.key
 .cache/
+
+# Local demo scripts (may contain ingest tokens)
+.demo/
+
+# Playwright MCP snapshots (transient accessibility-tree dumps from local sessions)
+.playwright-mcp/
 
 # Docs (internal notes, handoff bundles, scratchpads — all local-only)
 docs/
