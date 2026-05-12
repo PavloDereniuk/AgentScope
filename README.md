@@ -32,7 +32,7 @@ Network: Solana **mainnet**. DB: Supabase Postgres (prod). Auth: Privy.
 
 - 15M+ AI-agent on-chain payments processed on Solana (Solana Foundation, March 2026)
 - 49% of all x402 agent-to-agent transactions happen on Solana (SolanaFloor, week ending Feb 9 2026)
-- 99.99% of on-chain transactions in two years will be driven by agents, bots, and LLM-based wallets (Vibhu Norby, Solana Foundation AI Lead, March 2026)
+- 99.99% of on-chain transactions in two years will be driven by agents, bots, and LLM-based wallets (Vibhu Norby, CPO, Solana Foundation, March 2026)
 - &gt;10% hallucination rate across every frontier reasoning model — GPT-5, Claude 4.5, Grok-4 — and the rate scales with reasoning ability (Vectara HHEM benchmark, 2026)
 
 Existing AI observability tools (Braintrust, Langfuse, Arize) monitor LLM calls but not on-chain transactions. Solana explorers see transactions but not agent context or reasoning chains. AgentScope fills the gap.
