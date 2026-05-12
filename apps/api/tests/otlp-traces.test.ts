@@ -26,6 +26,7 @@ import { buildApp } from '../src/index';
 import type { AuthVerifier } from '../src/lib/auth-verifier';
 import { createSseBus } from '../src/lib/sse-bus';
 import type { Logger } from '../src/logger';
+import { createRateLimiter } from '../src/middleware/rate-limit';
 import { type TestDatabase, createTestDatabase } from './helpers/test-db';
 
 /** Fake Privy verifier — never called by /v1/traces, but buildApp wants one. */
@@ -811,5 +812,58 @@ describe('POST /v1/traces', () => {
       .where(eq(reasoningLogs.traceId, tid));
 
     expect(row?.txSignature).toBeNull();
+  });
+});
+
+// Rate-limit smoke for the OTLP receiver. Lives in its own describe with a
+// dedicated PGlite + buildApp so the low-limit limiter doesn't bleed into
+// the main suite, where every test would otherwise 429 after the first.
+//
+// Closes the latent gap called out in P.6 / SCRATCHPAD §16: until now we
+// trusted by inspection that the `c.header()` workaround in otlp.ts:115-125
+// survived the global error handler. This proves it end-to-end, and would
+// also catch a regression if the err.res propagation in error.ts breaks.
+describe('POST /v1/traces — rate limit (P.6)', () => {
+  it('429 ships Retry-After + X-RateLimit-Remaining on the second call', async () => {
+    const testDb = await createTestDatabase();
+    try {
+      const { logger } = makeCapturingLogger();
+      const app = buildApp({
+        db: testDb.db,
+        verifier: stubVerifier,
+        sseBus: createSseBus(),
+        logger,
+        otlpLimiter: createRateLimiter({ limit: 1, windowMs: 60_000 }),
+      });
+
+      const validToken = 'tok_otlp_ratelimit_test_xyz789';
+      const [user] = await testDb.db
+        .insert(users)
+        .values({ privyDid: 'did:privy:otlp-ratelimit-test' })
+        .returning();
+      if (!user) throw new Error('failed to seed user');
+      await testDb.db.insert(agents).values({
+        userId: user.id,
+        walletPubkey: '11111111111111111111111111111111',
+        name: 'OTLP Rate-Limit Test Agent',
+        framework: 'custom',
+        agentType: 'other',
+        ingestToken: validToken,
+      });
+
+      const first = await postTraces(app, onePayload(validToken));
+      expect(first.status).toBe(200);
+
+      const second = await postTraces(app, onePayload(validToken));
+      expect(second.status).toBe(429);
+      expect(second.headers.get('Retry-After')).toBeTruthy();
+      expect(second.headers.get('X-RateLimit-Remaining')).toBe('0');
+      // JSON contract still holds — headers don't replace the body shape.
+      expect(await second.json()).toEqual({
+        error: { code: 'TOO_MANY_REQUESTS', message: 'rate limit exceeded' },
+      });
+    } finally {
+      await testDb.close();
+    }
   });
 });

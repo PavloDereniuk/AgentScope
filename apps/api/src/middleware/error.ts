@@ -67,6 +67,17 @@ export function registerErrorHandlers(app: Hono<any, any, any>, logger: Logger):
         { status, path: c.req.path, method: c.req.method, message: err.message },
         'http exception',
       );
+      // Preserve any headers attached to `err.res` (the idiomatic Hono
+      // pattern for `new HTTPException(429, { res: new Response(null,
+      // { headers: { 'Retry-After': '60' }})})`). Body + status stay
+      // ours so the `{ error: { code, message } }` contract holds —
+      // we only borrow headers. Content-Type is owned by `c.json()`.
+      if (err.res) {
+        err.res.headers.forEach((value, key) => {
+          if (key.toLowerCase() === 'content-type') return;
+          c.header(key, value);
+        });
+      }
       return c.json(body, status);
     }
 

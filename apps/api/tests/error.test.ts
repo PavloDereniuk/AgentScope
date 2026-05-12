@@ -62,6 +62,18 @@ function makeThrowingApp() {
     // 418 is not in our explicit map — verifies the 4xx fallback.
     throw new HTTPException(418, { message: 'no coffee here' });
   });
+  app.get('/rate-limited', () => {
+    // Idiomatic Hono pattern: pre-built Response carrying custom headers.
+    // The handler must propagate those onto the JSON error response
+    // (P.6 — previously `err.res` was silently dropped).
+    throw new HTTPException(429, {
+      message: 'rate limit exceeded',
+      res: new Response(null, {
+        status: 429,
+        headers: { 'Retry-After': '42', 'X-RateLimit-Remaining': '0' },
+      }),
+    });
+  });
   return app;
 }
 
@@ -110,6 +122,21 @@ describe('error middleware', () => {
     expect(await res.json()).toEqual({
       error: { code: 'BAD_REQUEST', message: 'no coffee here' },
     });
+  });
+
+  it('HTTPException with err.res propagates custom headers (P.6)', async () => {
+    const app = makeThrowingApp();
+    const res = await app.request('/rate-limited');
+    expect(res.status).toBe(429);
+    expect(res.headers.get('Retry-After')).toBe('42');
+    expect(res.headers.get('X-RateLimit-Remaining')).toBe('0');
+    // JSON body contract still holds — err.res headers are merged in,
+    // not used to replace the response body.
+    expect(await res.json()).toEqual({
+      error: { code: 'TOO_MANY_REQUESTS', message: 'rate limit exceeded' },
+    });
+    // Content-Type must remain JSON — c.json() owns it, err.res can't override.
+    expect(res.headers.get('Content-Type')).toContain('application/json');
   });
 
   it('unknown route returns 404 NOT_FOUND shape', async () => {
