@@ -6,6 +6,7 @@
 **Repository:** [github.com/PavloDereniuk/AgentScope](https://github.com/PavloDereniuk/AgentScope)
 **Status:** Live on Railway + Vercel. Epic 10 (submission artifacts) in progress.
 **Deadline:** 2026-05-11 — [Colosseum Frontier AI track](https://arena.colosseum.org/frontier)
+**Architecture:** [Architecture →](./ARCHITECTURE.md) (system context, transaction flow, reasoning tree — 3 mermaid diagrams)
 
 ## Live
 
