@@ -18,11 +18,12 @@ import {
 import { Input } from '@/components/ui/input';
 import { apiClient } from '@/lib/api-client';
 import { getPublicApiUrl } from '@/lib/api-url';
+import { buildTxCsvFilename, serializeTxRowsToCsv } from '@/lib/tx-csv';
 import { useStream } from '@/lib/use-stream';
 import { cn } from '@/lib/utils';
 import { formatAlertSummary, formatRuleTitle } from '@agentscope/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Copy, Loader2, Pencil, Trash2 } from 'lucide-react';
+import { ArrowLeft, Copy, Download, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { type FormEvent, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 
@@ -326,6 +327,21 @@ export function AgentDetailPage() {
       </div>
 
       <Card title="Transactions · loaded window" meta="click row to open">
+        <div className="flex items-center justify-between gap-2 border-b border-line-soft px-4 py-2">
+          <span className="font-mono text-[10.5px] tracking-[0.04em] text-fg-3">
+            {transactions.length} {transactions.length === 1 ? 'row' : 'rows'} loaded
+          </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={transactions.length === 0}
+            onClick={() => downloadTxCsv(agent.name, transactions)}
+            aria-label="Export transactions as CSV"
+          >
+            <Download className="mr-1.5 h-3.5 w-3.5" />
+            Export CSV
+          </Button>
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[720px] border-collapse text-[13px]">
             <thead>
@@ -528,6 +544,30 @@ function EditAgentDialog({ agent }: { agent: AgentDetail }) {
       </DialogContent>
     </Dialog>
   );
+}
+
+function downloadTxCsv(agentName: string, rows: readonly TxRow[]) {
+  if (rows.length === 0) return;
+  const csv = serializeTxRowsToCsv(
+    rows.map((tx) => ({
+      signature: tx.signature,
+      blockTime: tx.blockTime,
+      programId: tx.programId,
+      success: tx.success,
+      solDelta: tx.solDelta,
+      agentName,
+      feeLamports: tx.feeLamports,
+    })),
+  );
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = buildTxCsvFilename(agentName);
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
 function Card({
