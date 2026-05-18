@@ -10,8 +10,17 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { apiClient } from '@/lib/api-client';
+import { formatPausedUntil } from '@/lib/format-paused';
 import { cn } from '@/lib/utils';
-import { PAUSE_FOREVER, isAlertsPaused, isPausedForever } from '@agentscope/shared';
+import {
+  ALERT_RULE_NAMES,
+  type AlertRuleName,
+  type AlertRuleThresholds,
+  PAUSE_FOREVER,
+  isAlertsPaused,
+  isPausedForever,
+  isRulePaused,
+} from '@agentscope/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Bell, Copy, Loader2, PauseCircle, Play, Save, Trash2 } from 'lucide-react';
 import type { FormEvent } from 'react';
@@ -27,13 +36,7 @@ interface AgentRow {
   telegramChatId: string | null;
   alertsPausedUntil: string | null;
   ingestToken?: string;
-  alertRules: {
-    slippagePctThreshold?: number;
-    gasMultThreshold?: number;
-    drawdownPctThreshold?: number;
-    errorRatePctThreshold?: number;
-    staleMinutesThreshold?: number;
-  } | null;
+  alertRules: AlertRuleThresholds | null;
   recentTxCount24h?: number;
   solDelta24h?: string;
   successRate24h?: number | null;
@@ -142,6 +145,22 @@ export function SettingsPage() {
     },
   });
 
+  // Epic 18.3 — Per-rule pause. PATCH the whole `alertRules` jsonb because
+  // the API treats the field atomically; the caller composes the next
+  // `pausedUntil` map by merging the change with the current `selected`
+  // row, so threshold values never get clobbered. Commits immediately.
+  const perRulePauseMutation = useMutation({
+    mutationFn: (alertRules: AlertRuleThresholds) =>
+      apiClient.patch<{ agent: AgentRow }>(`/api/agents/${selectedId}`, { alertRules }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['agents'] });
+      queryClient.invalidateQueries({ queryKey: ['agent', selectedId] });
+    },
+    onError: (err) => {
+      toast.error(`Failed: ${(err as Error).message}`);
+    },
+  });
+
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally only depend on selectedId
   useEffect(() => {
     if (!selectedId) return;
@@ -150,6 +169,28 @@ export function SettingsPage() {
     setNotificationsDirty(false);
     mutation.reset();
   }, [selectedId]);
+
+  /**
+   * Set or clear the pausedUntil entry for one rule and PATCH the result.
+   * Merges with the current `selected.alertRules` so thresholds are
+   * preserved. An empty pausedUntil map is acceptable — the detector
+   * treats missing keys and empty maps identically (`?.[ruleName]` is
+   * undefined in both cases), so we don't bother stripping the field.
+   */
+  function updateRulePause(ruleName: AlertRuleName, untilIso: string | null) {
+    const current = selected?.alertRules ?? {};
+    const nextMap: Partial<Record<AlertRuleName, string>> = { ...(current.pausedUntil ?? {}) };
+    if (untilIso === null) {
+      delete nextMap[ruleName];
+    } else {
+      nextMap[ruleName] = untilIso;
+    }
+    const next: AlertRuleThresholds = { ...current, pausedUntil: nextMap };
+    perRulePauseMutation.mutate(next, {
+      onSuccess: () =>
+        toast.success(untilIso === null ? `Resumed ${ruleName}.` : `Paused ${ruleName}.`),
+    });
+  }
 
   function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -356,6 +397,12 @@ export function SettingsPage() {
                   alertsPausedUntil={selected?.alertsPausedUntil ?? null}
                   onUpdate={(v) => pauseMutation.mutate(v)}
                   isPending={pauseMutation.isPending}
+                />
+                <PerRulePauseControls
+                  selectedId={selectedId}
+                  alertRules={selected?.alertRules ?? null}
+                  onUpdate={updateRulePause}
+                  isPending={perRulePauseMutation.isPending}
                 />
                 <div>
                   <div className="mb-1.5 flex items-center justify-between">
@@ -604,7 +651,7 @@ function PauseControls({
 
   if (paused && alertsPausedUntil) {
     const until = new Date(alertsPausedUntil);
-    const remainingMs = until.getTime() - now.getTime();
+    const display = formatPausedUntil(alertsPausedUntil, now);
     return (
       <div className="rounded-[5px] border border-[color:color-mix(in_oklch,var(--warn)_35%,var(--line))] bg-[color:color-mix(in_oklch,var(--warn)_8%,transparent)] px-3 py-2.5">
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -612,7 +659,7 @@ function PauseControls({
             <PauseCircle className="h-3.5 w-3.5 text-warn" />
             <span className="font-mono text-[11.5px] text-warn">
               Notifications paused
-              {forever ? ' indefinitely' : ` · resumes in ${humanizeDuration(remainingMs)}`}
+              {forever ? ' indefinitely' : ` · resumes in ${display}`}
             </span>
           </div>
           <button
@@ -673,21 +720,144 @@ function PauseControls({
 }
 
 /**
- * Humanizes a positive ms duration as a compact string ("47m", "23h 12m",
- * "6d 4h"). Returns "<1m" for sub-minute remainders so the UI never shows
- * an empty string. Negative inputs collapse to "<1m" as well — the caller
- * should already have filtered them via isAlertsPaused().
+ * Per-rule pause control. Each row: rule label · status pill · inline
+ * action. Active rules expose a native `<select>` whose options are the
+ * same presets as the global pause (1h / 24h / 7d / Forever); paused
+ * rules expose a "Resume" button that clears the entry. PATCH fires
+ * immediately on selection — like global pause, this is a discrete user
+ * action, not a free-form edit.
+ *
+ * Native `<select>` over a custom dropdown to avoid pulling in a new
+ * UI dep post Week-1 freeze; we reset its value after each pick so the
+ * placeholder ("Pause…") sticks around for repeated use.
  */
-function humanizeDuration(ms: number): string {
-  if (ms < 60_000) return '<1m';
-  const totalMinutes = Math.floor(ms / 60_000);
-  const days = Math.floor(totalMinutes / (60 * 24));
-  const hours = Math.floor((totalMinutes - days * 60 * 24) / 60);
-  const minutes = totalMinutes - days * 60 * 24 - hours * 60;
-  if (days > 0) return hours > 0 ? `${days}d ${hours}h` : `${days}d`;
-  if (hours > 0) return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
-  return `${minutes}m`;
+function PerRulePauseControls({
+  selectedId,
+  alertRules,
+  onUpdate,
+  isPending,
+}: {
+  selectedId: string;
+  alertRules: AlertRuleThresholds | null;
+  onUpdate: (ruleName: AlertRuleName, untilIso: string | null) => void;
+  isPending: boolean;
+}) {
+  const now = new Date();
+
+  function presetIso(label: string): string {
+    if (label === 'forever') return PAUSE_FOREVER;
+    const ms =
+      label === '1h'
+        ? 60 * 60 * 1000
+        : label === '24h'
+          ? 24 * 60 * 60 * 1000
+          : label === '7d'
+            ? 7 * 24 * 60 * 60 * 1000
+            : 0;
+    return new Date(Date.now() + ms).toISOString();
+  }
+
+  return (
+    <div>
+      <FieldLabel hint="silence specific rules without muting the agent">Per-rule pause</FieldLabel>
+      <div className="overflow-hidden rounded-[5px] border border-line bg-surface-2">
+        {ALERT_RULE_NAMES.map((ruleName, idx) => {
+          const paused = isRulePaused(alertRules, ruleName, now);
+          const untilIso = paused ? (alertRules?.pausedUntil?.[ruleName] ?? null) : null;
+          const display = formatPausedUntil(untilIso, now);
+          return (
+            <div
+              key={ruleName}
+              className={cn(
+                'flex flex-wrap items-center justify-between gap-2 px-2.5 py-1.5',
+                idx > 0 ? 'border-t border-line' : '',
+              )}
+            >
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="font-mono text-[12px] text-fg">{RULE_LABELS[ruleName]}</span>
+                {paused ? (
+                  <span
+                    title={untilIso ?? undefined}
+                    className="inline-flex items-center gap-1 rounded-sm border border-[color:color-mix(in_oklch,var(--warn)_22%,var(--line))] bg-[color:color-mix(in_oklch,var(--warn)_5%,transparent)] px-1.5 py-px font-mono text-[10px] text-warn"
+                  >
+                    paused · {display || '—'}
+                  </span>
+                ) : (
+                  <span className="font-mono text-[10.5px] tracking-[0.04em] text-fg-3">
+                    active
+                  </span>
+                )}
+              </div>
+              {paused ? (
+                <button
+                  type="button"
+                  disabled={isPending || !selectedId}
+                  onClick={() => onUpdate(ruleName, null)}
+                  className={cn(
+                    'inline-flex h-5 items-center gap-1 rounded-sm border border-line px-1.5',
+                    'font-mono text-[10px] text-fg-2 hover:border-fg-3 hover:text-fg',
+                    'disabled:opacity-50 disabled:cursor-not-allowed',
+                  )}
+                >
+                  <Play className="h-2.5 w-2.5" />
+                  Resume
+                </button>
+              ) : (
+                <select
+                  // Re-mount on every render of "active" state so the placeholder
+                  // option is always pre-selected — without this the previous
+                  // pick would stay visible after toast.
+                  key={`pick-${ruleName}-${untilIso ?? 'none'}`}
+                  defaultValue=""
+                  disabled={isPending || !selectedId}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (!val) return;
+                    onUpdate(ruleName, presetIso(val));
+                    e.currentTarget.value = '';
+                  }}
+                  className={cn(
+                    'h-5 cursor-pointer rounded-sm border border-line bg-transparent px-1.5',
+                    'font-mono text-[10px] text-fg-2 hover:border-fg-3 hover:text-fg',
+                    'disabled:opacity-50 disabled:cursor-not-allowed',
+                  )}
+                >
+                  <option value="">Pause…</option>
+                  <option value="1h">1 hour</option>
+                  <option value="24h">24 hours</option>
+                  <option value="7d">7 days</option>
+                  <option value="forever">Forever</option>
+                </select>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      {isPending ? (
+        <p className="mt-1.5 inline-flex items-center gap-1 font-mono text-[10.5px] text-fg-3">
+          <Loader2 className="h-2.5 w-2.5 animate-spin" />
+          saving…
+        </p>
+      ) : null}
+    </div>
+  );
 }
+
+/**
+ * Human labels for the 8 alert rule names. Keys match `AlertRuleName`
+ * exactly so the rule list iterates `ALERT_RULE_NAMES` (single source
+ * of truth from shared) and TS guarantees we never miss a rule.
+ */
+const RULE_LABELS: Record<AlertRuleName, string> = {
+  slippage_spike: 'Slippage spike',
+  gas_spike: 'Gas spike',
+  drawdown: 'Drawdown',
+  error_rate: 'Error rate',
+  stale_agent: 'Stale agent',
+  decision_swap_mismatch: 'Decision/swap mismatch',
+  stale_oracle: 'Stale oracle',
+  ghost_execution: 'Ghost execution',
+};
 
 function ThresholdInput({
   name,

@@ -2,6 +2,7 @@ import { InstructionLabel } from '@/components/InstructionLabel';
 import { IntegrationSnippet } from '@/components/IntegrationSnippet';
 import { Kpi, KpiRow } from '@/components/Kpi';
 import { PausedBadge } from '@/components/PausedBadge';
+import { RulesPausedBadge } from '@/components/RulesPausedBadge';
 import { TraceDrawer } from '@/components/TraceDrawer';
 import { TxDrawer } from '@/components/TxDrawer';
 import { PnlChart } from '@/components/pnl-chart';
@@ -21,7 +22,7 @@ import { getPublicApiUrl } from '@/lib/api-url';
 import { buildTxCsvFilename, serializeTxRowsToCsv } from '@/lib/tx-csv';
 import { useStream } from '@/lib/use-stream';
 import { cn } from '@/lib/utils';
-import { formatAlertSummary, formatRuleTitle } from '@agentscope/shared';
+import { type AlertRuleThresholds, formatAlertSummary, formatRuleTitle } from '@agentscope/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Copy, Download, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { type FormEvent, useEffect, useState } from 'react';
@@ -35,6 +36,7 @@ interface AgentDetail {
   agentType: string;
   status: 'live' | 'stale' | 'failed';
   alertsPausedUntil: string | null;
+  alertRules: AlertRuleThresholds | null;
   tags: string[];
   createdAt: string;
   updatedAt: string;
@@ -177,6 +179,10 @@ export function AgentDetailPage() {
             <h1 className="text-2xl font-semibold tracking-tight">{agent.name}</h1>
             <StatusBadge status={agent.status} />
             <PausedBadge alertsPausedUntil={agent.alertsPausedUntil} />
+            <RulesPausedBadge
+              alertRules={agent.alertRules}
+              globalPausedUntil={agent.alertsPausedUntil}
+            />
             <TagBadge>{agent.framework}</TagBadge>
             <TagBadge>{agent.agentType}</TagBadge>
           </div>
