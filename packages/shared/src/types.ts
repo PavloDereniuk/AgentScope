@@ -85,6 +85,17 @@ export interface AlertRuleThresholds {
   staleOraclePctThreshold?: number | undefined;
   /** Minutes an EXECUTE_SWAP span can stay without a persisted tx before flagging as ghost. */
   ghostExecutionMinutesThreshold?: number | undefined;
+  /**
+   * Per-rule alert silencing. Keyed by `AlertRuleName`; each value is an
+   * ISO-8601 timestamp until which delivery for that specific rule is muted.
+   * Orthogonal to the agent-wide `Agent.alertsPausedUntil` — global pause
+   * silences everything, this only silences listed rules. Past timestamps
+   * auto-resume without a sweep. Missing key → rule is active.
+   *
+   * Stays inside the `alert_rules` jsonb column — no DB migration needed.
+   * Old rows without this field continue to work unchanged.
+   */
+  pausedUntil?: Partial<Record<AlertRuleName, string>> | undefined;
 }
 
 export interface Agent {

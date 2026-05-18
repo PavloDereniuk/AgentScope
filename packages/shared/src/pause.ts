@@ -12,7 +12,14 @@
  * the column stays a single timestamp and the API does not need a separate
  * boolean. Anything within ~1000 years of that sentinel is treated as
  * "forever" by the dashboard for display purposes.
+ *
+ * Per-rule pause (E18) layers on top of this via `AlertRuleThresholds.pausedUntil`,
+ * a `Partial<Record<AlertRuleName, string>>` stored inside the `alert_rules`
+ * jsonb column. The two gates are orthogonal: delivery is allowed only when
+ * BOTH agent-wide and per-rule pauses are inactive (`!global && !ruleSpecific`).
  */
+
+import type { AlertRuleName, AlertRuleThresholds } from './types';
 
 /**
  * ISO-8601 timestamp used to represent "paused forever". JS `Date` happily
@@ -53,4 +60,25 @@ export function isPausedForever(pausedUntil: string | null | undefined): boolean
   if (!pausedUntil) return false;
   const d = new Date(pausedUntil);
   return d.getUTCFullYear() >= FOREVER_YEAR_THRESHOLD;
+}
+
+/**
+ * Per-rule variant of `isAlertsPaused`. Reads `thresholds.pausedUntil[ruleName]`
+ * and applies identical "future = paused" semantics. Designed to be called
+ * from the detector + cron paths before invoking the alerter, in parallel
+ * with the agent-wide global pause check.
+ *
+ * Returns false when:
+ *   - `thresholds` is null/undefined (legacy rows),
+ *   - the map is absent or the rule has no entry,
+ *   - the stored timestamp is unparseable, or
+ *   - the stored timestamp is in the past (auto-resume).
+ */
+export function isRulePaused(
+  thresholds: AlertRuleThresholds | null | undefined,
+  ruleName: AlertRuleName,
+  now: Date,
+): boolean {
+  const pausedUntil = thresholds?.pausedUntil?.[ruleName];
+  return isAlertsPaused(pausedUntil ?? null, now);
 }

@@ -103,6 +103,10 @@ export const alertRuleThresholdsSchema = z.object({
   decisionMismatchPctThreshold: z.number().positive().optional(),
   staleOraclePctThreshold: z.number().positive().optional(),
   ghostExecutionMinutesThreshold: z.number().int().positive().optional(),
+  // Per-rule pause map. `z.record(enum, ...)` validates that every key is a
+  // known rule name; values are ISO-8601 datetimes (offset accepted). Past
+  // values auto-resume — gate compares with `now` at delivery time.
+  pausedUntil: z.record(alertRuleNameSchema, z.string().datetime({ offset: true })).optional(),
 });
 
 /**

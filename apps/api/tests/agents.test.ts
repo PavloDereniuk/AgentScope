@@ -734,6 +734,44 @@ describe('PATCH /api/agents/:id', () => {
     });
   });
 
+  it('round-trips alertRules.pausedUntil per-rule map through PATCH + GET (E18.1)', async () => {
+    const seeded = await createAgent({
+      walletPubkey: 'So11111111111111111111111111111111111111112',
+      name: 'PauseRules',
+      framework: 'custom',
+      agentType: 'other',
+    });
+
+    const pausedUntil = {
+      slippage_spike: '2027-01-01T00:00:00.000Z',
+      drawdown: '9999-12-31T23:59:59.999Z',
+    };
+
+    const patchRes = await patch(seeded.agent.id, {
+      alertRules: { gasMultThreshold: 2, pausedUntil },
+    });
+    expect(patchRes.status).toBe(200);
+    const patchBody = (await patchRes.json()) as {
+      agent: { alertRules: Record<string, unknown> };
+    };
+    expect(patchBody.agent.alertRules).toEqual({
+      gasMultThreshold: 2,
+      pausedUntil,
+    });
+
+    const getRes = await ctx.app.request(`/api/agents/${seeded.agent.id}`, {
+      headers: { Authorization: BEARER },
+    });
+    expect(getRes.status).toBe(200);
+    const getBody = (await getRes.json()) as {
+      agent: { alertRules: Record<string, unknown> };
+    };
+    expect(getBody.agent.alertRules).toEqual({
+      gasMultThreshold: 2,
+      pausedUntil,
+    });
+  });
+
   it('allows webhookUrl to be cleared with null', async () => {
     const seeded = await createAgent({
       walletPubkey: 'So11111111111111111111111111111111111111112',

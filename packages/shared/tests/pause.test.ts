@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { PAUSE_FOREVER, isAlertsPaused, isPausedForever } from '../src/pause';
+import { PAUSE_FOREVER, isAlertsPaused, isPausedForever, isRulePaused } from '../src/pause';
+import type { AlertRuleThresholds } from '../src/types';
 
 const NOW = new Date('2026-05-01T12:00:00Z');
 
@@ -52,5 +53,45 @@ describe('isPausedForever', () => {
   it('returns true for any date past the threshold year', () => {
     expect(isPausedForever('9000-01-01T00:00:00Z')).toBe(true);
     expect(isPausedForever('9999-12-31T23:59:59.999Z')).toBe(true);
+  });
+});
+
+describe('isRulePaused', () => {
+  it('returns false when the rule has no entry in pausedUntil', () => {
+    // No pausedUntil map at all → not paused.
+    expect(isRulePaused({}, 'slippage_spike', NOW)).toBe(false);
+    // Map exists but no entry for this specific rule.
+    const thresholds: AlertRuleThresholds = {
+      pausedUntil: { drawdown: '2026-06-01T00:00:00Z' },
+    };
+    expect(isRulePaused(thresholds, 'slippage_spike', NOW)).toBe(false);
+    // Null / undefined thresholds (legacy rows).
+    expect(isRulePaused(null, 'slippage_spike', NOW)).toBe(false);
+    expect(isRulePaused(undefined, 'slippage_spike', NOW)).toBe(false);
+  });
+
+  it('returns true when the rule entry is strictly in the future', () => {
+    const thresholds: AlertRuleThresholds = {
+      pausedUntil: {
+        slippage_spike: '2026-05-01T12:00:01Z',
+        drawdown: PAUSE_FOREVER,
+      },
+    };
+    expect(isRulePaused(thresholds, 'slippage_spike', NOW)).toBe(true);
+    expect(isRulePaused(thresholds, 'drawdown', NOW)).toBe(true);
+  });
+
+  it('returns false when the rule entry is in the past (auto-resume)', () => {
+    const thresholds: AlertRuleThresholds = {
+      pausedUntil: {
+        slippage_spike: '2026-05-01T11:59:00Z',
+        // Exact `now` is not "strictly future" — mirrors isAlertsPaused.
+        gas_spike: '2026-05-01T12:00:00Z',
+        stale_agent: '2020-01-01T00:00:00Z',
+      },
+    };
+    expect(isRulePaused(thresholds, 'slippage_spike', NOW)).toBe(false);
+    expect(isRulePaused(thresholds, 'gas_spike', NOW)).toBe(false);
+    expect(isRulePaused(thresholds, 'stale_agent', NOW)).toBe(false);
   });
 });
