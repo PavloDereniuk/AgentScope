@@ -28,7 +28,11 @@ import {
   staleRule,
 } from '@agentscope/detector';
 import type { EvalLogger } from '@agentscope/detector';
-import { type AlertRuleThresholds, type DeliveryChannel, isAlertsPaused } from '@agentscope/shared';
+import {
+  type AlertRuleThresholds,
+  type DeliveryChannel,
+  pickDeliveryAction,
+} from '@agentscope/shared';
 import { and, eq, inArray, ne } from 'drizzle-orm';
 
 /**
@@ -212,25 +216,43 @@ export async function runCronCycle(deps: CronDeps): Promise<number> {
       const webhookUrl = agent.webhookUrl ?? null;
       const channel = pickChannel(alerter, webhookUrl, telegramChatId);
 
-      // Epic 18: pause gate. We still wrote the alert rows above so the
-      // dashboard feed stays complete; here we mark them as `skipped`
-      // instead of calling deliver(). The `deliveryChannel` is recorded
-      // (the channel that *would* have been used) so audit can answer
-      // "where would this have gone?" after pause expires.
-      if (channel && isAlertsPaused(agent.alertsPausedUntil, now)) {
-        await deps.db
-          .update(alerts)
-          .set({ deliveryStatus: 'skipped', deliveryChannel: channel })
-          .where(
-            inArray(
-              alerts.id,
-              inserted.map((r) => r.id),
-            ),
-          );
-        continue;
-      }
-
       if (channel) {
+        // Epic 18: partition results into skip vs deliver. Both global pause
+        // (`agents.alerts_paused_until`) and per-rule pause
+        // (`alertRules.pausedUntil[ruleName]`) resolve through the shared
+        // `pickDeliveryAction` dispatcher so this path and detector-runner
+        // agree bit-for-bit on what "paused" means.
+        const skippedIds: string[] = [];
+        const toDeliver: Array<{
+          result: (typeof results)[number];
+          row: (typeof inserted)[number];
+        }> = [];
+
+        for (const result of results) {
+          const row = insertedByKey.get(correlationKey(result.ruleName, result.dedupeKey ?? null));
+          if (!row) continue;
+          const action = pickDeliveryAction(
+            alertRules,
+            agent.alertsPausedUntil,
+            result.ruleName,
+            now,
+          );
+          if (action === 'deliver') {
+            toDeliver.push({ result, row });
+          } else {
+            skippedIds.push(row.id);
+          }
+        }
+
+        if (skippedIds.length > 0) {
+          await deps.db
+            .update(alerts)
+            .set({ deliveryStatus: 'skipped', deliveryChannel: channel })
+            .where(inArray(alerts.id, skippedIds));
+        }
+
+        if (toDeliver.length === 0) continue;
+
         const perAgentDeps: DeliverDeps = {
           ...(alerter.telegram ? { telegram: alerter.telegram } : {}),
           ...(channel === 'webhook' && webhookUrl
@@ -247,12 +269,7 @@ export async function runCronCycle(deps: CronDeps): Promise<number> {
         };
 
         await Promise.all(
-          results.map(async (result) => {
-            const row = insertedByKey.get(
-              correlationKey(result.ruleName, result.dedupeKey ?? null),
-            );
-            if (!row) return;
-
+          toDeliver.map(async ({ result, row }) => {
             const msg: AlertMessage = {
               id: row.id,
               agentId: agent.id,

@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { PAUSE_FOREVER, isAlertsPaused, isPausedForever, isRulePaused } from '../src/pause';
+import {
+  PAUSE_FOREVER,
+  isAlertsPaused,
+  isPausedForever,
+  isRulePaused,
+  pickDeliveryAction,
+} from '../src/pause';
 import type { AlertRuleThresholds } from '../src/types';
 
 const NOW = new Date('2026-05-01T12:00:00Z');
@@ -93,5 +99,41 @@ describe('isRulePaused', () => {
     expect(isRulePaused(thresholds, 'slippage_spike', NOW)).toBe(false);
     expect(isRulePaused(thresholds, 'gas_spike', NOW)).toBe(false);
     expect(isRulePaused(thresholds, 'stale_agent', NOW)).toBe(false);
+  });
+});
+
+describe('pickDeliveryAction', () => {
+  const FUTURE = '2026-06-01T00:00:00Z';
+  const PAST = '2026-01-01T00:00:00Z';
+
+  it('returns "deliver" when neither global nor per-rule pause is active', () => {
+    expect(pickDeliveryAction({}, null, 'slippage_spike', NOW)).toBe('deliver');
+    expect(
+      pickDeliveryAction({ pausedUntil: { drawdown: FUTURE } }, null, 'slippage_spike', NOW),
+    ).toBe('deliver');
+    // Past timestamps auto-resume on both layers.
+    expect(
+      pickDeliveryAction({ pausedUntil: { slippage_spike: PAST } }, PAST, 'slippage_spike', NOW),
+    ).toBe('deliver');
+  });
+
+  it('returns "skip-rule-paused" when only the per-rule entry is future', () => {
+    const thresholds: AlertRuleThresholds = { pausedUntil: { slippage_spike: FUTURE } };
+    expect(pickDeliveryAction(thresholds, null, 'slippage_spike', NOW)).toBe('skip-rule-paused');
+    // Other rules in the same agent are unaffected.
+    expect(pickDeliveryAction(thresholds, null, 'drawdown', NOW)).toBe('deliver');
+  });
+
+  it('returns "skip-paused" when only the agent-wide pause is active', () => {
+    expect(pickDeliveryAction({}, FUTURE, 'slippage_spike', NOW)).toBe('skip-paused');
+    expect(pickDeliveryAction(null, FUTURE, 'drawdown', NOW)).toBe('skip-paused');
+  });
+
+  it('returns "skip-paused" (not "skip-rule-paused") when both layers are active — global trumps', () => {
+    const thresholds: AlertRuleThresholds = { pausedUntil: { slippage_spike: FUTURE } };
+    expect(pickDeliveryAction(thresholds, FUTURE, 'slippage_spike', NOW)).toBe('skip-paused');
+    // Global active even if the per-rule entry is in the past — global wins.
+    const resumed: AlertRuleThresholds = { pausedUntil: { slippage_spike: PAST } };
+    expect(pickDeliveryAction(resumed, FUTURE, 'slippage_spike', NOW)).toBe('skip-paused');
   });
 });

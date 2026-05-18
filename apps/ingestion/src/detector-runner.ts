@@ -30,7 +30,11 @@ import {
   staleOracleRule,
 } from '@agentscope/detector';
 import type { EvalLogger } from '@agentscope/detector';
-import { type AlertRuleThresholds, type DeliveryChannel, isAlertsPaused } from '@agentscope/shared';
+import {
+  type AlertRuleThresholds,
+  type DeliveryChannel,
+  pickDeliveryAction,
+} from '@agentscope/shared';
 import { eq, inArray } from 'drizzle-orm';
 
 /** All tx-triggered rules, evaluated after each persist. */
@@ -206,20 +210,39 @@ export async function runTxDetector(
     const channel = pickChannel(alerter, webhookUrl, telegramChatId);
     if (!channel) return results.length;
 
-    // Epic 18: pause gate. Mirror the cron-cycle behaviour — alert rows
-    // were already inserted above, so the dashboard feed stays complete;
-    // here we mark them as `skipped` instead of calling deliver(). Channel
-    // is still recorded (the channel that *would* have been used).
-    if (isAlertsPaused(alertsPausedUntil, new Date())) {
-      const ids = inserted.map((r) => r.id);
-      if (ids.length > 0) {
-        await deps.db
-          .update(alerts)
-          .set({ deliveryStatus: 'skipped', deliveryChannel: channel })
-          .where(inArray(alerts.id, ids));
+    // Epic 18: partition results into skip vs deliver. `pickDeliveryAction`
+    // is the single dispatch point shared with the cron path so global
+    // (`agents.alerts_paused_until`) and per-rule (`alertRules.pausedUntil`)
+    // pause compose identically in both paths. Both skip variants resolve
+    // to the same DB state (`delivery_status='skipped'`, channel = the one
+    // that *would* have been used) — the distinction is preserved at the
+    // dispatcher level only so future analytics can split them.
+    const now = new Date();
+    const skippedIds: string[] = [];
+    const toDeliver: Array<{
+      result: (typeof results)[number];
+      row: (typeof inserted)[number];
+    }> = [];
+
+    for (const result of results) {
+      const row = insertedByKey.get(correlationKey(result.ruleName, result.dedupeKey ?? null));
+      if (!row) continue;
+      const action = pickDeliveryAction(alertRules, alertsPausedUntil, result.ruleName, now);
+      if (action === 'deliver') {
+        toDeliver.push({ result, row });
+      } else {
+        skippedIds.push(row.id);
       }
-      return results.length;
     }
+
+    if (skippedIds.length > 0) {
+      await deps.db
+        .update(alerts)
+        .set({ deliveryStatus: 'skipped', deliveryChannel: channel })
+        .where(inArray(alerts.id, skippedIds));
+    }
+
+    if (toDeliver.length === 0) return results.length;
 
     // Build a per-agent alerter view: for webhook we swap in a sender
     // bound to *this* agent's URL so deliver() doesn't need to know about
@@ -233,10 +256,7 @@ export async function runTxDetector(
     };
 
     await Promise.all(
-      results.map(async (result) => {
-        const row = insertedByKey.get(correlationKey(result.ruleName, result.dedupeKey ?? null));
-        if (!row) return;
-
+      toDeliver.map(async ({ result, row }) => {
         const msg: AlertMessage = {
           id: row.id,
           agentId,

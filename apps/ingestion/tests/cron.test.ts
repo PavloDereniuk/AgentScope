@@ -338,4 +338,112 @@ describe('cron cycle', () => {
       await db.update(agents).set({ alertsPausedUntil: null }).where(eq(agents.id, staleAgentId));
     }
   });
+
+  // E18.2: per-rule pause works on the cron path identically to the
+  // detector-runner path. We piggy-back the existing stale agent +
+  // fake-clock setup and toggle `alertRules.pausedUntil.stale_agent`.
+  it('skips per-rule cron delivery when alertRules.pausedUntil[stale_agent] is in the future', async () => {
+    await db.delete(alerts).where(eq(alerts.agentId, staleAgentId));
+    await db
+      .update(agentTransactions)
+      .set({ blockTime: '2026-04-09T11:29:00Z' })
+      .where(eq(agentTransactions.agentId, staleAgentId));
+    // Per-rule pause one hour past the fake `now` (12:00). Global is null.
+    await db
+      .update(agents)
+      .set({ alertRules: { pausedUntil: { stale_agent: '2026-04-09T13:00:00Z' } } })
+      .where(eq(agents.id, staleAgentId));
+
+    const telegramCalls: AlertMessage[] = [];
+    const telegram: ChannelSender = {
+      async send(msg) {
+        telegramCalls.push(msg);
+        return { success: true, channel: 'telegram' };
+      },
+    };
+
+    const realDate = globalThis.Date;
+    const fakeNow = new Date('2026-04-09T12:00:00Z');
+    globalThis.Date = class extends realDate {
+      constructor(...args: unknown[]) {
+        if (args.length === 0) {
+          super(fakeNow.getTime());
+        } else {
+          // @ts-expect-error — spread into Date ctor
+          super(...args);
+        }
+      }
+      static override now() {
+        return fakeNow.getTime();
+      }
+    } as DateConstructor;
+
+    try {
+      await runCronCycle({ db, logger: silentLogger, defaults, alerter: { telegram } });
+
+      // Telegram MUST NOT have been called for the per-rule-paused stale_agent.
+      expect(telegramCalls.find((m) => m.agentId === staleAgentId)).toBeUndefined();
+
+      const staleRow = (
+        await db.select().from(alerts).where(eq(alerts.agentId, staleAgentId))
+      ).find((a) => a.ruleName === 'stale_agent');
+      expect(staleRow).toBeDefined();
+      expect(staleRow?.deliveryStatus).toBe('skipped');
+      expect(staleRow?.deliveryChannel).toBe('telegram');
+      expect(staleRow?.deliveredAt).toBeNull();
+    } finally {
+      globalThis.Date = realDate;
+      await db.update(agents).set({ alertRules: {} }).where(eq(agents.id, staleAgentId));
+    }
+  });
+
+  it('resumes per-rule cron delivery after pausedUntil[stale_agent] elapses', async () => {
+    await db.delete(alerts).where(eq(alerts.agentId, staleAgentId));
+    await db
+      .update(agentTransactions)
+      .set({ blockTime: '2026-04-09T11:29:00Z' })
+      .where(eq(agentTransactions.agentId, staleAgentId));
+    // Per-rule pause already expired (1 minute before fake `now`).
+    await db
+      .update(agents)
+      .set({ alertRules: { pausedUntil: { stale_agent: '2026-04-09T11:59:00Z' } } })
+      .where(eq(agents.id, staleAgentId));
+
+    const telegramCalls: AlertMessage[] = [];
+    const telegram: ChannelSender = {
+      async send(msg) {
+        telegramCalls.push(msg);
+        return { success: true, channel: 'telegram' };
+      },
+    };
+
+    const realDate = globalThis.Date;
+    const fakeNow = new Date('2026-04-09T12:00:00Z');
+    globalThis.Date = class extends realDate {
+      constructor(...args: unknown[]) {
+        if (args.length === 0) {
+          super(fakeNow.getTime());
+        } else {
+          // @ts-expect-error — spread into Date ctor
+          super(...args);
+        }
+      }
+      static override now() {
+        return fakeNow.getTime();
+      }
+    } as DateConstructor;
+
+    try {
+      await runCronCycle({ db, logger: silentLogger, defaults, alerter: { telegram } });
+
+      expect(telegramCalls.find((m) => m.agentId === staleAgentId)).toBeDefined();
+      const staleRow = (
+        await db.select().from(alerts).where(eq(alerts.agentId, staleAgentId))
+      ).find((a) => a.ruleName === 'stale_agent');
+      expect(staleRow?.deliveryStatus).toBe('delivered');
+    } finally {
+      globalThis.Date = realDate;
+      await db.update(agents).set({ alertRules: {} }).where(eq(agents.id, staleAgentId));
+    }
+  });
 });

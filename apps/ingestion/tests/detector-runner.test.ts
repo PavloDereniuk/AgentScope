@@ -261,3 +261,134 @@ describe('runTxDetector — Epic 14 per-agent routing', () => {
     expect(row?.status).toBe('pending');
   });
 });
+
+describe('runTxDetector — Epic 18 per-rule pause', () => {
+  function createMockTelegram(): ChannelSender & { captured: AlertMessage[] } {
+    const captured: AlertMessage[] = [];
+    const sender: ChannelSender & { captured: AlertMessage[] } = {
+      captured,
+      send: vi.fn(async (msg: AlertMessage): Promise<DeliveryResult> => {
+        captured.push(msg);
+        return { success: true, channel: 'telegram' };
+      }),
+    };
+    return sender;
+  }
+
+  async function seedAgent(opts: {
+    name: string;
+    telegramChatId?: string | null;
+    alertRules?: Record<string, unknown>;
+    alertsPausedUntil?: string | null;
+  }): Promise<string> {
+    const [user] = await db
+      .insert(users)
+      .values({ privyDid: `did:privy:e18-${opts.name.replace(/\s+/g, '-').toLowerCase()}` })
+      .returning();
+    if (!user) throw new Error('seed user failed');
+
+    const [agent] = await db
+      .insert(agents)
+      .values({
+        userId: user.id,
+        walletPubkey: `1111111111111111111111111111111${opts.name.charCodeAt(0) % 10}`,
+        name: opts.name,
+        framework: 'custom',
+        agentType: 'other',
+        ingestToken: `tok_${opts.name.replace(/\s+/g, '_')}_e18`,
+        telegramChatId: opts.telegramChatId ?? '999000111',
+        alertRules: opts.alertRules ?? {},
+        alertsPausedUntil: opts.alertsPausedUntil ?? null,
+      })
+      .returning();
+    if (!agent) throw new Error('seed agent failed');
+    return agent.id;
+  }
+
+  const slippageTx: TxSnapshot = {
+    signature: 'sig_e18_pause',
+    instructionName: 'jupiter.swap',
+    parsedArgs: { slippageBps: 5000 },
+    solDelta: '-1.0',
+    feeLamports: 5000,
+    success: true,
+    blockTime: '2026-04-09T12:00:00Z',
+  };
+
+  it('inserts the alert with deliveryStatus=skipped and skips sender when per-rule pausedUntil is future', async () => {
+    const id = await seedAgent({
+      name: 'E18 Rule Paused',
+      alertRules: {
+        // pausedUntil 100 years out — well past any test clock.
+        pausedUntil: { slippage_spike: '2126-01-01T00:00:00Z' },
+      },
+    });
+    const telegram = createMockTelegram();
+
+    const count = await runTxDetector(
+      { db, logger: silentLogger, defaults, alerter: { telegram } },
+      id,
+      { ...slippageTx, signature: `${slippageTx.signature}_rule_paused` },
+    );
+    expect(count).toBe(1);
+
+    // Alert row still lands (audit trail), but with skipped status + the
+    // channel that *would* have shipped it recorded.
+    const [row] = await db
+      .select({ status: alerts.deliveryStatus, channel: alerts.deliveryChannel })
+      .from(alerts)
+      .where(eq(alerts.agentId, id));
+    expect(row?.status).toBe('skipped');
+    expect(row?.channel).toBe('telegram');
+
+    // Sender MUST NOT have been called.
+    expect(telegram.captured).toHaveLength(0);
+  });
+
+  it('delivers normally when per-rule pausedUntil is in the past (auto-resume)', async () => {
+    const id = await seedAgent({
+      name: 'E18 Rule Resumed',
+      alertRules: {
+        pausedUntil: { slippage_spike: '2020-01-01T00:00:00Z' },
+      },
+    });
+    const telegram = createMockTelegram();
+
+    await runTxDetector({ db, logger: silentLogger, defaults, alerter: { telegram } }, id, {
+      ...slippageTx,
+      signature: `${slippageTx.signature}_rule_resumed`,
+    });
+
+    const [row] = await db
+      .select({ status: alerts.deliveryStatus, channel: alerts.deliveryChannel })
+      .from(alerts)
+      .where(eq(alerts.agentId, id));
+    expect(row?.status).toBe('delivered');
+    expect(row?.channel).toBe('telegram');
+    expect(telegram.captured).toHaveLength(1);
+    expect(telegram.captured[0]?.ruleName).toBe('slippage_spike');
+  });
+
+  it('global pause trumps per-rule resume (skipped, sender not called)', async () => {
+    const id = await seedAgent({
+      name: 'E18 Global Trumps',
+      // Global pause active …
+      alertsPausedUntil: '2126-01-01T00:00:00Z',
+      // … even though per-rule is in the past (would auto-resume on its own).
+      alertRules: { pausedUntil: { slippage_spike: '2020-01-01T00:00:00Z' } },
+    });
+    const telegram = createMockTelegram();
+
+    await runTxDetector({ db, logger: silentLogger, defaults, alerter: { telegram } }, id, {
+      ...slippageTx,
+      signature: `${slippageTx.signature}_global_trumps`,
+    });
+
+    const [row] = await db
+      .select({ status: alerts.deliveryStatus })
+      .from(alerts)
+      .where(eq(alerts.agentId, id));
+    expect(row?.status).toBe('skipped');
+    expect(telegram.captured).toHaveLength(0);
+  });
+});

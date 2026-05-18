@@ -82,3 +82,32 @@ export function isRulePaused(
   const pausedUntil = thresholds?.pausedUntil?.[ruleName];
   return isAlertsPaused(pausedUntil ?? null, now);
 }
+
+/**
+ * Three-way decision for one alert candidate. Single source of truth shared
+ * by `apps/ingestion/src/detector-runner.ts` (tx-triggered rules) and
+ * `apps/ingestion/src/cron.ts` (time-triggered rules) so both paths agree
+ * on what "paused" means and how global vs per-rule pause compose.
+ *
+ * - `skip-paused`      → agent-wide pause is active. All rules muted.
+ * - `skip-rule-paused` → only this specific rule is muted.
+ * - `deliver`          → no pause applies; the alerter should send the alert.
+ *
+ * Global pause always wins so the dashboard "Paused" badge cannot be
+ * contradicted by a per-rule entry that happens to be in the past. The
+ * resolved DB action is identical for both skip variants
+ * (`delivery_status='skipped'`); the distinction is kept so log lines and
+ * future analytics can tell them apart without re-running the predicates.
+ */
+export type DeliveryAction = 'skip-paused' | 'skip-rule-paused' | 'deliver';
+
+export function pickDeliveryAction(
+  thresholds: AlertRuleThresholds | null | undefined,
+  globalPausedUntil: string | null | undefined,
+  ruleName: AlertRuleName,
+  now: Date,
+): DeliveryAction {
+  if (isAlertsPaused(globalPausedUntil ?? null, now)) return 'skip-paused';
+  if (isRulePaused(thresholds, ruleName, now)) return 'skip-rule-paused';
+  return 'deliver';
+}
