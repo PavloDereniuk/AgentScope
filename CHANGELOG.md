@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-05-22
+
+MEV sandwich detection. First post-hackathon roadmap release. Adds `slippage_sandwich` — a new tx-triggered detector rule that flags Jupiter swaps where the agent received noticeably less than the route quoted. Ships in two layers: an evidence-only check (actual vs. quoted output from the swap's own `tokenDeltas`) and a slot-neighbour confirmation step that queries `getBlock(slot)` for a higher-priority-fee Jupiter swap landing beside the victim. Confirmed front-runners escalate severity warning → critical. RPC failures degrade gracefully to evidence-only output — sandwich alerts never silently disappear during a Helius outage.
+
+### Added
+- `slippage_sandwich` detector rule (TDD, 24 tests). Distinct from `slippage_spike`: that rule guards on the swap's own `slippageBps` intent, this one reads actual vs. quoted output — so it catches MEV attacks that operate *within* the slippage cap. ([`19cf1c7`](https://github.com/PavloDereniuk/AgentScope/commit/19cf1c7), A.1 Phase 1)
+- Slot-neighbour lookup helper [`apps/ingestion/src/slot-neighbours.ts`](./apps/ingestion/src/slot-neighbours.ts) — HTTP-only `Connection.getBlock` with per-slot TTL cache (30s) and in-flight coalescing so multiple swaps in the same block share one RPC call. FIFO eviction at 256 slots keeps memory bounded. Six unit tests with mocked Connection. ([`71b6dc7`](https://github.com/PavloDereniuk/AgentScope/commit/71b6dc7), A.1 Phase 2)
+- `SlotNeighbourTx` + `NeighbourFetcher` types exported from `@agentscope/detector`; `TxRuleContext.fetchSlotNeighbours?` injection point lets rules consume the lookup while staying RPC-agnostic in unit tests. ([`71b6dc7`](https://github.com/PavloDereniuk/AgentScope/commit/71b6dc7))
+- Shared format-alert mappings for `slippage_sandwich` — title ("MEV Sandwich Suspected"), summary, detail rows (quoted vs. received raw, output mint, front-runner sig + fee when confirmed), impact, and action lines. Dashboard + Telegram render identical copy. ([`19cf1c7`](https://github.com/PavloDereniuk/AgentScope/commit/19cf1c7))
+- Settings → Notifications → "MEV sandwich" row joins the existing eight rules with per-agent threshold override (`sandwichSlippagePctThreshold`, default 2%). Per-rule pause from 0.3.0 works for the new rule out of the box. ([`19cf1c7`](https://github.com/PavloDereniuk/AgentScope/commit/19cf1c7))
+
+### Schema
+- Migration `0011_slippage_sandwich.sql` — `ALTER TYPE alert_rule_name ADD VALUE IF NOT EXISTS 'slippage_sandwich'`. Backwards-compatible; existing rows untouched.
+- `TxSnapshot` gains `slot: number` + `tokenDeltas: readonly TokenDelta[]` — required by the new rule, additive for the other seven (`tokenDeltas: []` is a valid default when no SPL movement happened).
+- `AlertRuleThresholds.sandwichSlippagePctThreshold` (optional, positive). `DefaultThresholds.sandwichSlippagePct` defaults to 2 across `apps/ingestion/src/index.ts` + the trigger/seed scripts.
+
+### Notes
+The Phase 2 RPC dependency runs only when a swap *already* trips the evidence threshold — no wasted `getBlock` calls on healthy swaps. Failed neighbours, lower-fee neighbours, non-Jupiter programs, and self-matches are all filtered defensively. Full repo gate: lint 269 files clean, typecheck 18/18 packages, test 18/18 turbo tasks (~340+ tests including 24 new sandwich + 6 slot-neighbour). SDK packages untouched.
+
 ## [0.3.0] - 2026-05-19
 
 Per-rule alert silencing. Datadog/PagerDuty-style: mute a single rule (e.g. `slippage_spike` while you tune an arbitrage strategy) without muting the whole agent. Builds on the agent-wide pause from 0.2.0 — both layers compose through one shared dispatcher so detector and cron behave identically. No database migration; the new `pausedUntil` map lives inside the existing `alert_rules` jsonb column, fully backwards-compatible with rows that omit it.
@@ -36,6 +55,7 @@ First post-submission iteration. The 2026-05-11 Colosseum Frontier submission sh
 ### Security
 - RLS enabled on every child partition of `agent_transactions` (`2026_04` through `2026_09` plus `_default`). Postgres does not inherit RLS from a partitioned parent, and PostgREST exposes each partition as its own `/rest/v1/<name>` endpoint — without per-partition `ENABLE ROW LEVEL SECURITY`, an anon/authenticated caller could hit a partition directly and bypass the parent's `tx_owner_access` policy. New migration `0010_rls_on_partitions.sql`; service-role ingestion (BYPASSRLS) untouched. ([`1ac359d`](https://github.com/PavloDereniuk/AgentScope/commit/1ac359d), P.11)
 
-[Unreleased]: https://github.com/PavloDereniuk/AgentScope/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/PavloDereniuk/AgentScope/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/PavloDereniuk/AgentScope/releases/tag/v0.4.0
 [0.3.0]: https://github.com/PavloDereniuk/AgentScope/releases/tag/v0.3.0
 [0.2.0]: https://github.com/PavloDereniuk/AgentScope/releases/tag/v0.2.0
