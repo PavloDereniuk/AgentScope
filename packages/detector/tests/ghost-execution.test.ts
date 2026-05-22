@@ -19,6 +19,7 @@ const defaults = {
   drawdownPct: 10,
   errorRatePct: 20,
   staleMinutes: 30,
+  sandwichSlippagePct: 2,
 };
 
 let testDb: TestDatabase;

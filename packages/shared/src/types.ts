@@ -27,6 +27,7 @@ export const ALERT_RULE_NAMES = [
   'decision_swap_mismatch',
   'stale_oracle',
   'ghost_execution',
+  'slippage_sandwich',
 ] as const;
 export type AlertRuleName = (typeof ALERT_RULE_NAMES)[number];
 
@@ -85,6 +86,12 @@ export interface AlertRuleThresholds {
   staleOraclePctThreshold?: number | undefined;
   /** Minutes an EXECUTE_SWAP span can stay without a persisted tx before flagging as ghost. */
   ghostExecutionMinutesThreshold?: number | undefined;
+  /**
+   * Min actual slippage % (quoted vs received) for a Jupiter swap to be flagged
+   * as a sandwich-attack candidate. Distinct from `slippagePctThreshold` which
+   * gates on the *intent* (the swap's own `slippageBps` tolerance).
+   */
+  sandwichSlippagePctThreshold?: number | undefined;
   /**
    * Per-rule alert silencing. Keyed by `AlertRuleName`; each value is an
    * ISO-8601 timestamp until which delivery for that specific rule is muted.

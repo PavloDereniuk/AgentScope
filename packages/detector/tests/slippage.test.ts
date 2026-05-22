@@ -18,6 +18,7 @@ const defaults = {
   drawdownPct: 10,
   errorRatePct: 20,
   staleMinutes: 30,
+  sandwichSlippagePct: 2,
 };
 
 function makeTxCtx(overrides: {
@@ -37,9 +38,11 @@ function makeTxCtx(overrides: {
     now: new Date('2026-04-09T12:00:00Z'),
     transaction: {
       signature: 'sig123',
+      slot: 300_000_000,
       instructionName: overrides.instructionName ?? 'jupiter.swap',
       parsedArgs: overrides.parsedArgs ?? { slippageBps: 500 },
       solDelta: '-1.0',
+      tokenDeltas: [],
       feeLamports: 5000,
       success: true,
       blockTime: '2026-04-09T12:00:00Z',

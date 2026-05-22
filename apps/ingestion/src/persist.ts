@@ -229,9 +229,11 @@ export async function persistTx(ctx: PersistContext, tx: TxUpdate): Promise<numb
       try {
         const alertCount = await runTxDetector(ctx.detector, agentId, {
           signature: tx.signature,
+          slot: tx.slot,
           instructionName: primary?.name ?? null,
           parsedArgs: parsedArgsPayload,
           solDelta: parsed?.solDelta ?? '0',
+          tokenDeltas: parsed ? [...parsed.tokenDeltas] : [],
           feeLamports: parsed?.feeLamports ?? 0,
           success: parsed?.success ?? true,
           blockTime: tx.blockTime,

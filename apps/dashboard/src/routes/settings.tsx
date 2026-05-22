@@ -857,6 +857,7 @@ const RULE_LABELS: Record<AlertRuleName, string> = {
   decision_swap_mismatch: 'Decision/swap mismatch',
   stale_oracle: 'Stale oracle',
   ghost_execution: 'Ghost execution',
+  slippage_sandwich: 'MEV sandwich',
 };
 
 function ThresholdInput({

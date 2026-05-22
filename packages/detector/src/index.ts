@@ -23,6 +23,7 @@ export { drawdownRule } from './rules/drawdown';
 export { errorRateRule } from './rules/error-rate';
 export { gasRule } from './rules/gas';
 export { ghostExecutionRule } from './rules/ghost-execution';
+export { sandwichRule } from './rules/sandwich';
 export { slippageRule } from './rules/slippage';
 export { staleOracleRule } from './rules/stale-oracle';
 export { staleRule } from './rules/stale';

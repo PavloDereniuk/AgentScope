@@ -38,6 +38,10 @@ const DETECTOR_DEFAULTS: DefaultThresholds = {
   drawdownPct: 10,
   errorRatePct: 20,
   staleMinutes: 30,
+  // Conservative default: real Jupiter swaps on healthy routes settle within
+  // ~0.3% of quote. 2% picks up only the cases where the route was clearly
+  // disturbed — by an MEV bot or by a thin pool that should have been avoided.
+  sandwichSlippagePct: 2,
 };
 
 async function main(): Promise<void> {

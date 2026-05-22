@@ -10,7 +10,12 @@
  */
 
 import type { Database } from '@agentscope/db';
-import type { AlertRuleName, AlertRuleThresholds, AlertSeverity } from '@agentscope/shared';
+import type {
+  AlertRuleName,
+  AlertRuleThresholds,
+  AlertSeverity,
+  TokenDelta,
+} from '@agentscope/shared';
 
 // ── Snapshots (minimal data rules need) ──────────────────────────────────────
 
@@ -23,9 +28,17 @@ export interface AgentSnapshot {
 /** Parsed transaction fields relevant to detection. */
 export interface TxSnapshot {
   signature: string;
+  /** Solana slot — needed by slot-neighbour rules (sandwich detector A.1 Phase 2). */
+  slot: number;
   instructionName: string | null;
   parsedArgs: Record<string, unknown> | null;
   solDelta: string;
+  /**
+   * Net SPL token movements for this tx, owner-centric. Required by
+   * rules that compare actual on-chain receive amount to instruction
+   * intent (e.g. `slippage_sandwich`).
+   */
+  tokenDeltas: readonly TokenDelta[];
   feeLamports: number;
   success: boolean;
   blockTime: string;
@@ -44,6 +57,13 @@ export interface DefaultThresholds {
   errorRatePct: number;
   /** Minutes of inactivity before stale alert. */
   staleMinutes: number;
+  /**
+   * Actual slippage % (quoted vs received) above which a Jupiter swap is
+   * flagged as a sandwich-attack candidate. Distinct from `slippagePct`
+   * which gates on the *intent* (instruction's `slippageBps` tolerance);
+   * this one gates on what the chain actually returned.
+   */
+  sandwichSlippagePct: number;
 }
 
 // ── Rule contexts ────────────────────────────────────────────────────────────

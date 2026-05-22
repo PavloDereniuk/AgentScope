@@ -66,6 +66,7 @@ const RULE_TITLES: Record<string, string> = {
   decision_swap_mismatch: 'Decision/Swap Mismatch',
   stale_oracle: 'Stale Price Used',
   ghost_execution: 'Swap Never Landed',
+  slippage_sandwich: 'MEV Sandwich Suspected',
   // Pseudo-rule emitted by POST /api/agents/:id/test-alert. Not part of
   // ALERT_RULE_NAMES (never persisted), but the formatters must handle it
   // because it travels through the same telegram/webhook senders that
@@ -178,6 +179,18 @@ export function formatAlertSummary(
         ? `Bot announced 1 swap but it never landed on-chain${oldestStr}`
         : `Bot announced ${count} swaps but they never landed on-chain${oldestStr}`;
     }
+    case 'slippage_sandwich': {
+      const actual = num(payload, 'actualSlippagePct');
+      const threshold = num(payload, 'thresholdPct');
+      const confirmed = payload.neighbourConfirmed === true;
+      const suffix = confirmed ? ' — front-runner detected in same slot' : '';
+      if (actual == null) return `Swap settled below quote${suffix}`;
+      if (!threshold || threshold <= 0) {
+        return `Swap delivered ${actual.toFixed(2)}% below quoted output${suffix}`;
+      }
+      const ratio = actual / threshold;
+      return `Swap delivered ${actual.toFixed(2)}% below quote — ${ratio.toFixed(1)}× above ${threshold}% threshold${suffix}`;
+    }
     case 'test_alert':
       return 'If you can read this, alert delivery is working.';
     default:
@@ -284,6 +297,30 @@ export function formatAlertDetails(
         { label: 'Oldest signature', value: str(payload, 'oldestSignature') ?? '—' },
       ];
     }
+    case 'slippage_sandwich': {
+      const actual = num(payload, 'actualSlippagePct');
+      const quoted = str(payload, 'quotedOutAmount');
+      const got = str(payload, 'actualOutAmount');
+      const mint = str(payload, 'outputMint');
+      const slot = num(payload, 'slot');
+      const neighbourSig = str(payload, 'neighbourSignature');
+      const neighbourFee = num(payload, 'neighbourFeeLamports');
+      const rows: AlertDetailRow[] = [
+        { label: 'Actual slippage', value: actual != null ? `${actual.toFixed(2)}%` : '—' },
+        { label: 'Threshold', value: fmtPct(num(payload, 'thresholdPct')) },
+        { label: 'Quoted out (raw)', value: quoted ?? '—' },
+        { label: 'Received (raw)', value: got ?? '—' },
+        { label: 'Output mint', value: mint ?? '—' },
+        { label: 'Slot', value: slot != null ? String(slot) : '—' },
+      ];
+      if (neighbourSig) {
+        rows.push({ label: 'Front-runner tx', value: neighbourSig });
+      }
+      if (neighbourFee != null) {
+        rows.push({ label: 'Front-runner fee', value: fmtSol(neighbourFee) });
+      }
+      return rows;
+    }
     // The smoke-test payload (`isTest`, `source`) is plumbing-only metadata —
     // dumping it as bullet rows adds noise without telling the user anything
     // they don't already know from the title and impact line.
@@ -326,6 +363,8 @@ export function formatAlertImpact(
       return 'The bot acted on a price that no longer reflects the market. Trades made on stale data are likely mispriced.';
     case 'ghost_execution':
       return 'The bot announced a swap in its reasoning but no matching transaction reached the chain. The trade was likely lost or never submitted.';
+    case 'slippage_sandwich':
+      return 'Your bot received noticeably less output than the route quoted. The on-chain fingerprint matches a sandwich attack — an MEV bot likely front-ran the swap.';
     case 'test_alert':
       return 'This is a smoke test triggered from your dashboard. No real anomaly was detected — no action needed.';
     default:
@@ -382,6 +421,11 @@ export function formatAlertAction(
       return [
         "Check the bot's RPC logs for submission failures.",
         'Verify the wallet has SOL for fees.',
+      ];
+    case 'slippage_sandwich':
+      return [
+        'Tighten the swap slippage cap or route via a private mempool.',
+        'Pause the bot on this pair until the attack pattern subsides.',
       ];
     default:
       return [];

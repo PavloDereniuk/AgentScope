@@ -86,6 +86,7 @@ const defaults: DefaultThresholds = {
   drawdownPct: Number(process.env['AGENTSCOPE_DRAWDOWN_PCT_THRESHOLD'] ?? '10'),
   errorRatePct: Number(process.env['AGENTSCOPE_ERROR_RATE_PCT_THRESHOLD'] ?? '20'),
   staleMinutes: Number(process.env['AGENTSCOPE_STALE_MINUTES_THRESHOLD'] ?? '30'),
+  sandwichSlippagePct: Number(process.env['AGENTSCOPE_SANDWICH_SLIPPAGE_PCT_THRESHOLD'] ?? '2'),
 };
 
 const db = createDb({ connectionString: DATABASE_URL });
@@ -164,9 +165,11 @@ await publishBusEvent({
 // Run the real detector — same call as ingestion's detector-runner.
 const txSnapshot: TxSnapshot = {
   signature,
+  slot,
   instructionName: 'jupiter.swap',
   parsedArgs,
   solDelta: '0.033',
+  tokenDeltas: [],
   feeLamports: 5000,
   success: true,
   blockTime,

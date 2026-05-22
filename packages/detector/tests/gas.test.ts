@@ -17,6 +17,7 @@ const defaults = {
   drawdownPct: 10,
   errorRatePct: 20,
   staleMinutes: 30,
+  sandwichSlippagePct: 2,
 };
 
 interface Ctx {
@@ -88,9 +89,11 @@ function makeTxCtx(fee: number, overrides: { gasMultThreshold?: number } = {}): 
     now: new Date('2026-04-09T12:00:00Z'),
     transaction: {
       signature: 'sig_new_tx',
+      slot: 101,
       instructionName: 'jupiter.swap',
       parsedArgs: {},
       solDelta: '-1.0',
+      tokenDeltas: [],
       feeLamports: fee,
       success: true,
       blockTime: '2026-04-09T12:00:00Z',

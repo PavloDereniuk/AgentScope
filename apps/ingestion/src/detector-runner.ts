@@ -26,6 +26,7 @@ import {
   decisionSwapMismatchRule,
   evaluateTx,
   gasRule,
+  sandwichRule,
   slippageRule,
   staleOracleRule,
 } from '@agentscope/detector';
@@ -40,6 +41,7 @@ import { eq, inArray } from 'drizzle-orm';
 /** All tx-triggered rules, evaluated after each persist. */
 const TX_RULES: readonly TxRuleDef[] = [
   slippageRule,
+  sandwichRule,
   gasRule,
   decisionSwapMismatchRule,
   staleOracleRule,

@@ -19,6 +19,7 @@ const defaultThresholds = {
   drawdownPct: 10,
   errorRatePct: 20,
   staleMinutes: 30,
+  sandwichSlippagePct: 2,
 };
 
 const baseAgent = { id: 'agent-1', alertRules: {} };
@@ -31,9 +32,11 @@ function makeTxCtx(overrides: Partial<TxRuleContext> = {}): TxRuleContext {
     now: new Date('2026-04-09T12:00:00Z'),
     transaction: {
       signature: 'sig123',
+      slot: 100,
       instructionName: 'jupiter.swap',
       parsedArgs: {},
       solDelta: '-0.5',
+      tokenDeltas: [],
       feeLamports: 5000,
       success: true,
       blockTime: '2026-04-09T12:00:00Z',

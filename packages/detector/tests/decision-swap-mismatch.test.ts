@@ -21,6 +21,7 @@ const defaults = {
   drawdownPct: 10,
   errorRatePct: 20,
   staleMinutes: 30,
+  sandwichSlippagePct: 2,
 };
 
 let testDb: TestDatabase;
@@ -114,9 +115,11 @@ function makeCtx(args: {
     now: new Date('2026-04-09T12:00:00Z'),
     transaction: {
       signature: args.signature,
+      slot: 100,
       instructionName: 'jupiter.swap',
       parsedArgs: args.parsedArgs,
       solDelta: '-0.001',
+      tokenDeltas: [],
       feeLamports: 5000,
       success: true,
       blockTime: '2026-04-09T11:55:00Z',
@@ -202,9 +205,11 @@ describe('decision_swap_mismatch rule', () => {
       }),
       transaction: {
         signature: TX_FLIP,
+        slot: 100,
         instructionName: 'kamino.deposit',
         parsedArgs: {},
         solDelta: '-0.001',
+        tokenDeltas: [],
         feeLamports: 5000,
         success: true,
         blockTime: '2026-04-09T11:55:00Z',

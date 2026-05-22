@@ -26,6 +26,7 @@ const defaults: DefaultThresholds = {
   drawdownPct: 10,
   errorRatePct: 20,
   staleMinutes: 30,
+  sandwichSlippagePct: 2,
 };
 
 const silentLogger = {
@@ -79,9 +80,11 @@ describe('runTxDetector', () => {
   it('inserts a slippage_spike alert for a Jupiter swap with 50% slippage', async () => {
     const tx: TxSnapshot = {
       signature: 'sig_slippage_50pct',
+      slot: 300_000_100,
       instructionName: 'jupiter.swap',
       parsedArgs: { slippageBps: 5000 },
       solDelta: '-1.0',
+      tokenDeltas: [],
       feeLamports: 5000,
       success: true,
       blockTime: '2026-04-09T12:00:00Z',
@@ -103,9 +106,11 @@ describe('runTxDetector', () => {
 
     const tx: TxSnapshot = {
       signature: 'sig_normal',
+      slot: 300_000_101,
       instructionName: 'jupiter.swap',
       parsedArgs: { slippageBps: 100 }, // 1% — well under 5% threshold
       solDelta: '-0.01',
+      tokenDeltas: [],
       feeLamports: 5000,
       success: true,
       blockTime: '2026-04-09T12:00:00Z',
@@ -168,9 +173,11 @@ describe('runTxDetector — Epic 14 per-agent routing', () => {
 
   const slippageTx: TxSnapshot = {
     signature: 'sig_epic14_routing',
+    slot: 300_000_200,
     instructionName: 'jupiter.swap',
     parsedArgs: { slippageBps: 5000 },
     solDelta: '-1.0',
+    tokenDeltas: [],
     feeLamports: 5000,
     success: true,
     blockTime: '2026-04-09T12:00:00Z',
@@ -307,9 +314,11 @@ describe('runTxDetector — Epic 18 per-rule pause', () => {
 
   const slippageTx: TxSnapshot = {
     signature: 'sig_e18_pause',
+    slot: 300_000_300,
     instructionName: 'jupiter.swap',
     parsedArgs: { slippageBps: 5000 },
     solDelta: '-1.0',
+    tokenDeltas: [],
     feeLamports: 5000,
     success: true,
     blockTime: '2026-04-09T12:00:00Z',
