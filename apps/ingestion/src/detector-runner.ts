@@ -30,7 +30,7 @@ import {
   slippageRule,
   staleOracleRule,
 } from '@agentscope/detector';
-import type { EvalLogger } from '@agentscope/detector';
+import type { EvalLogger, NeighbourFetcher } from '@agentscope/detector';
 import {
   type AlertRuleThresholds,
   type DeliveryChannel,
@@ -65,6 +65,12 @@ export interface DetectorDeps {
   alerter?: DeliverDeps;
   /** Optional callback to publish SSE events to the API (6.15). */
   publishEvent?: (event: { type: string; agentId: string; [key: string]: unknown }) => void;
+  /**
+   * Optional slot-neighbour lookup. Consumed by `slippage_sandwich` to
+   * confirm a same-slot front-runner. When absent (tests, dry-runs),
+   * sandwich detection degrades to evidence-only output.
+   */
+  fetchSlotNeighbours?: NeighbourFetcher;
 }
 
 /**
@@ -144,6 +150,10 @@ export async function runTxDetector(
       db: deps.db,
       now: new Date(),
       transaction,
+      // Conditional spread (exactOptionalPropertyTypes) — when the fetcher
+      // is unwired in tests, the field is *absent* rather than `undefined`,
+      // which matches the BaseRuleContext signature exactly.
+      ...(deps.fetchSlotNeighbours ? { fetchSlotNeighbours: deps.fetchSlotNeighbours } : {}),
     },
     deps.logger,
   );

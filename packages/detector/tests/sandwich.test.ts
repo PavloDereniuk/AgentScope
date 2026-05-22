@@ -10,14 +10,15 @@
 
 import type { Database } from '@agentscope/db';
 import type { SolanaPubkey, SolanaSignature, TokenDelta } from '@agentscope/shared';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { sandwichRule } from '../src/rules/sandwich';
-import type { TxRuleContext } from '../src/types';
+import type { NeighbourFetcher, SlotNeighbourTx, TxRuleContext } from '../src/types';
 
 const stubDb = {} as Database;
 
 const USDC = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v' as SolanaPubkey;
 const SOL = 'So11111111111111111111111111111111111111112' as SolanaPubkey;
+const JUPITER = 'JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4';
 
 const defaults = {
   slippagePct: 5,
@@ -37,6 +38,8 @@ function makeTxCtx(overrides: {
   parsedArgs?: Record<string, unknown> | null;
   tokenDeltas?: readonly TokenDelta[];
   agentThreshold?: number;
+  fetchSlotNeighbours?: NeighbourFetcher;
+  feeLamports?: number;
 }): TxRuleContext {
   return {
     agent: {
@@ -48,6 +51,9 @@ function makeTxCtx(overrides: {
     defaults,
     db: stubDb,
     now: new Date('2026-04-09T12:00:00Z'),
+    ...(overrides.fetchSlotNeighbours
+      ? { fetchSlotNeighbours: overrides.fetchSlotNeighbours }
+      : {}),
     transaction: {
       signature: 'sandwich-sig-001' as SolanaSignature,
       slot: 300_000_000,
@@ -65,10 +71,19 @@ function makeTxCtx(overrides: {
           : overrides.parsedArgs,
       solDelta: '-1.0',
       tokenDeltas: overrides.tokenDeltas ?? [makeTokenDelta(USDC, '100000000')],
-      feeLamports: 5000,
+      feeLamports: overrides.feeLamports ?? 5000,
       success: true,
       blockTime: '2026-04-09T12:00:00Z',
     },
+  };
+}
+
+function makeNeighbour(overrides: Partial<SlotNeighbourTx> = {}): SlotNeighbourTx {
+  return {
+    signature: overrides.signature ?? `neighbour-${Math.random().toString(36).slice(2, 8)}`,
+    feeLamports: overrides.feeLamports ?? 10000,
+    programIds: overrides.programIds ?? [JUPITER],
+    success: overrides.success ?? true,
   };
 }
 
@@ -233,5 +248,154 @@ describe('slippage_sandwich rule (Phase 1 — evidence only)', () => {
     });
     const result = await sandwichRule.evaluate(ctx);
     expect(result).toBeNull();
+  });
+
+  it('omits neighbourConfirmed flag absence — flag is always present (false when fetcher off)', async () => {
+    // Phase 1 fallback path: no fetchSlotNeighbours injected → flag set to false.
+    const ctx = makeTxCtx({ tokenDeltas: [makeTokenDelta(USDC, '90000000')] });
+    const result = await sandwichRule.evaluate(ctx);
+    expect(result?.payload).toMatchObject({ neighbourConfirmed: false });
+    // No neighbour fields should be present when no fetcher ran.
+    expect(result?.payload).not.toHaveProperty('neighbourSignature');
+    expect(result?.payload).not.toHaveProperty('neighbourFeeLamports');
+  });
+});
+
+describe('slippage_sandwich rule (Phase 2 — neighbour augmentation)', () => {
+  it('escalates warning → critical when same-slot Jupiter neighbour paid higher fee', async () => {
+    // 3% slippage = warning under default 2% threshold, but a confirmed
+    // front-runner exists in the same slot.
+    const fetcher = vi.fn<NeighbourFetcher>(async () => [
+      makeNeighbour({ signature: 'frontrunner-001', feeLamports: 50000 }),
+    ]);
+
+    const ctx = makeTxCtx({
+      tokenDeltas: [makeTokenDelta(USDC, '97000000')],
+      fetchSlotNeighbours: fetcher,
+    });
+    const result = await sandwichRule.evaluate(ctx);
+
+    expect(result?.severity).toBe('critical');
+    expect(result?.payload).toMatchObject({
+      neighbourConfirmed: true,
+      neighbourSignature: 'frontrunner-001',
+      neighbourFeeLamports: 50000,
+    });
+    expect(fetcher).toHaveBeenCalledWith(300_000_000);
+  });
+
+  it('keeps severity = warning when no neighbour beats the victim fee', async () => {
+    const fetcher = vi.fn<NeighbourFetcher>(async () => [
+      // Same fee — not a front-runner (could be the victim's own re-broadcast).
+      makeNeighbour({ feeLamports: 5000 }),
+      // Lower fee — definitely not a front-runner.
+      makeNeighbour({ feeLamports: 3000 }),
+    ]);
+
+    const ctx = makeTxCtx({
+      tokenDeltas: [makeTokenDelta(USDC, '97000000')],
+      fetchSlotNeighbours: fetcher,
+    });
+    const result = await sandwichRule.evaluate(ctx);
+
+    expect(result?.severity).toBe('warning');
+    expect(result?.payload).toMatchObject({ neighbourConfirmed: false });
+  });
+
+  it('ignores neighbours that are not Jupiter swaps', async () => {
+    const fetcher = vi.fn<NeighbourFetcher>(async () => [
+      // High fee but a non-Jupiter program — unrelated mempool noise.
+      makeNeighbour({
+        feeLamports: 50000,
+        programIds: ['11111111111111111111111111111111'],
+      }),
+    ]);
+
+    const ctx = makeTxCtx({
+      tokenDeltas: [makeTokenDelta(USDC, '97000000')],
+      fetchSlotNeighbours: fetcher,
+    });
+    const result = await sandwichRule.evaluate(ctx);
+
+    expect(result?.severity).toBe('warning');
+    expect(result?.payload).toMatchObject({ neighbourConfirmed: false });
+  });
+
+  it('ignores failed neighbour transactions', async () => {
+    const fetcher = vi.fn<NeighbourFetcher>(async () => [
+      // High-fee Jupiter swap but it failed — can't have moved the pool.
+      makeNeighbour({ feeLamports: 50000, success: false }),
+    ]);
+
+    const ctx = makeTxCtx({
+      tokenDeltas: [makeTokenDelta(USDC, '97000000')],
+      fetchSlotNeighbours: fetcher,
+    });
+    const result = await sandwichRule.evaluate(ctx);
+
+    expect(result?.severity).toBe('warning');
+    expect(result?.payload).toMatchObject({ neighbourConfirmed: false });
+  });
+
+  it('ignores a neighbour matching the victim signature (self-match defence)', async () => {
+    const fetcher = vi.fn<NeighbourFetcher>(async () => [
+      // The fetcher accidentally includes the victim itself with a
+      // higher fee — should never escalate self.
+      makeNeighbour({ signature: 'sandwich-sig-001', feeLamports: 99999 }),
+    ]);
+
+    const ctx = makeTxCtx({
+      tokenDeltas: [makeTokenDelta(USDC, '97000000')],
+      fetchSlotNeighbours: fetcher,
+    });
+    const result = await sandwichRule.evaluate(ctx);
+
+    expect(result?.severity).toBe('warning');
+    expect(result?.payload).toMatchObject({ neighbourConfirmed: false });
+  });
+
+  it('keeps severity = critical when slippage already crossed 5× threshold (cannot escalate further)', async () => {
+    const fetcher = vi.fn<NeighbourFetcher>(async () => [makeNeighbour({ feeLamports: 99999 })]);
+
+    const ctx = makeTxCtx({
+      // 15% slippage = 7.5× threshold → critical pre-lookup
+      tokenDeltas: [makeTokenDelta(USDC, '85000000')],
+      fetchSlotNeighbours: fetcher,
+    });
+    const result = await sandwichRule.evaluate(ctx);
+
+    expect(result?.severity).toBe('critical');
+    expect(result?.payload).toMatchObject({ neighbourConfirmed: true });
+  });
+
+  it('degrades to Phase 1 behaviour when fetcher rejects (defensive)', async () => {
+    const fetcher = vi.fn<NeighbourFetcher>(async () => {
+      throw new Error('RPC timeout');
+    });
+
+    const ctx = makeTxCtx({
+      tokenDeltas: [makeTokenDelta(USDC, '97000000')],
+      fetchSlotNeighbours: fetcher,
+    });
+    const result = await sandwichRule.evaluate(ctx);
+
+    // Rule must still fire on the evidence — RPC outages should not
+    // silently kill the alert pipeline.
+    expect(result?.severity).toBe('warning');
+    expect(result?.payload).toMatchObject({ neighbourConfirmed: false });
+  });
+
+  it('does not query neighbours when evidence threshold is not met (avoid wasted RPC)', async () => {
+    // 1% slippage < 2% threshold → null without ever calling fetcher.
+    const fetcher = vi.fn<NeighbourFetcher>(async () => []);
+
+    const ctx = makeTxCtx({
+      tokenDeltas: [makeTokenDelta(USDC, '99000000')],
+      fetchSlotNeighbours: fetcher,
+    });
+    const result = await sandwichRule.evaluate(ctx);
+
+    expect(result).toBeNull();
+    expect(fetcher).not.toHaveBeenCalled();
   });
 });

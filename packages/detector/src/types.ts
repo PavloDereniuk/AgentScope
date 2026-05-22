@@ -66,6 +66,30 @@ export interface DefaultThresholds {
   sandwichSlippagePct: number;
 }
 
+// ── Slot-neighbour lookup (A.1 Phase 2) ──────────────────────────────────────
+
+/**
+ * Minimal projection of a transaction sharing the same Solana slot as
+ * the agent's swap. Used by `slippage_sandwich` to confirm a front-runner
+ * (a higher-priority-fee swap on the same DEX program landed beside the
+ * agent's tx).
+ */
+export interface SlotNeighbourTx {
+  signature: string;
+  feeLamports: number;
+  programIds: readonly string[];
+  success: boolean;
+}
+
+/**
+ * Lookup function injected by the ingestion layer. Returns the
+ * neighbour transactions for a given slot, or an empty array when
+ * the block is unavailable / errored. Detector rules treat absence
+ * of evidence as "no confirmation" — they never throw when the
+ * fetcher fails.
+ */
+export type NeighbourFetcher = (slot: number) => Promise<readonly SlotNeighbourTx[]>;
+
 // ── Rule contexts ────────────────────────────────────────────────────────────
 
 /** Shared across both tx and cron evaluation. */
@@ -74,6 +98,12 @@ interface BaseRuleContext {
   defaults: DefaultThresholds;
   db: Database;
   now: Date;
+  /**
+   * Optional slot-neighbour lookup. When wired (production), rules that
+   * compare against same-slot tx may use it. When absent (tests, cron
+   * paths), rules fall back to their evidence-only behaviour.
+   */
+  fetchSlotNeighbours?: NeighbourFetcher;
 }
 
 /** Context for rules that evaluate a single new transaction. */

@@ -17,6 +17,7 @@
 import { createTelegramSender } from '@agentscope/alerter';
 import type { DefaultThresholds } from '@agentscope/detector';
 import { getKaminoLoadWarnings } from '@agentscope/parser';
+import { Connection } from '@solana/web3.js';
 import { createAdminTelegramSender, startAbuseMonitor } from './abuse-monitor';
 import { backfillWallet } from './backfill';
 import { loadConfig } from './config';
@@ -28,6 +29,7 @@ import { logger } from './logger';
 import { persistTx } from './persist';
 import type { PersistContext } from './persist';
 import { createWalletRegistry } from './registry';
+import { createSlotNeighbourFetcher } from './slot-neighbours';
 import { startTelegramBot } from './telegram-bot';
 import { createWsStream } from './ws-stream';
 
@@ -80,6 +82,18 @@ async function main(): Promise<void> {
     ? createTelegramSender({ botToken: config.TELEGRAM_BOT_TOKEN })
     : undefined;
 
+  // Slot-neighbour lookup for the sandwich detector (A.1 Phase 2). One
+  // HTTP-only Connection per worker, separate from the WebSocket one
+  // inside ws-stream — `getBlock` is a JSON-RPC call and doesn't need
+  // the WS subscription channel. Per-slot cache + in-flight coalescing
+  // keep us inside the Helius free tier when multiple swaps land
+  // together in one block.
+  const httpConnection = new Connection(config.SOLANA_RPC_URL, 'confirmed');
+  const slotNeighbourFetcher = createSlotNeighbourFetcher({
+    connection: httpConnection,
+    logger,
+  });
+
   // Detector deps shared between tx-triggered runner and periodic cron.
   // Use conditional spread so optional properties are absent (not `undefined`)
   // which is required by exactOptionalPropertyTypes.
@@ -87,6 +101,7 @@ async function main(): Promise<void> {
     db,
     logger,
     defaults: DETECTOR_DEFAULTS,
+    fetchSlotNeighbours: slotNeighbourFetcher,
     ...(telegramSender ? { alerter: { telegram: telegramSender } } : {}),
     ...(publishEvent ? { publishEvent } : {}),
   };
