@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-05-25
+
+Low wallet-balance alert. Second post-hackathon roadmap release. Adds `low_balance` — a cron-triggered detector rule that fires once per agent per 60s cycle when the wallet's SOL balance drops below a configurable threshold (default 0.005 SOL warning, 0.001 SOL critical). Balance is read through an injected `BalanceFetcher` wrapped around Helius `Connection.getBalance` with a 25s per-wallet TTL cache and in-flight coalescing, so multiple balance-aware rules in the future share one RPC per cycle. RPC failures abstain silently — a Helius blip never looks like a fleet-wide bankrupt-wallet event.
+
+### Added
+- `low_balance` detector rule (TDD, 13 tests). Cron-only — runs alongside `drawdown` / `stale_agent` / `error_rate` / `ghost_execution`. Severity `warning` when balance < threshold, escalating to `critical` at one-fifth (threshold / 5 — picked so the default 0.005 SOL warning hits critical at 0.001 SOL, the practical floor where the next priority-fee bump bricks the agent). 1h dedupe window prevents duplicate inserts every 60s cycle while the condition persists.
+- Balance-fetcher helper [`apps/ingestion/src/balance-fetcher.ts`](./apps/ingestion/src/balance-fetcher.ts) — HTTP-only `Connection.getBalance` with per-wallet TTL cache (25s) and in-flight coalescing. PublicKey constructor errors and RPC throws both swallow into `null` so a bad agent row or RPC outage never crashes the cron loop. Seven unit tests with mocked Connection.
+- `BalanceFetcher` type exported from `@agentscope/detector`; `CronRuleContext.fetchAgentBalance?` injection point lets the rule consume the lookup while staying RPC-agnostic in unit tests. `AgentSnapshot` gains an optional `walletPubkey: string` so the rule can address the wallet without re-querying the DB.
+- Shared format-alert mappings for `low_balance` — title ("Wallet Running Low"), summary, detail rows (balance / warning / critical), impact, and action lines. Dashboard + Telegram render identical copy.
+- Settings → Notifications → "Low balance" row joins the existing rules with per-agent threshold override (`lowBalanceSolThreshold`, default 0.005 SOL). Per-rule pause from 0.3.0 works for the new rule out of the box.
+
+### Schema
+- Migration `0012_low_balance.sql` — `ALTER TYPE alert_rule_name ADD VALUE IF NOT EXISTS 'low_balance'`. Backwards-compatible; existing rows untouched.
+- `AlertRuleThresholds.lowBalanceSolThreshold` (optional, positive). `DefaultThresholds.lowBalanceSol` defaults to 0.005 across `apps/ingestion/src/index.ts` + the trigger/seed scripts (env override `AGENTSCOPE_LOW_BALANCE_SOL_THRESHOLD`).
+
+### Notes
+Cron RPC cost is bounded: one `getBalance` per agent per 60s cycle, with a 25s cache that coalesces same-cycle reads. At 20 active agents that's ~20 req/min — well inside the Helius free tier's 100 req/sec cap. Full repo gate: lint 273 files clean, typecheck 18/18 packages, test 18/18 turbo tasks (~360+ tests including 13 new low-balance + 7 balance-fetcher).
+
 ## [0.4.0] - 2026-05-22
 
 MEV sandwich detection. First post-hackathon roadmap release. Adds `slippage_sandwich` — a new tx-triggered detector rule that flags Jupiter swaps where the agent received noticeably less than the route quoted. Ships in two layers: an evidence-only check (actual vs. quoted output from the swap's own `tokenDeltas`) and a slot-neighbour confirmation step that queries `getBlock(slot)` for a higher-priority-fee Jupiter swap landing beside the victim. Confirmed front-runners escalate severity warning → critical. RPC failures degrade gracefully to evidence-only output — sandwich alerts never silently disappear during a Helius outage.
@@ -55,7 +73,8 @@ First post-submission iteration. The 2026-05-11 Colosseum Frontier submission sh
 ### Security
 - RLS enabled on every child partition of `agent_transactions` (`2026_04` through `2026_09` plus `_default`). Postgres does not inherit RLS from a partitioned parent, and PostgREST exposes each partition as its own `/rest/v1/<name>` endpoint — without per-partition `ENABLE ROW LEVEL SECURITY`, an anon/authenticated caller could hit a partition directly and bypass the parent's `tx_owner_access` policy. New migration `0010_rls_on_partitions.sql`; service-role ingestion (BYPASSRLS) untouched. ([`1ac359d`](https://github.com/PavloDereniuk/AgentScope/commit/1ac359d), P.11)
 
-[Unreleased]: https://github.com/PavloDereniuk/AgentScope/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/PavloDereniuk/AgentScope/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/PavloDereniuk/AgentScope/releases/tag/v0.4.1
 [0.4.0]: https://github.com/PavloDereniuk/AgentScope/releases/tag/v0.4.0
 [0.3.0]: https://github.com/PavloDereniuk/AgentScope/releases/tag/v0.3.0
 [0.2.0]: https://github.com/PavloDereniuk/AgentScope/releases/tag/v0.2.0
