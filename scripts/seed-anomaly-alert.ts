@@ -87,6 +87,7 @@ const defaults: DefaultThresholds = {
   errorRatePct: Number(process.env['AGENTSCOPE_ERROR_RATE_PCT_THRESHOLD'] ?? '20'),
   staleMinutes: Number(process.env['AGENTSCOPE_STALE_MINUTES_THRESHOLD'] ?? '30'),
   sandwichSlippagePct: Number(process.env['AGENTSCOPE_SANDWICH_SLIPPAGE_PCT_THRESHOLD'] ?? '2'),
+  lowBalanceSol: Number(process.env['AGENTSCOPE_LOW_BALANCE_SOL_THRESHOLD'] ?? '0.005'),
 };
 
 const db = createDb({ connectionString: DATABASE_URL });

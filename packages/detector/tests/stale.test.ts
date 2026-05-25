@@ -15,6 +15,7 @@ const defaults = {
   errorRatePct: 20,
   staleMinutes: 30,
   sandwichSlippagePct: 2,
+  lowBalanceSol: 0.005,
 };
 
 let testDb: TestDatabase;
@@ -102,7 +103,7 @@ describe('stale_agent rule', () => {
   });
 
   it('fires when last tx exceeds per-agent threshold', async () => {
-    // 10 min inactive, threshold 5 min → fires
+    // 10 min inactive, threshold 5 min в†’ fires
     const result = await staleRule.evaluate(makeCtx(activeAgentId, { staleMinutesThreshold: 5 }));
     expect(result).not.toBeNull();
     expect(result?.ruleName).toBe('stale_agent');
@@ -116,8 +117,8 @@ describe('stale_agent rule', () => {
     expect(result?.payload).toMatchObject({ reason: 'no transactions ever' });
   });
 
-  it('escalates to critical when idle time exceeds 3× threshold', async () => {
-    // 10 min inactive, threshold 2 min → 5× threshold → critical
+  it('escalates to critical when idle time exceeds 3Г— threshold', async () => {
+    // 10 min inactive, threshold 2 min в†’ 5Г— threshold в†’ critical
     const result = await staleRule.evaluate(makeCtx(activeAgentId, { staleMinutesThreshold: 2 }));
     expect(result?.severity).toBe('critical');
   });

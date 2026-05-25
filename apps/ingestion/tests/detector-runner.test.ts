@@ -27,6 +27,7 @@ const defaults: DefaultThresholds = {
   errorRatePct: 20,
   staleMinutes: 30,
   sandwichSlippagePct: 2,
+  lowBalanceSol: 0.005,
 };
 
 const silentLogger = {
@@ -108,7 +109,7 @@ describe('runTxDetector', () => {
       signature: 'sig_normal',
       slot: 300_000_101,
       instructionName: 'jupiter.swap',
-      parsedArgs: { slippageBps: 100 }, // 1% — well under 5% threshold
+      parsedArgs: { slippageBps: 100 }, // 1% вЂ” well under 5% threshold
       solDelta: '-0.01',
       tokenDeltas: [],
       feeLamports: 5000,
@@ -124,7 +125,7 @@ describe('runTxDetector', () => {
   });
 });
 
-describe('runTxDetector — Epic 14 per-agent routing', () => {
+describe('runTxDetector вЂ” Epic 14 per-agent routing', () => {
   /**
    * Factory for a mock telegram/webhook sender that records the
    * AlertMessage it received. Tests assert on these captured messages
@@ -157,7 +158,7 @@ describe('runTxDetector — Epic 14 per-agent routing', () => {
       .insert(agents)
       .values({
         userId: user.id,
-        // 32-char pubkey shape — reuse agent index for uniqueness
+        // 32-char pubkey shape вЂ” reuse agent index for uniqueness
         walletPubkey: `1111111111111111111111111111111${opts.name.charCodeAt(0) % 10}`,
         name: opts.name,
         framework: 'custom',
@@ -211,7 +212,7 @@ describe('runTxDetector — Epic 14 per-agent routing', () => {
     });
     const telegram = createMockSender();
 
-    // Stub global fetch — createWebhookSender uses it internally.
+    // Stub global fetch вЂ” createWebhookSender uses it internally.
     const fetchSpy = vi
       .spyOn(globalThis, 'fetch')
       .mockResolvedValue(new Response('ok', { status: 200 }));
@@ -224,7 +225,7 @@ describe('runTxDetector — Epic 14 per-agent routing', () => {
       );
       expect(count).toBe(1);
 
-      // Telegram must NOT have been called — webhook took precedence.
+      // Telegram must NOT have been called вЂ” webhook took precedence.
       expect(telegram.captured).toHaveLength(0);
       expect(fetchSpy).toHaveBeenCalledTimes(1);
 
@@ -254,7 +255,7 @@ describe('runTxDetector — Epic 14 per-agent routing', () => {
       bareAgentId,
       { ...slippageTx, signature: `${slippageTx.signature}_bare` },
     );
-    // The alert STILL lands in the DB (count === 1) — we just don't ship
+    // The alert STILL lands in the DB (count === 1) вЂ” we just don't ship
     // it to the platform owner's chat via fallback. The row stays in the
     // default 'pending' delivery_status and is visible in the dashboard.
     expect(count).toBe(1);
@@ -269,7 +270,7 @@ describe('runTxDetector — Epic 14 per-agent routing', () => {
   });
 });
 
-describe('runTxDetector — Epic 18 per-rule pause', () => {
+describe('runTxDetector вЂ” Epic 18 per-rule pause', () => {
   function createMockTelegram(): ChannelSender & { captured: AlertMessage[] } {
     const captured: AlertMessage[] = [];
     const sender: ChannelSender & { captured: AlertMessage[] } = {
@@ -328,7 +329,7 @@ describe('runTxDetector — Epic 18 per-rule pause', () => {
     const id = await seedAgent({
       name: 'E18 Rule Paused',
       alertRules: {
-        // pausedUntil 100 years out — well past any test clock.
+        // pausedUntil 100 years out вЂ” well past any test clock.
         pausedUntil: { slippage_spike: '2126-01-01T00:00:00Z' },
       },
     });
@@ -381,9 +382,9 @@ describe('runTxDetector — Epic 18 per-rule pause', () => {
   it('global pause trumps per-rule resume (skipped, sender not called)', async () => {
     const id = await seedAgent({
       name: 'E18 Global Trumps',
-      // Global pause active …
+      // Global pause active вЂ¦
       alertsPausedUntil: '2126-01-01T00:00:00Z',
-      // … even though per-rule is in the past (would auto-resume on its own).
+      // вЂ¦ even though per-rule is in the past (would auto-resume on its own).
       alertRules: { pausedUntil: { slippage_spike: '2020-01-01T00:00:00Z' } },
     });
     const telegram = createMockTelegram();

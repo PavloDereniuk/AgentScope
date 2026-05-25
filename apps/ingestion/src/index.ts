@@ -20,6 +20,7 @@ import { getKaminoLoadWarnings } from '@agentscope/parser';
 import { Connection } from '@solana/web3.js';
 import { createAdminTelegramSender, startAbuseMonitor } from './abuse-monitor';
 import { backfillWallet } from './backfill';
+import { createBalanceFetcher } from './balance-fetcher';
 import { loadConfig } from './config';
 import { startCron } from './cron';
 import { getDb } from './db';
@@ -44,6 +45,10 @@ const DETECTOR_DEFAULTS: DefaultThresholds = {
   // ~0.3% of quote. 2% picks up only the cases where the route was clearly
   // disturbed — by an MEV bot or by a thin pool that should have been avoided.
   sandwichSlippagePct: 2,
+  // 0.005 SOL warning → 0.001 SOL critical (threshold / 5 in low-balance.ts).
+  // Floor picked at the practical point where the next priority-fee bump
+  // could brick the agent.
+  lowBalanceSol: 0.005,
 };
 
 async function main(): Promise<void> {
@@ -90,6 +95,15 @@ async function main(): Promise<void> {
   // together in one block.
   const httpConnection = new Connection(config.SOLANA_RPC_URL, 'confirmed');
   const slotNeighbourFetcher = createSlotNeighbourFetcher({
+    connection: httpConnection,
+    logger,
+  });
+  // Wallet-balance lookup for the low_balance rule (A.2). Shares the same
+  // HTTP-only Connection as the slot-neighbour fetcher — getBalance is a
+  // cheap JSON-RPC call and stacks under the Helius free tier without
+  // pushing us anywhere near the 100 req/sec cap (1 call per agent per
+  // 60s cycle, cached for 25s).
+  const balanceFetcher = createBalanceFetcher({
     connection: httpConnection,
     logger,
   });
@@ -200,6 +214,7 @@ async function main(): Promise<void> {
     db,
     logger,
     defaults: DETECTOR_DEFAULTS,
+    fetchAgentBalance: balanceFetcher,
     ...(telegramSender ? { alerter: { telegram: telegramSender } } : {}),
     ...(publishEvent ? { publishEvent } : {}),
   });

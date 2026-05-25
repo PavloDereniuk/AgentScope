@@ -19,12 +19,14 @@ import {
 } from '@agentscope/alerter';
 import { type Database, agents, alerts } from '@agentscope/db';
 import {
+  type BalanceFetcher,
   type CronRuleDef,
   type DefaultThresholds,
   drawdownRule,
   errorRateRule,
   evaluateCron,
   ghostExecutionRule,
+  lowBalanceRule,
   staleRule,
 } from '@agentscope/detector';
 import type { EvalLogger } from '@agentscope/detector';
@@ -60,6 +62,7 @@ const CRON_RULES: readonly CronRuleDef[] = [
   errorRateRule,
   staleRule,
   ghostExecutionRule,
+  lowBalanceRule,
 ];
 
 /**
@@ -93,6 +96,12 @@ export interface CronDeps {
   alerter?: DeliverDeps;
   /** Optional callback to publish SSE events to the API (6.15). */
   publishEvent?: (event: { type: string; agentId: string; [key: string]: unknown }) => void;
+  /**
+   * Optional wallet-balance lookup for the `low_balance` rule (A.2). When
+   * absent (tests, dry runs), `low_balance` abstains silently rather than
+   * fire on missing data.
+   */
+  fetchAgentBalance?: BalanceFetcher;
 }
 
 /**
@@ -104,6 +113,7 @@ export async function runCronCycle(deps: CronDeps): Promise<number> {
       id: agents.id,
       name: agents.name,
       userId: agents.userId,
+      walletPubkey: agents.walletPubkey,
       alertRules: agents.alertRules,
       telegramChatId: agents.telegramChatId,
       webhookUrl: agents.webhookUrl,
@@ -126,10 +136,13 @@ export async function runCronCycle(deps: CronDeps): Promise<number> {
     const results = await evaluateCron(
       CRON_RULES,
       {
-        agent: { id: agent.id, alertRules },
+        agent: { id: agent.id, alertRules, walletPubkey: agent.walletPubkey },
         defaults: deps.defaults,
         db: deps.db,
         now,
+        // Conditional spread (exactOptionalPropertyTypes) — when unwired
+        // in tests, the field is absent rather than `undefined`.
+        ...(deps.fetchAgentBalance ? { fetchAgentBalance: deps.fetchAgentBalance } : {}),
       },
       deps.logger,
     );

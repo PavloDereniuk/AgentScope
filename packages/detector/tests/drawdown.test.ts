@@ -15,6 +15,7 @@ const defaults = {
   errorRatePct: 20,
   staleMinutes: 30,
   sandwichSlippagePct: 2,
+  lowBalanceSol: 0.005,
 };
 
 let testDb: TestDatabase;
@@ -44,7 +45,7 @@ beforeAll(async () => {
   agentId = agent.id;
 
   // Seed txs with net -0.25 SOL loss in the last hour
-  // -0.1 + -0.2 + 0.05 = -0.25 SOL → 25% of 1 SOL reference
+  // -0.1 + -0.2 + 0.05 = -0.25 SOL в†’ 25% of 1 SOL reference
   const baseTx = {
     agentId: agent.id,
     slot: 100,
@@ -102,8 +103,8 @@ describe('drawdown rule', () => {
     expect(result).toBeNull();
   });
 
-  it('escalates to critical at 3× threshold', async () => {
-    // 25% drawdown, threshold 5% → 5× → critical
+  it('escalates to critical at 3Г— threshold', async () => {
+    // 25% drawdown, threshold 5% в†’ 5Г— в†’ critical
     const result = await drawdownRule.evaluate(makeCtx({ drawdownPctThreshold: 5 }));
     expect(result?.severity).toBe('critical');
   });

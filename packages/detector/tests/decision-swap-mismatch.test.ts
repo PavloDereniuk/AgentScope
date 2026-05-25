@@ -22,6 +22,7 @@ const defaults = {
   errorRatePct: 20,
   staleMinutes: 30,
   sandwichSlippagePct: 2,
+  lowBalanceSol: 0.005,
 };
 
 let testDb: TestDatabase;
@@ -56,7 +57,7 @@ beforeAll(async () => {
   if (!agent) throw new Error('seed agent failed');
   agentId = agent.id;
 
-  // Decision span for TX_FLIP — agent decided "buy" but parsedArgs say sell
+  // Decision span for TX_FLIP вЂ” agent decided "buy" but parsedArgs say sell
   await testDb.db.insert(reasoningLogs).values({
     agentId,
     traceId: 'a'.repeat(32),
@@ -69,7 +70,7 @@ beforeAll(async () => {
     txSignature: TX_FLIP,
   });
 
-  // Decision span for TX_OVER — same direction, but executed amount diverges 50%
+  // Decision span for TX_OVER вЂ” same direction, but executed amount diverges 50%
   await testDb.db.insert(reasoningLogs).values({
     agentId,
     traceId: 'b'.repeat(32),
@@ -82,7 +83,7 @@ beforeAll(async () => {
     txSignature: TX_OVER,
   });
 
-  // Decision span for TX_OK — perfect match
+  // Decision span for TX_OK вЂ” perfect match
   await testDb.db.insert(reasoningLogs).values({
     agentId,
     traceId: 'c'.repeat(32),
@@ -128,7 +129,7 @@ function makeCtx(args: {
 }
 
 describe('decision_swap_mismatch rule', () => {
-  it('fires critical when decision.action flipped buy → sell', async () => {
+  it('fires critical when decision.action flipped buy в†’ sell', async () => {
     const result = await decisionSwapMismatchRule.evaluate(
       makeCtx({
         signature: TX_FLIP,
@@ -147,7 +148,7 @@ describe('decision_swap_mismatch rule', () => {
   });
 
   it('fires when amount diverges beyond threshold', async () => {
-    // decision = 0.001 SOL, executed = 0.0015 SOL (out=1.5e6 lamports → 0.0015) → 50% delta
+    // decision = 0.001 SOL, executed = 0.0015 SOL (out=1.5e6 lamports в†’ 0.0015) в†’ 50% delta
     const result = await decisionSwapMismatchRule.evaluate(
       makeCtx({
         signature: TX_OVER,
@@ -219,7 +220,7 @@ describe('decision_swap_mismatch rule', () => {
   });
 
   it('respects per-agent threshold override', async () => {
-    // 50% delta but agent set threshold to 80% → no fire
+    // 50% delta but agent set threshold to 80% в†’ no fire
     const result = await decisionSwapMismatchRule.evaluate(
       makeCtx({
         signature: TX_OVER,

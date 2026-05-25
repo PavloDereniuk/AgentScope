@@ -15,6 +15,7 @@ const defaults = {
   errorRatePct: 20,
   staleMinutes: 30,
   sandwichSlippagePct: 2,
+  lowBalanceSol: 0.005,
 };
 
 let testDb: TestDatabase;
@@ -43,7 +44,7 @@ beforeAll(async () => {
   if (!agent) throw new Error('seed agent failed');
   agentId = agent.id;
 
-  // Seed 10 txs: 3 failed, 7 successful → 30% error rate
+  // Seed 10 txs: 3 failed, 7 successful в†’ 30% error rate
   const baseTx = {
     agentId: agent.id,
     slot: 100,
@@ -105,8 +106,8 @@ describe('error_rate rule', () => {
     expect(result).toBeNull();
   });
 
-  it('escalates to critical when rate is 2× threshold', async () => {
-    // 30% rate, threshold 10% → 3× → critical
+  it('escalates to critical when rate is 2Г— threshold', async () => {
+    // 30% rate, threshold 10% в†’ 3Г— в†’ critical
     const result = await errorRateRule.evaluate(makeCtx({ errorRatePctThreshold: 10 }));
     expect(result?.severity).toBe('critical');
   });

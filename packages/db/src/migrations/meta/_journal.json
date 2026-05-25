@@ -85,6 +85,13 @@
       "when": 1779840000000,
       "tag": "0011_slippage_sandwich",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1780099200000,
+      "tag": "0012_low_balance",
+      "breakpoints": true
     }
   ]
 }

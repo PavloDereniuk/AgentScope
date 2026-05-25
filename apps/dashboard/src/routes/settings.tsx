@@ -231,6 +231,7 @@ export function SettingsPage() {
       'drawdownPctThreshold',
       'errorRatePctThreshold',
       'staleMinutesThreshold',
+      'lowBalanceSolThreshold',
     ] as const;
     for (const field of fields) {
       const val = fd.get(field) as string;
@@ -358,6 +359,14 @@ export function SettingsPage() {
                   suffix="min"
                   step="1"
                   defaultValue={selected?.alertRules?.staleMinutesThreshold}
+                />
+                <ThresholdInput
+                  name="lowBalanceSolThreshold"
+                  label="Low balance"
+                  hint="warning fires below value · critical at 1/5"
+                  suffix="SOL"
+                  step="0.001"
+                  defaultValue={selected?.alertRules?.lowBalanceSolThreshold}
                 />
               </div>
             </Card>
@@ -858,6 +867,7 @@ const RULE_LABELS: Record<AlertRuleName, string> = {
   stale_oracle: 'Stale oracle',
   ghost_execution: 'Ghost execution',
   slippage_sandwich: 'MEV sandwich',
+  low_balance: 'Low balance',
 };
 
 function ThresholdInput({

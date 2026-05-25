@@ -28,6 +28,7 @@ export const ALERT_RULE_NAMES = [
   'stale_oracle',
   'ghost_execution',
   'slippage_sandwich',
+  'low_balance',
 ] as const;
 export type AlertRuleName = (typeof ALERT_RULE_NAMES)[number];
 
@@ -92,6 +93,14 @@ export interface AlertRuleThresholds {
    * gates on the *intent* (the swap's own `slippageBps` tolerance).
    */
   sandwichSlippagePctThreshold?: number | undefined;
+  /**
+   * Warning fires when agent wallet's SOL balance drops below this value.
+   * Critical fires at one-fifth of the warning level — picked so the default
+   * 0.005 SOL warning escalates to critical at 0.001 SOL, the practical
+   * floor where the next priority-fee bump or rent payment would brick the
+   * agent. Per-rule pause and other plumbing reuse the same flow as drawdown.
+   */
+  lowBalanceSolThreshold?: number | undefined;
   /**
    * Per-rule alert silencing. Keyed by `AlertRuleName`; each value is an
    * ISO-8601 timestamp until which delivery for that specific rule is muted.

@@ -19,6 +19,7 @@ const defaults = {
   errorRatePct: 20,
   staleMinutes: 30,
   sandwichSlippagePct: 2,
+  lowBalanceSol: 0.005,
 };
 
 let testDb: TestDatabase;
@@ -56,7 +57,7 @@ beforeAll(async () => {
   if (!agent) throw new Error('seed agent failed');
   agentId = agent.id;
 
-  // Trace 1 — DRIFT: market $100, decision $90 → 10% divergence
+  // Trace 1 вЂ” DRIFT: market $100, decision $90 в†’ 10% divergence
   await testDb.db.insert(reasoningLogs).values([
     {
       agentId,
@@ -93,7 +94,7 @@ beforeAll(async () => {
     },
   ]);
 
-  // Trace 2 — MATCH: market $100, decision $100.5 → 0.5% divergence (under default 1%)
+  // Trace 2 вЂ” MATCH: market $100, decision $100.5 в†’ 0.5% divergence (under default 1%)
   await testDb.db.insert(reasoningLogs).values([
     {
       agentId,
@@ -119,7 +120,7 @@ beforeAll(async () => {
     },
   ]);
 
-  // Trace 3 — PARTIAL: only ANALYZE_MARKET, no MAKE_DECISION price
+  // Trace 3 вЂ” PARTIAL: only ANALYZE_MARKET, no MAKE_DECISION price
   await testDb.db.insert(reasoningLogs).values({
     agentId,
     traceId: 'f'.repeat(32),
@@ -161,8 +162,8 @@ function makeCtx(signature: string, agentThreshold?: number): TxRuleContext {
 }
 
 describe('stale_oracle rule', () => {
-  it('fires critical when divergence is 10× threshold', async () => {
-    // 10% divergence vs default 1% threshold → 10× → critical
+  it('fires critical when divergence is 10Г— threshold', async () => {
+    // 10% divergence vs default 1% threshold в†’ 10Г— в†’ critical
     const result = await staleOracleRule.evaluate(makeCtx(TX_DRIFT));
     expect(result).not.toBeNull();
     expect(result?.severity).toBe('critical');
@@ -194,8 +195,8 @@ describe('stale_oracle rule', () => {
     expect(result).toBeNull();
   });
 
-  it('fires warning at agent threshold > 1× but < 5×', async () => {
-    // 10% drift, agent threshold 5% → 2× → warning (not critical)
+  it('fires warning at agent threshold > 1Г— but < 5Г—', async () => {
+    // 10% drift, agent threshold 5% в†’ 2Г— в†’ warning (not critical)
     const result = await staleOracleRule.evaluate(makeCtx(TX_DRIFT, 5));
     expect(result?.severity).toBe('warning');
   });

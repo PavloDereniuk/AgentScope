@@ -1,7 +1,7 @@
 /**
  * Unit tests for the rule evaluator (task 5.2).
  *
- * These tests use in-memory stubs — no database, no real rules.
+ * These tests use in-memory stubs вЂ” no database, no real rules.
  * They verify the evaluator's iteration, result collection, and
  * error isolation logic.
  */
@@ -20,6 +20,7 @@ const defaultThresholds = {
   errorRatePct: 20,
   staleMinutes: 30,
   sandwichSlippagePct: 2,
+  lowBalanceSol: 0.005,
 };
 
 const baseAgent = { id: 'agent-1', alertRules: {} };

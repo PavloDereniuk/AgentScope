@@ -18,6 +18,7 @@ const defaults = {
   errorRatePct: 20,
   staleMinutes: 30,
   sandwichSlippagePct: 2,
+  lowBalanceSol: 0.005,
 };
 
 interface Ctx {
@@ -102,8 +103,8 @@ function makeTxCtx(fee: number, overrides: { gasMultThreshold?: number } = {}): 
 }
 
 describe('gas_spike rule', () => {
-  it('fires when fee exceeds 3× median (default threshold)', async () => {
-    // Median = 10000, fee = 40000 → 4× → > 3× default → fires
+  it('fires when fee exceeds 3Г— median (default threshold)', async () => {
+    // Median = 10000, fee = 40000 в†’ 4Г— в†’ > 3Г— default в†’ fires
     const result = await gasRule.evaluate(makeTxCtx(40000));
     expect(result).not.toBeNull();
     expect(result?.ruleName).toBe('gas_spike');
@@ -112,19 +113,19 @@ describe('gas_spike rule', () => {
   });
 
   it('does not fire when fee is within threshold', async () => {
-    // Median = 10000, fee = 25000 → 2.5× → ≤ 3× → no fire
+    // Median = 10000, fee = 25000 в†’ 2.5Г— в†’ в‰¤ 3Г— в†’ no fire
     const result = await gasRule.evaluate(makeTxCtx(25000));
     expect(result).toBeNull();
   });
 
   it('uses per-agent threshold override', async () => {
-    // Median = 10000, fee = 25000 → 2.5× → agent threshold 2× → fires
+    // Median = 10000, fee = 25000 в†’ 2.5Г— в†’ agent threshold 2Г— в†’ fires
     const result = await gasRule.evaluate(makeTxCtx(25000, { gasMultThreshold: 2 }));
     expect(result).not.toBeNull();
   });
 
-  it('escalates to critical at 5× threshold', async () => {
-    // Median = 10000, fee = 200000 → 20× → 3× × 5 = 15× → 20 > 15 → critical
+  it('escalates to critical at 5Г— threshold', async () => {
+    // Median = 10000, fee = 200000 в†’ 20Г— в†’ 3Г— Г— 5 = 15Г— в†’ 20 > 15 в†’ critical
     const result = await gasRule.evaluate(makeTxCtx(200000));
     expect(result?.severity).toBe('critical');
   });

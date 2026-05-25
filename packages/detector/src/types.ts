@@ -23,6 +23,13 @@ import type {
 export interface AgentSnapshot {
   id: string;
   alertRules: AlertRuleThresholds;
+  /**
+   * Solana wallet pubkey (base58). Optional because only balance-aware
+   * rules (`low_balance`) need it; existing rules read DB rows keyed by
+   * `id` and ignore this field. Rules that need it must abstain (return
+   * null) when absent rather than throw.
+   */
+  walletPubkey?: string;
 }
 
 /** Parsed transaction fields relevant to detection. */
@@ -64,6 +71,11 @@ export interface DefaultThresholds {
    * this one gates on what the chain actually returned.
    */
   sandwichSlippagePct: number;
+  /**
+   * Warning threshold for `low_balance` rule, in SOL. Critical fires at
+   * one-fifth of this value. Default 0.005 SOL warning → 0.001 SOL critical.
+   */
+  lowBalanceSol: number;
 }
 
 // ── Slot-neighbour lookup (A.1 Phase 2) ──────────────────────────────────────
@@ -90,6 +102,17 @@ export interface SlotNeighbourTx {
  */
 export type NeighbourFetcher = (slot: number) => Promise<readonly SlotNeighbourTx[]>;
 
+// ── Wallet-balance lookup (A.2) ──────────────────────────────────────────────
+
+/**
+ * Lookup function injected by the ingestion layer. Returns the agent
+ * wallet's current SOL balance as a decimal number, or `null` when the
+ * balance is unknown (RPC failure, wallet not found). Rules treat `null`
+ * as "no signal" — they never alert on a missing reading. Implementations
+ * SHOULD cache + coalesce so multiple rules sharing a wallet pay one RPC.
+ */
+export type BalanceFetcher = (walletPubkey: string) => Promise<number | null>;
+
 // ── Rule contexts ────────────────────────────────────────────────────────────
 
 /** Shared across both tx and cron evaluation. */
@@ -104,6 +127,12 @@ interface BaseRuleContext {
    * paths), rules fall back to their evidence-only behaviour.
    */
   fetchSlotNeighbours?: NeighbourFetcher;
+  /**
+   * Optional wallet-balance lookup. When wired (production cron), the
+   * `low_balance` rule queries it via `agent.walletPubkey`. When absent
+   * (tests, tx-runner), balance-aware rules abstain rather than throw.
+   */
+  fetchAgentBalance?: BalanceFetcher;
 }
 
 /** Context for rules that evaluate a single new transaction. */

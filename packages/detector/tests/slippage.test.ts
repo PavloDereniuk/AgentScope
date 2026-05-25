@@ -19,6 +19,7 @@ const defaults = {
   errorRatePct: 20,
   staleMinutes: 30,
   sandwichSlippagePct: 2,
+  lowBalanceSol: 0.005,
 };
 
 function makeTxCtx(overrides: {
@@ -52,7 +53,7 @@ function makeTxCtx(overrides: {
 
 describe('slippage_spike rule', () => {
   it('fires warning when slippageBps exceeds default threshold', async () => {
-    // 1200 bps = 12%, default threshold = 5% → 2.4x → warning
+    // 1200 bps = 12%, default threshold = 5% в†’ 2.4x в†’ warning
     const ctx = makeTxCtx({ parsedArgs: { slippageBps: 1200 } });
     const result = await slippageRule.evaluate(ctx);
 
@@ -73,14 +74,14 @@ describe('slippage_spike rule', () => {
   });
 
   it('uses per-agent threshold override when set', async () => {
-    // 800 bps = 8%, agent threshold = 10% → should NOT fire
+    // 800 bps = 8%, agent threshold = 10% в†’ should NOT fire
     const ctx = makeTxCtx({ parsedArgs: { slippageBps: 800 }, agentThreshold: 10 });
     const result = await slippageRule.evaluate(ctx);
     expect(result).toBeNull();
   });
 
   it('fires with per-agent threshold when exceeded', async () => {
-    // 1200 bps = 12%, agent threshold = 10% → should fire
+    // 1200 bps = 12%, agent threshold = 10% в†’ should fire
     const ctx = makeTxCtx({ parsedArgs: { slippageBps: 1200 }, agentThreshold: 10 });
     const result = await slippageRule.evaluate(ctx);
     expect(result).not.toBeNull();
@@ -106,7 +107,7 @@ describe('slippage_spike rule', () => {
   });
 
   it('fires critical when slippage exceeds 5x threshold', async () => {
-    // 30000 bps = 300%, default threshold = 5% → 60x → critical
+    // 30000 bps = 300%, default threshold = 5% в†’ 60x в†’ critical
     const ctx = makeTxCtx({ parsedArgs: { slippageBps: 30000 } });
     const result = await slippageRule.evaluate(ctx);
     expect(result?.severity).toBe('critical');

@@ -27,6 +27,7 @@ const defaults = {
   errorRatePct: 20,
   staleMinutes: 30,
   sandwichSlippagePct: 2,
+  lowBalanceSol: 0.005,
 };
 
 function makeTokenDelta(mint: SolanaPubkey, delta: string): TokenDelta {
@@ -87,9 +88,9 @@ function makeNeighbour(overrides: Partial<SlotNeighbourTx> = {}): SlotNeighbourT
   };
 }
 
-describe('slippage_sandwich rule (Phase 1 — evidence only)', () => {
+describe('slippage_sandwich rule (Phase 1 вЂ” evidence only)', () => {
   it('fires warning when actual receive is below quoted by more than threshold', async () => {
-    // Quoted 100 USDC, received 97 USDC → 3% actual slippage, threshold 2% → warning
+    // Quoted 100 USDC, received 97 USDC в†’ 3% actual slippage, threshold 2% в†’ warning
     const ctx = makeTxCtx({
       tokenDeltas: [makeTokenDelta(USDC, '97000000')],
     });
@@ -110,8 +111,8 @@ describe('slippage_sandwich rule (Phase 1 — evidence only)', () => {
     expect((result?.payload as { actualSlippagePct: number }).actualSlippagePct).toBeCloseTo(3, 1);
   });
 
-  it('fires critical when actual slippage exceeds 5× threshold', async () => {
-    // Quoted 100 USDC, received 85 USDC → 15% actual slippage; threshold 2% → 7.5× → critical
+  it('fires critical when actual slippage exceeds 5Г— threshold', async () => {
+    // Quoted 100 USDC, received 85 USDC в†’ 15% actual slippage; threshold 2% в†’ 7.5Г— в†’ critical
     const ctx = makeTxCtx({
       tokenDeltas: [makeTokenDelta(USDC, '85000000')],
     });
@@ -128,7 +129,7 @@ describe('slippage_sandwich rule (Phase 1 — evidence only)', () => {
   });
 
   it('does not fire when actual exceeds quoted (positive slippage)', async () => {
-    // Better than expected — never a sandwich.
+    // Better than expected вЂ” never a sandwich.
     const ctx = makeTxCtx({
       tokenDeltas: [makeTokenDelta(USDC, '101000000')],
     });
@@ -137,7 +138,7 @@ describe('slippage_sandwich rule (Phase 1 — evidence only)', () => {
   });
 
   it('does not fire when actual slippage is within threshold', async () => {
-    // 1% slippage, threshold 2% → null
+    // 1% slippage, threshold 2% в†’ null
     const ctx = makeTxCtx({
       tokenDeltas: [makeTokenDelta(USDC, '99000000')],
     });
@@ -203,7 +204,7 @@ describe('slippage_sandwich rule (Phase 1 — evidence only)', () => {
 
   it('skips when no positive tokenDelta matches outputMint', async () => {
     // wrap-and-close wSOL: ATA closed mid-tx, no balance record. We
-    // intentionally skip rather than guess via solDelta — keeps the rule
+    // intentionally skip rather than guess via solDelta вЂ” keeps the rule
     // signal-noise ratio tight for Phase 1.
     const ctx = makeTxCtx({
       tokenDeltas: [makeTokenDelta(SOL, '-1000000000')],
@@ -213,7 +214,7 @@ describe('slippage_sandwich rule (Phase 1 — evidence only)', () => {
   });
 
   it('uses per-agent threshold override when set (suppresses fire)', async () => {
-    // 3% slippage, agent threshold 5% → null (agent override wins over default 2%)
+    // 3% slippage, agent threshold 5% в†’ null (agent override wins over default 2%)
     const ctx = makeTxCtx({
       tokenDeltas: [makeTokenDelta(USDC, '97000000')],
       agentThreshold: 5,
@@ -223,7 +224,7 @@ describe('slippage_sandwich rule (Phase 1 — evidence only)', () => {
   });
 
   it('uses per-agent threshold override when set (allows fire)', async () => {
-    // 1.5% slippage, agent threshold 1% → fires (default 2% would suppress)
+    // 1.5% slippage, agent threshold 1% в†’ fires (default 2% would suppress)
     const ctx = makeTxCtx({
       tokenDeltas: [makeTokenDelta(USDC, '98500000')],
       agentThreshold: 1,
@@ -250,8 +251,8 @@ describe('slippage_sandwich rule (Phase 1 — evidence only)', () => {
     expect(result).toBeNull();
   });
 
-  it('omits neighbourConfirmed flag absence — flag is always present (false when fetcher off)', async () => {
-    // Phase 1 fallback path: no fetchSlotNeighbours injected → flag set to false.
+  it('omits neighbourConfirmed flag absence вЂ” flag is always present (false when fetcher off)', async () => {
+    // Phase 1 fallback path: no fetchSlotNeighbours injected в†’ flag set to false.
     const ctx = makeTxCtx({ tokenDeltas: [makeTokenDelta(USDC, '90000000')] });
     const result = await sandwichRule.evaluate(ctx);
     expect(result?.payload).toMatchObject({ neighbourConfirmed: false });
@@ -261,8 +262,8 @@ describe('slippage_sandwich rule (Phase 1 — evidence only)', () => {
   });
 });
 
-describe('slippage_sandwich rule (Phase 2 — neighbour augmentation)', () => {
-  it('escalates warning → critical when same-slot Jupiter neighbour paid higher fee', async () => {
+describe('slippage_sandwich rule (Phase 2 вЂ” neighbour augmentation)', () => {
+  it('escalates warning в†’ critical when same-slot Jupiter neighbour paid higher fee', async () => {
     // 3% slippage = warning under default 2% threshold, but a confirmed
     // front-runner exists in the same slot.
     const fetcher = vi.fn<NeighbourFetcher>(async () => [
@@ -286,9 +287,9 @@ describe('slippage_sandwich rule (Phase 2 — neighbour augmentation)', () => {
 
   it('keeps severity = warning when no neighbour beats the victim fee', async () => {
     const fetcher = vi.fn<NeighbourFetcher>(async () => [
-      // Same fee — not a front-runner (could be the victim's own re-broadcast).
+      // Same fee вЂ” not a front-runner (could be the victim's own re-broadcast).
       makeNeighbour({ feeLamports: 5000 }),
-      // Lower fee — definitely not a front-runner.
+      // Lower fee вЂ” definitely not a front-runner.
       makeNeighbour({ feeLamports: 3000 }),
     ]);
 
@@ -304,7 +305,7 @@ describe('slippage_sandwich rule (Phase 2 — neighbour augmentation)', () => {
 
   it('ignores neighbours that are not Jupiter swaps', async () => {
     const fetcher = vi.fn<NeighbourFetcher>(async () => [
-      // High fee but a non-Jupiter program — unrelated mempool noise.
+      // High fee but a non-Jupiter program вЂ” unrelated mempool noise.
       makeNeighbour({
         feeLamports: 50000,
         programIds: ['11111111111111111111111111111111'],
@@ -323,7 +324,7 @@ describe('slippage_sandwich rule (Phase 2 — neighbour augmentation)', () => {
 
   it('ignores failed neighbour transactions', async () => {
     const fetcher = vi.fn<NeighbourFetcher>(async () => [
-      // High-fee Jupiter swap but it failed — can't have moved the pool.
+      // High-fee Jupiter swap but it failed вЂ” can't have moved the pool.
       makeNeighbour({ feeLamports: 50000, success: false }),
     ]);
 
@@ -340,7 +341,7 @@ describe('slippage_sandwich rule (Phase 2 — neighbour augmentation)', () => {
   it('ignores a neighbour matching the victim signature (self-match defence)', async () => {
     const fetcher = vi.fn<NeighbourFetcher>(async () => [
       // The fetcher accidentally includes the victim itself with a
-      // higher fee — should never escalate self.
+      // higher fee вЂ” should never escalate self.
       makeNeighbour({ signature: 'sandwich-sig-001', feeLamports: 99999 }),
     ]);
 
@@ -354,11 +355,11 @@ describe('slippage_sandwich rule (Phase 2 — neighbour augmentation)', () => {
     expect(result?.payload).toMatchObject({ neighbourConfirmed: false });
   });
 
-  it('keeps severity = critical when slippage already crossed 5× threshold (cannot escalate further)', async () => {
+  it('keeps severity = critical when slippage already crossed 5Г— threshold (cannot escalate further)', async () => {
     const fetcher = vi.fn<NeighbourFetcher>(async () => [makeNeighbour({ feeLamports: 99999 })]);
 
     const ctx = makeTxCtx({
-      // 15% slippage = 7.5× threshold → critical pre-lookup
+      // 15% slippage = 7.5Г— threshold в†’ critical pre-lookup
       tokenDeltas: [makeTokenDelta(USDC, '85000000')],
       fetchSlotNeighbours: fetcher,
     });
@@ -379,14 +380,14 @@ describe('slippage_sandwich rule (Phase 2 — neighbour augmentation)', () => {
     });
     const result = await sandwichRule.evaluate(ctx);
 
-    // Rule must still fire on the evidence — RPC outages should not
+    // Rule must still fire on the evidence вЂ” RPC outages should not
     // silently kill the alert pipeline.
     expect(result?.severity).toBe('warning');
     expect(result?.payload).toMatchObject({ neighbourConfirmed: false });
   });
 
   it('does not query neighbours when evidence threshold is not met (avoid wasted RPC)', async () => {
-    // 1% slippage < 2% threshold → null without ever calling fetcher.
+    // 1% slippage < 2% threshold в†’ null without ever calling fetcher.
     const fetcher = vi.fn<NeighbourFetcher>(async () => []);
 
     const ctx = makeTxCtx({

@@ -27,6 +27,7 @@ const defaults: DefaultThresholds = {
   errorRatePct: 20,
   staleMinutes: 30,
   sandwichSlippagePct: 2,
+  lowBalanceSol: 0.005,
 };
 
 const silentLogger = { error: () => {}, info: () => {}, warn: () => {} };
@@ -55,7 +56,7 @@ beforeAll(async () => {
   const [user] = await db.insert(users).values({ privyDid: 'did:privy:cron-test' }).returning();
   if (!user) throw new Error('seed user failed');
 
-  // Agent A: last tx 31 min ago → stale.
+  // Agent A: last tx 31 min ago в†’ stale.
   // `telegramChatId` is required for Telegram delivery (Epic 14 multi-tenant
   // safety removed the deployer-wide fallback); without it the cron routes
   // to `pickChannel(...) === null` and the delivery assertions below would
@@ -89,7 +90,7 @@ beforeAll(async () => {
     blockTime: '2026-04-09T11:29:00Z',
   });
 
-  // Agent B: last tx 5 min ago → active
+  // Agent B: last tx 5 min ago в†’ active
   const [active] = await db
     .insert(agents)
     .values({
@@ -132,7 +133,7 @@ describe('cron cycle', () => {
         if (args.length === 0) {
           super(fakeNow.getTime());
         } else {
-          // @ts-expect-error — spread into Date ctor
+          // @ts-expect-error вЂ” spread into Date ctor
           super(...args);
         }
       }
@@ -188,7 +189,7 @@ describe('cron cycle', () => {
         if (args.length === 0) {
           super(fakeNow.getTime());
         } else {
-          // @ts-expect-error — spread into Date ctor
+          // @ts-expect-error вЂ” spread into Date ctor
           super(...args);
         }
       }
@@ -212,7 +213,7 @@ describe('cron cycle', () => {
       expect(staleMsg).toBeDefined();
       expect(staleMsg?.agentName).toBe('Stale Cron Agent');
 
-      // Alert row should flip pending → delivered after the sender returns success.
+      // Alert row should flip pending в†’ delivered after the sender returns success.
       const staleRow = (
         await db.select().from(alerts).where(eq(alerts.agentId, staleAgentId))
       ).find((a) => a.ruleName === 'stale_agent');
@@ -258,7 +259,7 @@ describe('cron cycle', () => {
         if (args.length === 0) {
           super(fakeNow.getTime());
         } else {
-          // @ts-expect-error — spread into Date ctor
+          // @ts-expect-error вЂ” spread into Date ctor
           super(...args);
         }
       }
@@ -315,7 +316,7 @@ describe('cron cycle', () => {
         if (args.length === 0) {
           super(fakeNow.getTime());
         } else {
-          // @ts-expect-error — spread into Date ctor
+          // @ts-expect-error вЂ” spread into Date ctor
           super(...args);
         }
       }
@@ -327,7 +328,7 @@ describe('cron cycle', () => {
     try {
       await runCronCycle({ db, logger: silentLogger, defaults, alerter: { telegram } });
 
-      // Past pausedUntil → auto-resume, delivery should fire normally.
+      // Past pausedUntil в†’ auto-resume, delivery should fire normally.
       expect(telegramCalls.find((m) => m.agentId === staleAgentId)).toBeDefined();
 
       const staleRow = (
@@ -370,7 +371,7 @@ describe('cron cycle', () => {
         if (args.length === 0) {
           super(fakeNow.getTime());
         } else {
-          // @ts-expect-error — spread into Date ctor
+          // @ts-expect-error вЂ” spread into Date ctor
           super(...args);
         }
       }
@@ -425,7 +426,7 @@ describe('cron cycle', () => {
         if (args.length === 0) {
           super(fakeNow.getTime());
         } else {
-          // @ts-expect-error — spread into Date ctor
+          // @ts-expect-error вЂ” spread into Date ctor
           super(...args);
         }
       }
