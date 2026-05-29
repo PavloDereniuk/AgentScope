@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-05-29
+
+Runaway-loop detector. Third post-hackathon roadmap release. Adds `tx_rate_anomaly` — a cron-triggered detector rule that fires when an agent's mean transaction rate over a 5-minute sliding window exceeds the configured cap (default 30 tx/min, critical at 2× → 60/min). Counts BOTH successful and failed transactions, because a stuck retry loop or a non-stopping LLM burns priority fees regardless of confirmation status. That distinction is the whole point: an existing `error_rate` alert catches the 100%-failed storm; this one catches the 50/50 success/fail storm that drains the wallet just as fast but flies under the error-rate threshold.
+
+### Added
+- `tx_rate_anomaly` detector rule (TDD-strict, 11 tests). Cron-only — runs on the same 60s cycle alongside `drawdown` / `error_rate` / `stale_agent` / `ghost_execution` / `low_balance`. Severity `warning` when `ratePerMin > threshold`, escalating to `critical` at `2× threshold` (same slope as `error_rate` — both signal a systemic loss-of-control, not a single bad event). 5-minute window is short enough to surface a retry burst but long enough that a healthy agent doing 20 quick swaps in a row doesn't trip.
+- Shared format-alert mappings for `tx_rate_anomaly` — title ("Runaway Loop Suspected"), summary, detail rows (rate, threshold, tx count, window), impact, and action lines. Dashboard + Telegram render identical copy.
+- Settings → Notifications → "Runaway loop" row joins the existing rules with per-agent threshold override (`txRateMaxPerMinThreshold`, default 30 tx/min). Per-rule pause from 0.3.0 works for the new rule out of the box.
+
+### Schema
+- Migration `0013_tx_rate_anomaly.sql` — `ALTER TYPE alert_rule_name ADD VALUE IF NOT EXISTS 'tx_rate_anomaly'`. Backwards-compatible; existing rows untouched.
+- `AlertRuleThresholds.txRateMaxPerMinThreshold` (optional, positive). `DefaultThresholds.txRateMaxPerMin` defaults to 30 across `apps/ingestion/src/index.ts` + the trigger/seed scripts (env override `AGENTSCOPE_TX_RATE_MAX_PER_MIN_THRESHOLD`).
+
+### Notes
+Dedupe is 5-minute-bucket keyed — intentionally tighter than drawdown's 1h key. If the loop persists past one window, the next bucket fires again so the user gets re-paged; they want to know the loop is still running, not be silenced after the first alert. Zero-traffic agents abstain (that case belongs to `stale_agent`), keeping the semantic split clean. Full repo gate: lint 275 files clean, typecheck 18/18 packages, test 18/18 turbo tasks (~370+ tests including 11 new runaway).
+
 ## [0.4.1] - 2026-05-25
 
 Low wallet-balance alert. Second post-hackathon roadmap release. Adds `low_balance` — a cron-triggered detector rule that fires once per agent per 60s cycle when the wallet's SOL balance drops below a configurable threshold (default 0.005 SOL warning, 0.001 SOL critical). Balance is read through an injected `BalanceFetcher` wrapped around Helius `Connection.getBalance` with a 25s per-wallet TTL cache and in-flight coalescing, so multiple balance-aware rules in the future share one RPC per cycle. RPC failures abstain silently — a Helius blip never looks like a fleet-wide bankrupt-wallet event.
