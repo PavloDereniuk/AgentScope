@@ -29,6 +29,7 @@ export const ALERT_RULE_NAMES = [
   'ghost_execution',
   'slippage_sandwich',
   'low_balance',
+  'tx_rate_anomaly',
 ] as const;
 export type AlertRuleName = (typeof ALERT_RULE_NAMES)[number];
 
@@ -101,6 +102,16 @@ export interface AlertRuleThresholds {
    * agent. Per-rule pause and other plumbing reuse the same flow as drawdown.
    */
   lowBalanceSolThreshold?: number | undefined;
+  /**
+   * Max acceptable mean transaction rate, in tx/min, over a 5-minute sliding
+   * window. Cron-triggered; warning fires when the actual rate exceeds the
+   * threshold, critical at 2× threshold (same escalation slope as `error_rate`
+   * since both signal a systemic loss-of-control, not a single bad event).
+   * Counts BOTH successful and failed tx — a stuck retry loop burns priority
+   * fees regardless of confirmation status, which is the failure mode this
+   * rule is designed to catch (zacycled LLM decisions, retry-on-error storms).
+   */
+  txRateMaxPerMinThreshold?: number | undefined;
   /**
    * Per-rule alert silencing. Keyed by `AlertRuleName`; each value is an
    * ISO-8601 timestamp until which delivery for that specific rule is muted.

@@ -28,6 +28,7 @@ const defaults: DefaultThresholds = {
   staleMinutes: 30,
   sandwichSlippagePct: 2,
   lowBalanceSol: 0.005,
+  txRateMaxPerMin: 30,
 };
 
 const silentLogger = { error: () => {}, info: () => {}, warn: () => {} };

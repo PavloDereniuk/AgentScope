@@ -232,6 +232,7 @@ export function SettingsPage() {
       'errorRatePctThreshold',
       'staleMinutesThreshold',
       'lowBalanceSolThreshold',
+      'txRateMaxPerMinThreshold',
     ] as const;
     for (const field of fields) {
       const val = fd.get(field) as string;
@@ -367,6 +368,14 @@ export function SettingsPage() {
                   suffix="SOL"
                   step="0.001"
                   defaultValue={selected?.alertRules?.lowBalanceSolThreshold}
+                />
+                <ThresholdInput
+                  name="txRateMaxPerMinThreshold"
+                  label="Runaway loop"
+                  hint="mean tx/min over 5-min window · critical at 2×"
+                  suffix="tx/min"
+                  step="1"
+                  defaultValue={selected?.alertRules?.txRateMaxPerMinThreshold}
                 />
               </div>
             </Card>
@@ -868,6 +877,7 @@ const RULE_LABELS: Record<AlertRuleName, string> = {
   ghost_execution: 'Ghost execution',
   slippage_sandwich: 'MEV sandwich',
   low_balance: 'Low balance',
+  tx_rate_anomaly: 'Runaway loop',
 };
 
 function ThresholdInput({

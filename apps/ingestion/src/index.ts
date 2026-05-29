@@ -49,6 +49,11 @@ const DETECTOR_DEFAULTS: DefaultThresholds = {
   // Floor picked at the practical point where the next priority-fee bump
   // could brick the agent.
   lowBalanceSol: 0.005,
+  // 30 tx/min cap over a 5-min sliding window. Above this is hard to
+  // reach without a retry loop or a non-stopping LLM — agents doing
+  // legitimate HFT-grade strategies set per-agent overrides via the
+  // dashboard. Critical fires at 2× (60/min), same slope as error_rate.
+  txRateMaxPerMin: 30,
 };
 
 async function main(): Promise<void> {

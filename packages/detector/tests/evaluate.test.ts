@@ -21,6 +21,7 @@ const defaultThresholds = {
   staleMinutes: 30,
   sandwichSlippagePct: 2,
   lowBalanceSol: 0.005,
+  txRateMaxPerMin: 30,
 };
 
 const baseAgent = { id: 'agent-1', alertRules: {} };

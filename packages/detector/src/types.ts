@@ -76,6 +76,13 @@ export interface DefaultThresholds {
    * one-fifth of this value. Default 0.005 SOL warning → 0.001 SOL critical.
    */
   lowBalanceSol: number;
+  /**
+   * Tx-per-minute cap (mean rate over a 5-minute sliding window) above which
+   * the `tx_rate_anomaly` rule fires. Default 30/min — picked as the rate
+   * where a single agent is doing one tx every 2s, well above any plausible
+   * non-loop strategy (HFT-grade bots set higher per-agent overrides).
+   */
+  txRateMaxPerMin: number;
 }
 
 // ── Slot-neighbour lookup (A.1 Phase 2) ──────────────────────────────────────

@@ -27,6 +27,7 @@ export { errorRateRule } from './rules/error-rate';
 export { gasRule } from './rules/gas';
 export { ghostExecutionRule } from './rules/ghost-execution';
 export { lowBalanceRule } from './rules/low-balance';
+export { runawayRule } from './rules/runaway';
 export { sandwichRule } from './rules/sandwich';
 export { slippageRule } from './rules/slippage';
 export { staleOracleRule } from './rules/stale-oracle';

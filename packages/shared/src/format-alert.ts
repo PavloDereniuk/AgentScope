@@ -68,6 +68,7 @@ const RULE_TITLES: Record<string, string> = {
   ghost_execution: 'Swap Never Landed',
   slippage_sandwich: 'MEV Sandwich Suspected',
   low_balance: 'Wallet Running Low',
+  tx_rate_anomaly: 'Runaway Loop Suspected',
   // Pseudo-rule emitted by POST /api/agents/:id/test-alert. Not part of
   // ALERT_RULE_NAMES (never persisted), but the formatters must handle it
   // because it travels through the same telegram/webhook senders that
@@ -200,6 +201,19 @@ export function formatAlertSummary(
       if (threshold == null) return `Wallet balance ${balanceStr} below threshold`;
       const thresholdStr = `${threshold} SOL`;
       return `Wallet balance ${balanceStr} — below ${thresholdStr} threshold`;
+    }
+    case 'tx_rate_anomaly': {
+      const rate = num(payload, 'ratePerMin');
+      const threshold = num(payload, 'thresholdPerMin');
+      const txCount = num(payload, 'txCount');
+      const window = num(payload, 'windowMinutes');
+      if (rate == null) return 'Transaction rate exceeded threshold';
+      const rateStr = `${rate.toFixed(1)} tx/min`;
+      const ctxStr =
+        txCount != null && window != null ? ` (${txCount} tx in last ${fmtMinutes(window)})` : '';
+      if (!threshold || threshold <= 0) return `Bot firing ${rateStr}${ctxStr}`;
+      const ratio = rate / threshold;
+      return `Bot firing ${rateStr} — ${ratio.toFixed(1)}× above ${threshold} tx/min cap${ctxStr}`;
     }
     case 'test_alert':
       return 'If you can read this, alert delivery is working.';
@@ -341,6 +355,17 @@ export function formatAlertDetails(
         { label: 'Critical at', value: critical != null ? `${critical} SOL` : '—' },
       ];
     }
+    case 'tx_rate_anomaly': {
+      const rate = num(payload, 'ratePerMin');
+      const threshold = num(payload, 'thresholdPerMin');
+      const txCount = num(payload, 'txCount');
+      return [
+        { label: 'Rate', value: rate != null ? `${rate.toFixed(1)} tx/min` : '—' },
+        { label: 'Threshold', value: threshold != null ? `${threshold} tx/min` : '—' },
+        { label: 'Tx in window', value: txCount != null ? String(txCount) : '—' },
+        { label: 'Window', value: fmtMinutes(num(payload, 'windowMinutes')) },
+      ];
+    }
     // The smoke-test payload (`isTest`, `source`) is plumbing-only metadata —
     // dumping it as bullet rows adds noise without telling the user anything
     // they don't already know from the title and impact line.
@@ -387,6 +412,8 @@ export function formatAlertImpact(
       return 'Your bot received noticeably less output than the route quoted. The on-chain fingerprint matches a sandwich attack — an MEV bot likely front-ran the swap.';
     case 'low_balance':
       return "The bot's wallet is running low on SOL. The next priority fee or rent payment may brick the agent — refill before it stops trading silently.";
+    case 'tx_rate_anomaly':
+      return 'The bot is firing transactions far faster than expected. Most likely it is stuck in a retry loop or the LLM keeps re-deciding — every tx burns priority fees until you intervene.';
     case 'test_alert':
       return 'This is a smoke test triggered from your dashboard. No real anomaly was detected — no action needed.';
     default:
@@ -453,6 +480,11 @@ export function formatAlertAction(
       return [
         "Top up the agent's wallet with SOL.",
         'Consider lowering the priority fee strategy if balance burns too fast.',
+      ];
+    case 'tx_rate_anomaly':
+      return [
+        'Pause the bot from the dashboard while you diagnose.',
+        'Inspect recent tx + reasoning traces for the loop trigger.',
       ];
     default:
       return [];

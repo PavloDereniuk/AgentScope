@@ -25,6 +25,7 @@ const defaults = {
   sandwichSlippagePct: 2,
   // 0.005 SOL warning → 0.001 SOL critical (one-fifth).
   lowBalanceSol: 0.005,
+  txRateMaxPerMin: 30,
 };
 
 function makeCtx(overrides: {
