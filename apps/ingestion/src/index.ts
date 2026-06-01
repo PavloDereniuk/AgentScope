@@ -27,6 +27,7 @@ import { getDb } from './db';
 import type { DetectorDeps } from './detector-runner';
 import { createEventPublisher } from './event-publisher';
 import { logger } from './logger';
+import { startPartitionMaintenance } from './partition-maintenance';
 import { persistTx } from './persist';
 import type { PersistContext } from './persist';
 import { createWalletRegistry } from './registry';
@@ -225,6 +226,21 @@ async function main(): Promise<void> {
   });
   logger.info('cron evaluator started');
 
+  // Partition maintenance: roll agent_transactions partitions forward (the
+  // initial migration only seeded through 2026-09) and, when TX_RETENTION_MONTHS
+  // is set, drop months past the retention window to stay under the Supabase
+  // free-tier 500 MB cap. Daily timer + an immediate pass on boot.
+  const partitionMaintenance = startPartitionMaintenance({
+    db,
+    logger,
+    monthsAhead: config.PARTITION_MONTHS_AHEAD,
+    retentionMonths: config.TX_RETENTION_MONTHS,
+  });
+  logger.info(
+    { monthsAhead: config.PARTITION_MONTHS_AHEAD, retentionMonths: config.TX_RETENTION_MONTHS },
+    'partition maintenance started',
+  );
+
   // 14.16 — abuse signup-spike monitor. Runs even without Telegram creds
   // (logs-only mode) so local dev still shows the signal; production
   // alerts when TELEGRAM_BOT_TOKEN + TELEGRAM_ADMIN_CHAT_ID are both
@@ -277,6 +293,7 @@ async function main(): Promise<void> {
     logger.info({ signal }, 'shutting down');
     clearInterval(reconcileTimer);
     cron.stop();
+    partitionMaintenance.stop();
     abuseMonitor.stop();
     registry.stop();
     Promise.resolve(reconciling)

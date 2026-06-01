@@ -13,6 +13,23 @@ const envSchema = z.object({
 
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
 
+  // ── Partition maintenance (storage hygiene) ────────────────────────────────
+  /**
+   * How many months ahead the worker pre-creates `agent_transactions`
+   * partitions for. The initial migration only seeded through 2026-09, so
+   * without this roll-forward every tx after 2026-10 falls into the DEFAULT
+   * partition. Default 3 gives a comfortable buffer before any month opens.
+   */
+  PARTITION_MONTHS_AHEAD: z.coerce.number().int().min(0).default(3),
+  /**
+   * Retention window in months for `agent_transactions`. `0` (default)
+   * DISABLES TTL drops — dropping a user's tx history is a deliberate
+   * product decision, so it stays off until storage pressure is real. Set
+   * e.g. `3` to keep the current month plus the previous two and free older
+   * partitions, keeping the Supabase free-tier 500 MB cap in check.
+   */
+  TX_RETENTION_MONTHS: z.coerce.number().int().min(0).default(0),
+
   SOLANA_NETWORK: z.enum(['devnet', 'mainnet']).default('mainnet'),
   HELIUS_API_KEY: z.string().min(1, 'HELIUS_API_KEY is required'),
   /** HTTP JSON-RPC URL (Helius free tier). Used for getTransaction hydrate calls. */

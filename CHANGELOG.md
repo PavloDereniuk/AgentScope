@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Automatic partition maintenance** for `agent_transactions` ([`apps/ingestion/src/partition-maintenance.ts`](./apps/ingestion/src/partition-maintenance.ts), 8 tests). The ingestion worker now rolls monthly partitions forward on a daily timer (and an immediate pass on boot). This closes a latent gap: migration `0001` only seeded partitions through 2026-09 with a TODO to add a maintenance job — without it, every transaction after 2026-10-01 would have silently fallen into the DEFAULT partition, defeating partition pruning and making retention drops impossible. That window is exactly the grant's M3 (Oct–Dec 2026), so this is a prerequisite for staying inside the Supabase free-tier 500 MB cap at 25-builder / 50-agent scale.
+- **Opt-in TTL retention** for old tx partitions. When `TX_RETENTION_MONTHS > 0`, the same maintenance pass drops monthly partitions older than the window (`DROP TABLE`, reclaiming storage immediately). Disabled by default (`0`) — dropping a user's transaction history is a deliberate product decision, not a silent default. The DEFAULT partition is never dropped (regex-guarded), proven by test.
+
+### Config
+- `PARTITION_MONTHS_AHEAD` (ingestion, default `3`) — months of partitions to pre-create.
+- `TX_RETENTION_MONTHS` (ingestion, default `0` = disabled) — retention window for TTL drops.
+
+### Notes
+Roll-forward is purely additive and idempotent (`CREATE TABLE IF NOT EXISTS … PARTITION OF`), safe on every boot. Cross-driver result-shape handling mirrors `apps/api/src/routes/stats.ts` (postgres-js vs pglite). Requires the ingestion `DATABASE_URL` role to hold DDL rights on `agent_transactions` (default Supabase `postgres` role does); on a restricted role the worker logs a warning and rows fall back to the DEFAULT partition without blocking ingestion. Gate: ingestion lint clean, typecheck clean, test 49/49 (8 new).
+
 ## [0.4.2] - 2026-05-29
 
 Runaway-loop detector. Third post-hackathon roadmap release. Adds `tx_rate_anomaly` — a cron-triggered detector rule that fires when an agent's mean transaction rate over a 5-minute sliding window exceeds the configured cap (default 30 tx/min, critical at 2× → 60/min). Counts BOTH successful and failed transactions, because a stuck retry loop or a non-stopping LLM burns priority fees regardless of confirmation status. That distinction is the whole point: an existing `error_rate` alert catches the 100%-failed storm; this one catches the 50/50 success/fail storm that drains the wallet just as fast but flies under the error-rate threshold.
