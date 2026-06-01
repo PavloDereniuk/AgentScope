@@ -104,6 +104,14 @@ export interface CronDeps {
    * fire on missing data.
    */
   fetchAgentBalance?: BalanceFetcher;
+  /**
+   * Optional batch-prime for the balance cache (E.1). When wired, the cron
+   * primes every agent wallet in one chunked `getMultipleAccounts` call at
+   * the start of each cycle, so the per-agent `low_balance` reads below hit
+   * the warm cache instead of issuing one `getBalance` apiece. Paired with
+   * `fetchAgentBalance` — both come from the same `createBalanceFetcher`.
+   */
+  primeBalances?: (walletPubkeys: readonly string[]) => Promise<void>;
 }
 
 /**
@@ -131,6 +139,21 @@ export async function runCronCycle(deps: CronDeps): Promise<number> {
 
   const now = new Date();
   let totalAlerts = 0;
+
+  // E.1: batch-prime wallet balances in one (chunked) getMultipleAccounts
+  // call per cycle instead of one getBalance per agent. Collect every agent
+  // wallet and prime the shared balance cache once; the per-agent
+  // `low_balance` reads inside `evaluateCron` then hit the warm cache (zero
+  // extra RPC). Fallback-abstain is preserved end-to-end: a failed batch
+  // caches null → `fetchAgentBalance` returns null → the rule abstains.
+  if (deps.primeBalances) {
+    const wallets = allAgents
+      .map((a) => a.walletPubkey)
+      .filter((w): w is string => w != null && w.length > 0);
+    if (wallets.length > 0) {
+      await deps.primeBalances(wallets);
+    }
+  }
 
   for (const agent of allAgents) {
     const alertRules = (agent.alertRules ?? {}) as AlertRuleThresholds;

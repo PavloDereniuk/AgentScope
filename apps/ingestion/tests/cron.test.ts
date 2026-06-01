@@ -450,3 +450,83 @@ describe('cron cycle', () => {
     }
   });
 });
+
+// E.1: the cron primes the whole fleet's balances in one batch call per
+// cycle (one getMultipleAccounts instead of N getBalance), then the per-agent
+// low_balance reads hit the warm cache.
+describe('cron balance batching (E.1)', () => {
+  it('primes every agent wallet once per cycle; low_balance reads the primed value', async () => {
+    await db.delete(alerts).where(eq(alerts.agentId, staleAgentId));
+    await db.delete(alerts).where(eq(alerts.agentId, activeAgentId));
+    // Make the "stale" agent recent so stale_agent does NOT fire too —
+    // isolates the low_balance assertion to the primed balance alone.
+    await db
+      .update(agentTransactions)
+      .set({ blockTime: '2026-04-09T11:59:00Z' })
+      .where(eq(agentTransactions.agentId, staleAgentId));
+
+    // Stub the batch fetcher pair: primeBalances records the wallet list and
+    // fills a map; fetchAgentBalance reads ONLY from that map — proving the
+    // per-agent read is served by the prime, not a per-wallet RPC.
+    const primed = new Map<string, number | null>();
+    const primeCalls: string[][] = [];
+    const primeBalances = async (wallets: readonly string[]) => {
+      primeCalls.push([...wallets]);
+      for (const w of wallets) primed.set(w, 0.0005); // below 0.001 critical
+    };
+    const fetchAgentBalance = async (wallet: string) =>
+      primed.has(wallet) ? (primed.get(wallet) ?? null) : null;
+
+    const realDate = globalThis.Date;
+    const fakeNow = new Date('2026-04-09T12:00:00Z');
+    globalThis.Date = class extends realDate {
+      constructor(...args: unknown[]) {
+        if (args.length === 0) {
+          super(fakeNow.getTime());
+        } else {
+          // @ts-expect-error — spread into Date ctor
+          super(...args);
+        }
+      }
+      static override now() {
+        return fakeNow.getTime();
+      }
+    } as DateConstructor;
+
+    try {
+      await runCronCycle({
+        db,
+        logger: silentLogger,
+        defaults,
+        fetchAgentBalance,
+        primeBalances,
+      });
+
+      // Primed exactly once, covering BOTH agent wallets in one call.
+      expect(primeCalls).toHaveLength(1);
+      expect(primeCalls[0]).toEqual(
+        expect.arrayContaining([
+          '11111111111111111111111111111111',
+          '22222222222222222222222222222222',
+        ]),
+      );
+
+      // low_balance fired for the stale agent off the primed value, escalating
+      // to critical (0.0005 < 0.001 = threshold/5).
+      const low = (await db.select().from(alerts).where(eq(alerts.agentId, staleAgentId))).find(
+        (a) => a.ruleName === 'low_balance',
+      );
+      expect(low).toBeDefined();
+      expect(low?.severity).toBe('critical');
+    } finally {
+      globalThis.Date = realDate;
+      // Restore the stale agent's tx time for any later test ordering.
+      await db
+        .update(agentTransactions)
+        .set({ blockTime: '2026-04-09T11:29:00Z' })
+        .where(eq(agentTransactions.agentId, staleAgentId));
+      await db.delete(alerts).where(eq(alerts.agentId, staleAgentId));
+      await db.delete(alerts).where(eq(alerts.agentId, activeAgentId));
+    }
+  });
+});

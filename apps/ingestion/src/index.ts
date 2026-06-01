@@ -104,11 +104,12 @@ async function main(): Promise<void> {
     connection: httpConnection,
     logger,
   });
-  // Wallet-balance lookup for the low_balance rule (A.2). Shares the same
-  // HTTP-only Connection as the slot-neighbour fetcher — getBalance is a
-  // cheap JSON-RPC call and stacks under the Helius free tier without
-  // pushing us anywhere near the 100 req/sec cap (1 call per agent per
-  // 60s cycle, cached for 25s).
+  // Wallet-balance lookup for the low_balance rule (A.2 + E.1). Shares the
+  // same HTTP-only Connection as the slot-neighbour fetcher. The cron primes
+  // the whole fleet via one chunked getMultipleAccounts per cycle (E.1), so
+  // RPC cost is ⌈agents/100⌉ calls per 60s cycle — one call up to 100 agents,
+  // a ~50× cut from the old per-agent getBalance and the key to staying inside
+  // the Helius free-tier credit budget at grant-M3 scale.
   const balanceFetcher = createBalanceFetcher({
     connection: httpConnection,
     logger,
@@ -220,7 +221,8 @@ async function main(): Promise<void> {
     db,
     logger,
     defaults: DETECTOR_DEFAULTS,
-    fetchAgentBalance: balanceFetcher,
+    fetchAgentBalance: balanceFetcher.fetch,
+    primeBalances: balanceFetcher.primeBalances,
     ...(telegramSender ? { alerter: { telegram: telegramSender } } : {}),
     ...(publishEvent ? { publishEvent } : {}),
   });
