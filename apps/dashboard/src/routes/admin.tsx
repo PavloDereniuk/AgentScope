@@ -88,6 +88,18 @@ interface AlertBreakdownRow {
   count: number;
 }
 
+/** Single consolidated payload — see GET /api/admin/summary. One request
+ *  instead of six parallel ones, so the panel doesn't flood the API's small
+ *  connection pool and stall. */
+interface AdminSummary {
+  overview: Overview;
+  milestones: Milestones;
+  growth: Growth;
+  infra: Infra;
+  builders: { builders: BuilderRow[] };
+  alertsBreakdown: { window: string; breakdown: AlertBreakdownRow[] };
+}
+
 /**
  * Owner-only grant-ops panel (Cluster F). Aggregates platform-wide metrics —
  * builder counts vs grant milestones, growth, infra headroom, per-builder
@@ -101,35 +113,9 @@ interface AlertBreakdownRow {
 export function AdminPage() {
   const { isOwner, isLoading: ownerLoading } = useIsOwner();
 
-  const overview = useQuery({
-    queryKey: ['admin', 'overview'],
-    queryFn: () => apiClient.get<Overview>('/api/admin/overview'),
-    enabled: isOwner,
-  });
-  const milestones = useQuery({
-    queryKey: ['admin', 'milestones'],
-    queryFn: () => apiClient.get<Milestones>('/api/admin/milestones'),
-    enabled: isOwner,
-  });
-  const growth = useQuery({
-    queryKey: ['admin', 'growth'],
-    queryFn: () => apiClient.get<Growth>('/api/admin/growth?window=30d'),
-    enabled: isOwner,
-  });
-  const infra = useQuery({
-    queryKey: ['admin', 'infra'],
-    queryFn: () => apiClient.get<Infra>('/api/admin/infra'),
-    enabled: isOwner,
-  });
-  const builders = useQuery({
-    queryKey: ['admin', 'builders'],
-    queryFn: () => apiClient.get<{ builders: BuilderRow[] }>('/api/admin/builders'),
-    enabled: isOwner,
-  });
-  const breakdown = useQuery({
-    queryKey: ['admin', 'alerts-breakdown'],
-    queryFn: () =>
-      apiClient.get<{ breakdown: AlertBreakdownRow[] }>('/api/admin/alerts-breakdown?window=7d'),
+  const summary = useQuery({
+    queryKey: ['admin', 'summary'],
+    queryFn: () => apiClient.get<AdminSummary>('/api/admin/summary'),
     enabled: isOwner,
   });
 
@@ -137,8 +123,13 @@ export function AdminPage() {
     return <Navigate to="/" replace />;
   }
 
-  const o = overview.data;
-  const m = milestones.data;
+  const o = summary.data?.overview;
+  const m = summary.data?.milestones;
+  const growthData = summary.data?.growth;
+  const infraData = summary.data?.infra;
+  const buildersData = summary.data?.builders;
+  const breakdownData = summary.data?.alertsBreakdown;
+  const loading = summary.isLoading;
 
   return (
     <div className="p-7">
@@ -213,24 +204,24 @@ export function AdminPage() {
       <div className="mb-5 grid grid-cols-[1.5fr_1fr] gap-4 max-[1100px]:grid-cols-1">
         <Card
           title="Builder growth · 30d"
-          meta={growth.data ? `${growth.data.points.length} days` : ''}
+          meta={growthData ? `${growthData.points.length} days` : ''}
         >
-          <GrowthChart data={growth.data} />
+          <GrowthChart data={growthData} />
         </Card>
         <Card title="Infra headroom" meta="free-tier caps">
-          <InfraPanel infra={infra.data} loading={infra.isLoading} />
+          <InfraPanel infra={infraData} loading={loading} />
         </Card>
       </div>
 
       <div className="mb-5 grid grid-cols-[1.5fr_1fr] gap-4 max-[1100px]:grid-cols-1">
         <Card
           title="Builders · engagement"
-          meta={builders.data ? `${builders.data.builders.length} total` : ''}
+          meta={buildersData ? `${buildersData.builders.length} total` : ''}
         >
-          <BuildersTable rows={builders.data?.builders ?? []} loading={builders.isLoading} />
+          <BuildersTable rows={buildersData?.builders ?? []} loading={loading} />
         </Card>
         <Card title="Alerts · by rule × severity" meta="7d">
-          <AlertsBreakdown rows={breakdown.data?.breakdown ?? []} loading={breakdown.isLoading} />
+          <AlertsBreakdown rows={breakdownData?.breakdown ?? []} loading={loading} />
         </Card>
       </div>
     </div>

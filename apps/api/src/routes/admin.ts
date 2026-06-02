@@ -135,314 +135,313 @@ function computeMilestones(
   return { targets: flagged, nextTarget: next, reachedCount, progressToNext };
 }
 
+type BuilderCounts = { registered: number; active: number };
+
+// ─── Aggregate fetchers ─────────────────────────────────────────────────────
+// Extracted from the route handlers so both the individual endpoints AND the
+// consolidated `/summary` endpoint share one implementation. Builder counts
+// are passed in (not refetched) so `/summary` computes them once for both the
+// overview and the milestones.
+
+async function getOverview(db: Database, builders: BuilderCounts) {
+  const since24h = new Date(Date.now() - WINDOW_MS['24h']).toISOString();
+  const [statusRows, txRows, alertRows, spanRows] = await Promise.all([
+    db.execute(sql`select status, cast(count(*) as int) as n from ${agents} group by status`),
+    db.execute(sql`
+      select
+        cast(count(*) as int) as total,
+        cast(count(*) filter (where block_time >= ${since24h}) as int) as last24h
+      from agent_transactions
+    `),
+    db
+      .select({ severity: alerts.severity, n: sql<number>`cast(count(*) as int)` })
+      .from(alerts)
+      .where(sql`${alerts.triggeredAt} >= ${since24h}`)
+      .groupBy(alerts.severity),
+    db.execute(sql`select cast(count(*) as int) as n from reasoning_logs`),
+  ]);
+
+  const statusByName = Object.fromEntries(
+    unwrapRows<{ status: string; n: number | string }>(statusRows).map((r) => [
+      r.status,
+      Number(r.n),
+    ]),
+  );
+  const txRow = unwrapRows<{ total: number | string; last24h: number | string }>(txRows)[0];
+  const alertsBySeverity = Object.fromEntries(alertRows.map((r) => [r.severity, Number(r.n)]));
+  const spanRow = unwrapRows<{ n: number | string }>(spanRows)[0];
+
+  const liveAgents = statusByName.live ?? 0;
+  const staleAgents = statusByName.stale ?? 0;
+  const failedAgents = statusByName.failed ?? 0;
+
+  return {
+    builders,
+    agents: {
+      total: liveAgents + staleAgents + failedAgents,
+      live: liveAgents,
+      stale: staleAgents,
+      failed: failedAgents,
+    },
+    transactions: {
+      total: txRow ? Number(txRow.total) : 0,
+      last24h: txRow ? Number(txRow.last24h) : 0,
+    },
+    alerts24h: {
+      critical: alertsBySeverity.critical ?? 0,
+      warning: alertsBySeverity.warning ?? 0,
+      info: alertsBySeverity.info ?? 0,
+    },
+    reasoningSpansTotal: spanRow ? Number(spanRow.n) : 0,
+  };
+}
+
+function getMilestonesPayload(builders: BuilderCounts, milestones: AdminMilestoneConfig) {
+  return {
+    builders,
+    deadline: milestones.deadline,
+    registered: computeMilestones(builders.registered, milestones.targets),
+    active: computeMilestones(builders.active, milestones.targets),
+  };
+}
+
+async function getGrowth(db: Database, window: '7d' | '30d') {
+  const since = new Date(Date.now() - WINDOW_MS[window]).toISOString();
+  const [seriesRaw, baselineRaw] = await Promise.all([
+    db.execute(sql`
+      with buckets as (
+        select t from generate_series(
+          date_trunc('day', (${since})::timestamptz),
+          date_trunc('day', now()),
+          '1 day'::interval
+        ) as t
+      ),
+      users_agg as (
+        select date_trunc('day', created_at) as d, count(*) as c
+        from users where created_at >= ${since} group by 1
+      ),
+      agents_agg as (
+        select date_trunc('day', created_at) as d, count(*) as c
+        from agents where created_at >= ${since} group by 1
+      ),
+      builder_join as (
+        select user_id, min(created_at) as joined from agents group by user_id
+      ),
+      builders_agg as (
+        select date_trunc('day', joined) as d, count(*) as c
+        from builder_join where joined >= ${since} group by 1
+      )
+      select
+        to_char(b.t at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as t,
+        cast(coalesce(u.c, 0) as int) as new_users,
+        cast(coalesce(a.c, 0) as int) as new_agents,
+        cast(coalesce(bu.c, 0) as int) as new_builders
+      from buckets b
+      left join users_agg u on b.t = u.d
+      left join agents_agg a on b.t = a.d
+      left join builders_agg bu on b.t = bu.d
+      order by b.t asc
+    `),
+    db.execute(sql`
+      select cast(count(*) as int) as n from (
+        select user_id, min(created_at) as joined from agents group by user_id
+      ) bj where joined < ${since}
+    `),
+  ]);
+
+  const baseline = Number(unwrapRows<{ n: number | string }>(baselineRaw)[0]?.n ?? 0) || 0;
+  const rows = unwrapRows<{
+    t: string;
+    new_users: number | string;
+    new_agents: number | string;
+    new_builders: number | string;
+  }>(seriesRaw);
+
+  let cumulative = baseline;
+  const points = rows.map((r) => {
+    cumulative += Number(r.new_builders);
+    return {
+      t: r.t,
+      newUsers: Number(r.new_users),
+      newAgents: Number(r.new_agents),
+      newBuilders: Number(r.new_builders),
+      cumulativeBuilders: cumulative,
+    };
+  });
+
+  return { window, baselineBuilders: baseline, points };
+}
+
+async function getInfra(db: Database, logger: Logger) {
+  let dbBytes: number | null = null;
+  try {
+    const raw = await db.execute(sql`select pg_database_size(current_database()) as bytes`);
+    const row = unwrapRows<{ bytes: number | string }>(raw)[0];
+    dbBytes = row ? Number(row.bytes) : null;
+  } catch (err) {
+    logger.debug({ err }, 'pg_database_size unavailable — infra db size degraded to null');
+  }
+
+  const since7d = new Date(Date.now() - WINDOW_MS['7d']).toISOString();
+  const probeRaw = await db.execute(sql`
+    select
+      extract(epoch from (now() - max(block_time))) as lag_seconds,
+      cast(count(*) filter (where block_time >= ${since7d}) as int) as tx_7d
+    from agent_transactions
+  `);
+  const probe = unwrapRows<{ lag_seconds: number | string | null; tx_7d: number | string }>(
+    probeRaw,
+  )[0];
+  const ingestLagSeconds =
+    probe?.lag_seconds == null ? null : Math.max(0, Math.round(Number(probe.lag_seconds)));
+  const tx7d = probe ? Number(probe.tx_7d) : 0;
+  const avgTxPerDay = tx7d / 7;
+
+  const monitoredRaw = await db.execute(
+    sql`select cast(count(*) as int) as n from ${agents} where status <> 'failed'`,
+  );
+  const monitoredAgents = Number(unwrapRows<{ n: number | string }>(monitoredRaw)[0]?.n ?? 0);
+
+  const dbUsedPct = dbBytes == null ? null : dbBytes / DB_CAP_BYTES;
+  const dailyGrowthBytes = avgTxPerDay * BYTES_PER_TX_ESTIMATE;
+  const projectedDaysToCap =
+    dbBytes == null || dailyGrowthBytes <= 0
+      ? null
+      : Math.max(0, Math.round((DB_CAP_BYTES - dbBytes) / dailyGrowthBytes));
+
+  return {
+    db: {
+      bytes: dbBytes,
+      capBytes: DB_CAP_BYTES,
+      usedPct: dbUsedPct,
+      avgTxPerDay7d: Math.round(avgTxPerDay * 100) / 100,
+      projectedDaysToCap,
+    },
+    helius: { monitoredAgents, agentCeiling: HELIUS_AGENT_CEILING },
+    ingestLagSeconds,
+  };
+}
+
+async function getBuildersTable(db: Database) {
+  const since30d = new Date(Date.now() - WINDOW_MS['30d']).toISOString();
+  const since7d = new Date(Date.now() - WINDOW_MS['7d']).toISOString();
+  const raw = await db.execute(sql`
+    select
+      u.id as user_id,
+      u.privy_did,
+      u.email,
+      to_char(u.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      cast(count(distinct ag.id) as int) as agents,
+      cast(count(t.id) filter (where t.block_time >= ${since7d}) as int) as tx_7d,
+      cast(count(t.id) as int) as tx_30d,
+      to_char(max(t.block_time) at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_tx
+    from users u
+    left join agents ag on ag.user_id = u.id
+    -- Bound the join to the 30d window directly (not just in a filter): an
+    -- unbounded join scans every partition of a growing tx table and holds
+    -- a pooled connection for seconds. We only report tx7d/tx30d/dormant, so
+    -- rows older than 30d are irrelevant. tx_30d is then the full join count.
+    left join agent_transactions t
+      on t.agent_id = ag.id and t.block_time >= ${since30d}
+    group by u.id, u.privy_did, u.email, u.created_at
+    order by tx_7d desc, agents desc, u.created_at asc
+  `);
+
+  const builders = unwrapRows<{
+    user_id: string;
+    privy_did: string;
+    email: string | null;
+    created_at: string;
+    agents: number | string;
+    tx_7d: number | string;
+    tx_30d: number | string;
+    last_tx: string | null;
+  }>(raw).map((r) => ({
+    userId: r.user_id,
+    privyDid: r.privy_did,
+    email: r.email,
+    createdAt: r.created_at,
+    agents: Number(r.agents),
+    tx7d: Number(r.tx_7d),
+    tx30d: Number(r.tx_30d),
+    lastTx: r.last_tx,
+    dormant: Number(r.tx_30d) === 0,
+  }));
+
+  return { builders };
+}
+
+async function getAlertsBreakdown(db: Database, window: '24h' | '7d' | '30d') {
+  const since = new Date(Date.now() - WINDOW_MS[window]).toISOString();
+  const rows = await db
+    .select({
+      rule: alerts.ruleName,
+      severity: alerts.severity,
+      n: sql<number>`cast(count(*) as int)`,
+    })
+    .from(alerts)
+    .where(sql`${alerts.triggeredAt} >= ${since}`)
+    .groupBy(alerts.ruleName, alerts.severity);
+
+  return {
+    window,
+    breakdown: rows.map((r) => ({ rule: r.rule, severity: r.severity, count: Number(r.n) })),
+  };
+}
+
 export function createAdminRouter(deps: AdminRouterDeps) {
   const { db, milestones, logger } = deps;
   const router = new Hono<ApiEnv>();
 
-  /**
-   * GET /api/admin/overview — platform-wide KPI snapshot.
-   * Builders (registered + active), agent status breakdown, all-time and 24h
-   * tx, 24h alert severities, total reasoning spans.
-   */
-  router.get('/overview', async (c) => {
-    const since24h = new Date(Date.now() - WINDOW_MS['24h']).toISOString();
+  // Each endpoint delegates to a module-level fetcher (shared with /summary).
+  router.get('/overview', async (c) => c.json(await getOverview(db, await fetchBuilderCounts(db))));
 
-    const [builders, statusRows, txRows, alertRows, spanRows] = await Promise.all([
-      fetchBuilderCounts(db),
-      db.execute(sql`select status, cast(count(*) as int) as n from ${agents} group by status`),
-      db.execute(sql`
-        select
-          cast(count(*) as int) as total,
-          cast(count(*) filter (where block_time >= ${since24h}) as int) as last24h
-        from agent_transactions
-      `),
-      db
-        .select({
-          severity: alerts.severity,
-          n: sql<number>`cast(count(*) as int)`,
-        })
-        .from(alerts)
-        .where(sql`${alerts.triggeredAt} >= ${since24h}`)
-        .groupBy(alerts.severity),
-      db.execute(sql`select cast(count(*) as int) as n from reasoning_logs`),
-    ]);
+  router.get('/milestones', async (c) =>
+    c.json(getMilestonesPayload(await fetchBuilderCounts(db), milestones)),
+  );
 
-    const statusByName = Object.fromEntries(
-      unwrapRows<{ status: string; n: number | string }>(statusRows).map((r) => [
-        r.status,
-        Number(r.n),
-      ]),
-    );
-    const txRow = unwrapRows<{ total: number | string; last24h: number | string }>(txRows)[0];
-    const alertsBySeverity = Object.fromEntries(alertRows.map((r) => [r.severity, Number(r.n)]));
-    const spanRow = unwrapRows<{ n: number | string }>(spanRows)[0];
-
-    const liveAgents = statusByName.live ?? 0;
-    const staleAgents = statusByName.stale ?? 0;
-    const failedAgents = statusByName.failed ?? 0;
-
-    return c.json({
-      builders,
-      agents: {
-        total: liveAgents + staleAgents + failedAgents,
-        live: liveAgents,
-        stale: staleAgents,
-        failed: failedAgents,
-      },
-      transactions: {
-        total: txRow ? Number(txRow.total) : 0,
-        last24h: txRow ? Number(txRow.last24h) : 0,
-      },
-      alerts24h: {
-        critical: alertsBySeverity.critical ?? 0,
-        warning: alertsBySeverity.warning ?? 0,
-        info: alertsBySeverity.info ?? 0,
-      },
-      reasoningSpansTotal: spanRow ? Number(spanRow.n) : 0,
-    });
-  });
-
-  /**
-   * GET /api/admin/milestones — grant ladder progress for both builder
-   * definitions, plus the configured targets + deadline.
-   */
-  router.get('/milestones', async (c) => {
-    const builders = await fetchBuilderCounts(db);
-    return c.json({
-      builders,
-      deadline: milestones.deadline,
-      registered: computeMilestones(builders.registered, milestones.targets),
-      active: computeMilestones(builders.active, milestones.targets),
-    });
-  });
-
-  /**
-   * GET /api/admin/growth?window=7d|30d — daily new users / agents / builders
-   * with a running cumulative builder count. `baselineBuilders` is the count
-   * of builders who joined before the window starts, so the cumulative line
-   * is correct from the first bucket rather than starting at zero.
-   */
   router.get(
     '/growth',
     zValidator('query', growthQuerySchema, (result) => {
       if (!result.success) throw new HTTPException(422, { message: 'invalid window' });
     }),
-    async (c) => {
-      const { window } = c.req.valid('query');
-      const since = new Date(Date.now() - WINDOW_MS[window]).toISOString();
-
-      const [seriesRaw, baselineRaw] = await Promise.all([
-        db.execute(sql`
-          with buckets as (
-            select t from generate_series(
-              date_trunc('day', (${since})::timestamptz),
-              date_trunc('day', now()),
-              '1 day'::interval
-            ) as t
-          ),
-          users_agg as (
-            select date_trunc('day', created_at) as d, count(*) as c
-            from users where created_at >= ${since} group by 1
-          ),
-          agents_agg as (
-            select date_trunc('day', created_at) as d, count(*) as c
-            from agents where created_at >= ${since} group by 1
-          ),
-          builder_join as (
-            select user_id, min(created_at) as joined from agents group by user_id
-          ),
-          builders_agg as (
-            select date_trunc('day', joined) as d, count(*) as c
-            from builder_join where joined >= ${since} group by 1
-          )
-          select
-            to_char(b.t at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as t,
-            cast(coalesce(u.c, 0) as int) as new_users,
-            cast(coalesce(a.c, 0) as int) as new_agents,
-            cast(coalesce(bu.c, 0) as int) as new_builders
-          from buckets b
-          left join users_agg u on b.t = u.d
-          left join agents_agg a on b.t = a.d
-          left join builders_agg bu on b.t = bu.d
-          order by b.t asc
-        `),
-        db.execute(sql`
-          select cast(count(*) as int) as n from (
-            select user_id, min(created_at) as joined from agents group by user_id
-          ) bj where joined < ${since}
-        `),
-      ]);
-
-      const baseline = Number(unwrapRows<{ n: number | string }>(baselineRaw)[0]?.n ?? 0) || 0;
-      const rows = unwrapRows<{
-        t: string;
-        new_users: number | string;
-        new_agents: number | string;
-        new_builders: number | string;
-      }>(seriesRaw);
-
-      let cumulative = baseline;
-      const points = rows.map((r) => {
-        cumulative += Number(r.new_builders);
-        return {
-          t: r.t,
-          newUsers: Number(r.new_users),
-          newAgents: Number(r.new_agents),
-          newBuilders: Number(r.new_builders),
-          cumulativeBuilders: cumulative,
-        };
-      });
-
-      return c.json({ window, baselineBuilders: baseline, points });
-    },
+    async (c) => c.json(await getGrowth(db, c.req.valid('query').window)),
   );
 
-  /**
-   * GET /api/admin/infra — free-tier headroom snapshot. Every external probe
-   * (pg_database_size) is wrapped so a permission/driver hiccup degrades the
-   * field to null rather than 500-ing the whole panel.
-   */
-  router.get('/infra', async (c) => {
-    let dbBytes: number | null = null;
-    try {
-      const raw = await db.execute(sql`select pg_database_size(current_database()) as bytes`);
-      const row = unwrapRows<{ bytes: number | string }>(raw)[0];
-      dbBytes = row ? Number(row.bytes) : null;
-    } catch (err) {
-      logger.debug({ err }, 'pg_database_size unavailable — infra db size degraded to null');
-    }
+  router.get('/infra', async (c) => c.json(await getInfra(db, logger)));
 
-    // Ingest lag + recent tx rate in one trip. Lag is null when no tx exist.
-    const since7d = new Date(Date.now() - WINDOW_MS['7d']).toISOString();
-    const probeRaw = await db.execute(sql`
-      select
-        extract(epoch from (now() - max(block_time))) as lag_seconds,
-        cast(count(*) filter (where block_time >= ${since7d}) as int) as tx_7d
-      from agent_transactions
-    `);
-    const probe = unwrapRows<{ lag_seconds: number | string | null; tx_7d: number | string }>(
-      probeRaw,
-    )[0];
-    const ingestLagSeconds =
-      probe?.lag_seconds == null ? null : Math.max(0, Math.round(Number(probe.lag_seconds)));
-    const tx7d = probe ? Number(probe.tx_7d) : 0;
-    const avgTxPerDay = tx7d / 7;
+  router.get('/builders', async (c) => c.json(await getBuildersTable(db)));
 
-    // Monitored agents = those the balance-cron polls (not failed). Compared
-    // against the Helius credit ceiling so the owner sees how close we are.
-    const monitoredRaw = await db.execute(
-      sql`select cast(count(*) as int) as n from ${agents} where status <> 'failed'`,
-    );
-    const monitoredAgents = Number(unwrapRows<{ n: number | string }>(monitoredRaw)[0]?.n ?? 0);
-
-    const dbUsedPct = dbBytes == null ? null : dbBytes / DB_CAP_BYTES;
-    // Projection only when we have a size AND a non-trivial tx rate. Null
-    // means "not enough signal", which the UI renders as "—" rather than ∞.
-    const dailyGrowthBytes = avgTxPerDay * BYTES_PER_TX_ESTIMATE;
-    const projectedDaysToCap =
-      dbBytes == null || dailyGrowthBytes <= 0
-        ? null
-        : Math.max(0, Math.round((DB_CAP_BYTES - dbBytes) / dailyGrowthBytes));
-
-    return c.json({
-      db: {
-        bytes: dbBytes,
-        capBytes: DB_CAP_BYTES,
-        usedPct: dbUsedPct,
-        avgTxPerDay7d: Math.round(avgTxPerDay * 100) / 100,
-        projectedDaysToCap,
-      },
-      helius: {
-        monitoredAgents,
-        agentCeiling: HELIUS_AGENT_CEILING,
-      },
-      ingestLagSeconds,
-    });
-  });
-
-  /**
-   * GET /api/admin/builders — per-builder engagement table. At grant scale
-   * (≤ tens of agents) the agents⋈tx join is cheap; revisit with a
-   * materialized rollup only if the fleet grows an order of magnitude.
-   * `dormant` = no tx in the last 30 days (or never).
-   */
-  router.get('/builders', async (c) => {
-    const since30d = new Date(Date.now() - WINDOW_MS['30d']).toISOString();
-    const since7d = new Date(Date.now() - WINDOW_MS['7d']).toISOString();
-    const raw = await db.execute(sql`
-      select
-        u.id as user_id,
-        u.privy_did,
-        u.email,
-        to_char(u.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
-        cast(count(distinct ag.id) as int) as agents,
-        cast(count(t.id) filter (where t.block_time >= ${since7d}) as int) as tx_7d,
-        cast(count(t.id) as int) as tx_30d,
-        to_char(max(t.block_time) at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_tx
-      from users u
-      left join agents ag on ag.user_id = u.id
-      -- Bound the join to the 30d window directly (not just in a filter): an
-      -- unbounded join scans every partition of a growing tx table and holds
-      -- a pooled connection for seconds. We only report tx7d/tx30d/dormant, so
-      -- rows older than 30d are irrelevant. tx_30d is then the full join count.
-      left join agent_transactions t
-        on t.agent_id = ag.id and t.block_time >= ${since30d}
-      group by u.id, u.privy_did, u.email, u.created_at
-      order by tx_7d desc, agents desc, u.created_at asc
-    `);
-
-    const builders = unwrapRows<{
-      user_id: string;
-      privy_did: string;
-      email: string | null;
-      created_at: string;
-      agents: number | string;
-      tx_7d: number | string;
-      tx_30d: number | string;
-      last_tx: string | null;
-    }>(raw).map((r) => ({
-      userId: r.user_id,
-      privyDid: r.privy_did,
-      email: r.email,
-      createdAt: r.created_at,
-      agents: Number(r.agents),
-      tx7d: Number(r.tx_7d),
-      tx30d: Number(r.tx_30d),
-      lastTx: r.last_tx,
-      dormant: Number(r.tx_30d) === 0,
-    }));
-
-    return c.json({ builders });
-  });
-
-  /**
-   * GET /api/admin/alerts-breakdown?window=24h|7d|30d — alert counts pivoted
-   * by rule × severity across the whole platform. Flat array; the UI pivots.
-   */
   router.get(
     '/alerts-breakdown',
     zValidator('query', breakdownQuerySchema, (result) => {
       if (!result.success) throw new HTTPException(422, { message: 'invalid window' });
     }),
-    async (c) => {
-      const { window } = c.req.valid('query');
-      const since = new Date(Date.now() - WINDOW_MS[window]).toISOString();
-      const rows = await db
-        .select({
-          rule: alerts.ruleName,
-          severity: alerts.severity,
-          n: sql<number>`cast(count(*) as int)`,
-        })
-        .from(alerts)
-        .where(sql`${alerts.triggeredAt} >= ${since}`)
-        .groupBy(alerts.ruleName, alerts.severity);
-
-      return c.json({
-        window,
-        breakdown: rows.map((r) => ({ rule: r.rule, severity: r.severity, count: Number(r.n) })),
-      });
-    },
+    async (c) => c.json(await getAlertsBreakdown(db, c.req.valid('query').window)),
   );
+
+  // Consolidated single-request payload for the dashboard panel. Runs the
+  // aggregate groups SEQUENTIALLY (one group at a time) rather than letting the
+  // browser fire six parallel requests at a 5-connection pool — that contention
+  // was stalling the whole panel. Builder counts are computed once and shared
+  // by overview + milestones.
+  router.get('/summary', async (c) => {
+    const builders = await fetchBuilderCounts(db);
+    const overview = await getOverview(db, builders);
+    const milestonesPayload = getMilestonesPayload(builders, milestones);
+    const growth = await getGrowth(db, '30d');
+    const infra = await getInfra(db, logger);
+    const buildersTable = await getBuildersTable(db);
+    const alertsBreakdown = await getAlertsBreakdown(db, '7d');
+    return c.json({
+      overview,
+      milestones: milestonesPayload,
+      growth,
+      infra,
+      builders: buildersTable,
+      alertsBreakdown,
+    });
+  });
 
   return router;
 }

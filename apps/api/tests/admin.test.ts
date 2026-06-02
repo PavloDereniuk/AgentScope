@@ -322,3 +322,47 @@ describe('GET /api/admin/growth + /builders + /alerts-breakdown', () => {
     });
   });
 });
+
+describe('GET /api/admin/summary', () => {
+  let ctx: TestApp;
+  beforeEach(async () => {
+    ctx = await setup();
+  });
+  afterEach(async () => {
+    await ctx.testDb.close();
+  });
+
+  it('returns every panel section in a single owner-gated payload', async () => {
+    const alice = await createAgent(ctx, ALICE, 'A', 'So11111111111111111111111111111111111111112');
+    await insertTx(ctx, alice, 'sig-a1');
+    await createAgent(ctx, BOB, 'B', 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
+
+    const res = await ctx.app.request('/api/admin/summary', { headers: bearer(OWNER) });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      overview: {
+        builders: { registered: number; active: number };
+        transactions: { total: number };
+      };
+      milestones: { registered: { reachedCount: number } };
+      growth: { points: unknown[] };
+      infra: { db: { capBytes: number } };
+      builders: { builders: unknown[] };
+      alertsBreakdown: { window: string };
+    };
+    // Same numbers the individual endpoints would return — proves the
+    // consolidated route shares the extracted fetchers.
+    expect(body.overview.builders).toEqual({ registered: 2, active: 1 });
+    expect(body.overview.transactions.total).toBe(1);
+    expect(body.milestones.registered.reachedCount).toBe(0); // 2 builders < M1=4
+    expect(body.growth.points.length).toBeGreaterThan(0);
+    expect(body.infra.db.capBytes).toBe(500 * 1024 * 1024);
+    expect(body.builders.builders.length).toBe(2);
+    expect(body.alertsBreakdown.window).toBe('7d');
+  });
+
+  it('is owner-gated like the rest of /admin', async () => {
+    const res = await ctx.app.request('/api/admin/summary', { headers: bearer(ALICE) });
+    expect(res.status).toBe(403);
+  });
+});
