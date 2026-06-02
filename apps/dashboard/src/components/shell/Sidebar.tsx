@@ -2,6 +2,7 @@ import { useAlertsSeenAt } from '@/lib/alerts-seen';
 import { apiClient } from '@/lib/api-client';
 import { useAuthActions } from '@/lib/auth-actions';
 import { useAuth } from '@/lib/privy';
+import { useIsOwner } from '@/lib/use-is-owner';
 import { cn } from '@/lib/utils';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -12,6 +13,7 @@ import {
   LogOut,
   type LucideIcon,
   Settings as SettingsIcon,
+  ShieldCheck,
 } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 
@@ -56,6 +58,9 @@ const NAV_ITEMS: NavItemDef[] = [
 export function Sidebar() {
   const { user } = useAuth();
   const { signOut, isSigningOut } = useAuthActions();
+  // Owner-only admin nav. `useIsOwner` resolves via /api/me, so the owner DID
+  // never reaches the client bundle — non-owners simply never see the item.
+  const { isOwner } = useIsOwner();
 
   const agentsQuery = useQuery({
     queryKey: ['agents'],
@@ -135,6 +140,12 @@ export function Sidebar() {
             </NavLink>
           );
         })}
+        {isOwner ? (
+          <NavLink to="/admin" className={({ isActive }) => sideItemClass(isActive)}>
+            <ShieldCheck className="h-3.5 w-3.5 shrink-0" />
+            <span>admin</span>
+          </NavLink>
+        ) : null}
       </nav>
 
       {/* Recent agents */}

@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import { Layout } from './components/Layout';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { TweaksPanel } from './components/TweaksPanel';
+import { AdminPage } from './routes/admin';
 import { AgentDetailPage } from './routes/agent-detail';
 import { AgentsPage } from './routes/agents';
 import { AlertsPage } from './routes/alerts';
@@ -27,6 +28,9 @@ export function App() {
           <Route path="reasoning" element={<ReasoningPage />} />
           <Route path="alerts" element={<AlertsPage />} />
           <Route path="settings" element={<SettingsPage />} />
+          {/* Owner-only — AdminPage redirects non-owners to / via useIsOwner;
+              the API enforces the real 403 boundary regardless. */}
+          <Route path="admin" element={<AdminPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

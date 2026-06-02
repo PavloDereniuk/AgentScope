@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Owner-only admin / grant-ops panel** (Cluster F — `/admin` in the dashboard, 14 API tests). Unlike the per-user dashboard (Privy + RLS scoped to `user_id`), the admin surface aggregates platform-wide metrics across every builder, for reporting the Solana Foundation Ukraine grant milestones (M1=4 → M2=10 → M3=25 builders, deadline 2026-08-01). The hero is milestone progress tracked under **two** builder definitions side by side: *registered* (distinct users with ≥1 agent) and *active* (≥1 transaction or reasoning span) — the owner files whichever is appropriate per milestone. Plus: a builder-growth chart (30d), infra headroom (DB size vs the Supabase 500 MB cap with a days-to-cap projection, Helius monitored-agents vs the ~23-agent credit ceiling, ingest lag), a per-builder engagement table (active/dormant), and an alerts breakdown by rule × severity.
+- **`GET /api/me`** → `{ isOwner }` — lets the dashboard reveal the `/admin` nav and guard the route without ever shipping the owner DID list to the client bundle (the server stays the single source of truth).
+
+### Security
+- New `requireOwner` middleware gates every `/api/admin/*` route. It layers on top of `requireAuth` and checks membership of the existing `OWNER_PRIVY_DID_SET` (the same allowlist that already bypasses `MAX_AGENTS_PER_USER`) — non-owners get a flat `403` with no body, so the admin endpoint set is not enumerable. Deliberately not an RBAC system: AgentScope is single-owner; SSO/RBAC stays out of scope.
+
+### Config
+- `ADMIN_MILESTONE_TARGETS` (api, default `4,10,25`) — comma-separated milestone ladder, parsed + sorted ascending at boot.
+- `ADMIN_MILESTONE_DEADLINE` (api, default `2026-08-01`) — ISO deadline shown with a countdown.
+
+### Notes
+Admin aggregations mirror the `routes/stats.ts` style (parallel `Promise.all`, `generate_series` for dense daily series) but omit the per-user filter — the API connection scopes ownership in application code, not RLS, so cross-user reads are a query change, not an RLS bypass. `pg_database_size` is wrapped so a permission/driver hiccup degrades the DB-size field to `null` rather than 500-ing the whole panel. No new dependencies, no schema change. Frontend reuses the existing `Kpi`/`KpiRow`, Recharts, and dark OKLCH styling.
+
 - **Automatic partition maintenance** for `agent_transactions` ([`apps/ingestion/src/partition-maintenance.ts`](./apps/ingestion/src/partition-maintenance.ts), 8 tests). The ingestion worker now rolls monthly partitions forward on a daily timer (and an immediate pass on boot). This closes a latent gap: migration `0001` only seeded partitions through 2026-09 with a TODO to add a maintenance job — without it, every transaction after 2026-10-01 would have silently fallen into the DEFAULT partition, defeating partition pruning and making retention drops impossible. That window is exactly the grant's M3 (Oct–Dec 2026), so this is a prerequisite for staying inside the Supabase free-tier 500 MB cap at 25-builder / 50-agent scale.
 - **Opt-in TTL retention** for old tx partitions. When `TX_RETENTION_MONTHS > 0`, the same maintenance pass drops monthly partitions older than the window (`DROP TABLE`, reclaiming storage immediately). Disabled by default (`0`) — dropping a user's transaction history is a deliberate product decision, not a silent default. The DEFAULT partition is never dropped (regex-guarded), proven by test.
 
