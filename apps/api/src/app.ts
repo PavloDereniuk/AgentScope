@@ -21,7 +21,9 @@ import { type SseBus, busEventSchema } from './lib/sse-bus';
 import { type Logger, logger as defaultLogger } from './logger';
 import { type ApiEnv, requireAuth } from './middleware/auth';
 import { registerErrorHandlers } from './middleware/error';
+import { isOwner, requireOwner } from './middleware/owner';
 import type { RateLimiter } from './middleware/rate-limit';
+import { type AdminMilestoneConfig, createAdminRouter } from './routes/admin';
 import { createAgentsRouter } from './routes/agents';
 import { createAlertsRouter } from './routes/alerts';
 import { createCliStreamRouter } from './routes/cli-stream';
@@ -80,6 +82,13 @@ export interface AppDeps {
    * `OWNER_PRIVY_DIDS` env var via `loadConfig()`.
    */
   ownerPrivyDids?: Set<string>;
+  /**
+   * Grant milestone config for the owner-only admin panel (Cluster F).
+   * When omitted the admin router falls back to an empty target ladder and
+   * a null deadline — the endpoints still work, the milestone bars just have
+   * nothing to chart. `server.ts` wires the real values from config.
+   */
+  adminMilestones?: AdminMilestoneConfig;
   /**
    * Per-IP rate limiter for POST /api/agents (Epic 14 Phase 3 — abuse
    * hardening). Layered in *front* of `agentCreateLimiter` so a flood
@@ -210,6 +219,11 @@ export function buildApp(deps: AppDeps) {
   // GET /api/agents and confirms end-to-end pipe + valid token — the
   // anonymous /health above only tells us the process is up.
   api.get('/health', (c) => c.json({ ok: true }));
+  // Identity probe for the dashboard: lets the frontend reveal the owner-only
+  // /admin nav without ever shipping the owner DID list to the client bundle.
+  // Cheap — a single Set#has on an already-authenticated request.
+  const ownerDids = deps.ownerPrivyDids ?? new Set<string>();
+  api.get('/me', (c) => c.json({ isOwner: isOwner(ownerDids, c.get('userId')) }));
   api.route(
     '/agents',
     createAgentsRouter(deps.db, deps.sseBus, deps.alerter, agentCreateLimiter, {
@@ -221,6 +235,18 @@ export function buildApp(deps: AppDeps) {
   api.route('/transactions', createTransactionsRouter(deps.db));
   api.route('/alerts', createAlertsRouter(deps.db));
   api.route('/stats', createStatsRouter(deps.db));
+  // Owner-only grant-ops panel (Cluster F). `requireOwner` gates the whole
+  // subtree; it runs after `requireAuth` (mounted on `api` above) so
+  // `c.var.userId` is populated. Non-owners get 403 on every /admin/* path.
+  api.use('/admin/*', requireOwner(ownerDids, log));
+  api.route(
+    '/admin',
+    createAdminRouter({
+      db: deps.db,
+      milestones: deps.adminMilestones ?? { targets: [], deadline: null },
+      logger: log,
+    }),
+  );
   api.route('/reasoning', createReasoningRouter(deps.db));
   api.route('/search', createSearchRouter(deps.db));
   api.route('/stream', createStreamRouter(deps.db, deps.sseBus));

@@ -75,9 +75,30 @@ const envSchema = z.object({
    * users — only the count cap is skipped.
    */
   OWNER_PRIVY_DIDS: z.string().optional().default(''),
+  /**
+   * Grant milestone targets for the owner-only admin panel (Cluster F).
+   * Comma-separated builder counts — defaults to the Solana Foundation
+   * Ukraine grant ladder (M1=4 → M2=10 → M3=25). Parsed once at boot into
+   * `ADMIN_MILESTONE_TARGET_LIST`. Non-numeric / empty entries are dropped;
+   * if nothing valid remains the defaults are used so the panel never
+   * renders a target-less progress bar.
+   */
+  ADMIN_MILESTONE_TARGETS: z.string().optional().default('4,10,25'),
+  /**
+   * Grant deadline (ISO date) shown alongside the milestone progress so
+   * the panel can render a countdown. Optional — when unset the panel
+   * simply omits the deadline. Defaults to the grant's 2026-08-01 date.
+   */
+  ADMIN_MILESTONE_DEADLINE: z.string().optional().default('2026-08-01'),
 });
 
-export type Config = z.infer<typeof envSchema> & { OWNER_PRIVY_DID_SET: Set<string> };
+export type Config = z.infer<typeof envSchema> & {
+  OWNER_PRIVY_DID_SET: Set<string>;
+  ADMIN_MILESTONE_TARGET_LIST: number[];
+};
+
+/** Default milestone ladder used when the env var yields no valid targets. */
+const DEFAULT_MILESTONE_TARGETS = [4, 10, 25];
 
 export function loadConfig(): Config {
   const parsed = envSchema.safeParse(process.env);
@@ -94,5 +115,16 @@ export function loadConfig(): Config {
       .map((d) => d.trim())
       .filter((d) => d.length > 0),
   );
-  return { ...parsed.data, OWNER_PRIVY_DID_SET: ownerDids };
+  // Parse + sort milestone targets ascending so M1 < M2 < M3 regardless of
+  // env ordering; fall back to the grant defaults if nothing valid remains.
+  const milestoneTargets = parsed.data.ADMIN_MILESTONE_TARGETS.split(',')
+    .map((t) => Number.parseInt(t.trim(), 10))
+    .filter((n) => Number.isInteger(n) && n > 0)
+    .sort((a, b) => a - b);
+  return {
+    ...parsed.data,
+    OWNER_PRIVY_DID_SET: ownerDids,
+    ADMIN_MILESTONE_TARGET_LIST:
+      milestoneTargets.length > 0 ? milestoneTargets : DEFAULT_MILESTONE_TARGETS,
+  };
 }
