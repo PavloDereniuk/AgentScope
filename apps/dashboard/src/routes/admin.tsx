@@ -178,7 +178,11 @@ export function AdminPage() {
           label="Builders · reg / active"
           value={o ? `${o.builders.registered} / ${o.builders.active}` : '…'}
           delta={
-            m?.registered.nextTarget != null ? `next: M@${m.registered.nextTarget}` : 'all hit'
+            m == null
+              ? '…'
+              : m.registered.nextTarget != null
+                ? `next: M@${m.registered.nextTarget}`
+                : 'all hit'
           }
           deltaKind="dim"
         />
@@ -260,7 +264,11 @@ function MilestoneCard({
           <span className="font-mono text-4xl font-medium leading-none tracking-[-0.03em]">
             {count ?? '…'}
           </span>
-          {leg?.nextTarget != null ? (
+          {leg == null ? (
+            // Distinguish "still loading" from "loaded, all targets hit" — an
+            // undefined leg must NOT masquerade as the all-reached state.
+            <span className="mb-1 font-mono text-[11px] text-fg-3">loading…</span>
+          ) : leg.nextTarget != null ? (
             <span className="mb-1 font-mono text-[11px] text-fg-3">
               → {leg.nextTarget} for next milestone
             </span>

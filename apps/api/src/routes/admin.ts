@@ -377,11 +377,16 @@ export function createAdminRouter(deps: AdminRouterDeps) {
         to_char(u.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
         cast(count(distinct ag.id) as int) as agents,
         cast(count(t.id) filter (where t.block_time >= ${since7d}) as int) as tx_7d,
-        cast(count(t.id) filter (where t.block_time >= ${since30d}) as int) as tx_30d,
+        cast(count(t.id) as int) as tx_30d,
         to_char(max(t.block_time) at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_tx
       from users u
       left join agents ag on ag.user_id = u.id
-      left join agent_transactions t on t.agent_id = ag.id
+      -- Bound the join to the 30d window directly (not just in a filter): an
+      -- unbounded join scans every partition of a growing tx table and holds
+      -- a pooled connection for seconds. We only report tx7d/tx30d/dormant, so
+      -- rows older than 30d are irrelevant. tx_30d is then the full join count.
+      left join agent_transactions t
+        on t.agent_id = ag.id and t.block_time >= ${since30d}
       group by u.id, u.privy_did, u.email, u.created_at
       order by tx_7d desc, agents desc, u.created_at asc
     `);
