@@ -60,6 +60,15 @@ async function partitions(): Promise<string[]> {
   return res.rows.map((r) => r.relname);
 }
 
+/** Whether row-level security is enabled on a given relation. */
+async function rlsEnabled(relname: string): Promise<boolean> {
+  const res = await pg.query<{ relrowsecurity: boolean }>(
+    'SELECT relrowsecurity FROM pg_class WHERE relname = $1',
+    [relname],
+  );
+  return res.rows[0]?.relrowsecurity ?? false;
+}
+
 beforeEach(async () => {
   await freshDb();
 });
@@ -98,6 +107,18 @@ describe('ensureFuturePartitions', () => {
     await ensureFuturePartitions(db, opts);
     const secondPass = await ensureFuturePartitions(db, opts);
     expect(secondPass).toEqual([]);
+  });
+
+  it('enables RLS on every newly created partition (PostgREST exposure guard)', async () => {
+    // A new partition inherits no RLS from the parent, and Supabase PostgREST
+    // exposes each one as its own endpoint — so roll-forward must flip RLS on
+    // or it silently regresses migration 0014 every month.
+    await ensureFuturePartitions(db, {
+      monthsAhead: 1,
+      now: new Date('2026-09-15T00:00:00Z'),
+      logger: silentLogger,
+    });
+    expect(await rlsEnabled('agent_transactions_2026_10')).toBe(true);
   });
 
   it('crosses a year boundary correctly', async () => {

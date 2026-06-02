@@ -130,6 +130,15 @@ export async function ensureFuturePartitions(
             `FOR VALUES FROM ('${tsLiteral(from)}') TO ('${tsLiteral(to)}')`,
         ),
       );
+      // Match the parent's RLS state. Postgres does NOT propagate RLS to
+      // partitions, and Supabase PostgREST exposes each partition as its own
+      // /rest/v1/<name> endpoint — so a freshly rolled-forward partition would
+      // be readable by anon/authenticated, bypassing tx_owner_access. Enable
+      // RLS (no policies → default-deny for non-BYPASSRLS roles; our service
+      // role is unaffected). Idempotent: enabling already-on RLS is a no-op.
+      // This is the runtime counterpart to migration 0014 (existing
+      // partitions) — without it every new month would regress the fix.
+      await db.execute(sql.raw(`ALTER TABLE "${name}" ENABLE ROW LEVEL SECURITY`));
       created.push(name);
     } catch (err) {
       // Most likely cause: the DEFAULT partition already holds rows in this
