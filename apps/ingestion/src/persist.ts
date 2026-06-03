@@ -44,6 +44,37 @@ const INFRA_PROGRAM_IDS = new Set([
 ]);
 
 /**
+ * Persisted rawLogs caps (E.2 — storage diet).
+ *
+ * Jupiter swaps routinely emit 500-2000 log lines; storing them verbatim
+ * bloats the jsonb column (it dominates the ~2.5 KB/tx footprint) without
+ * adding information the dashboard needs — full logs stay available via RPC.
+ *
+ * We keep a *slim* slice on success (the happy path the dashboard rarely
+ * inspects line-by-line) and a *fuller* slice on failure (where the log tail
+ * is the primary diagnostic surface). On a typical success-heavy agent this
+ * cuts stored log volume ~10× on the big swaps, ~2.5× across the table.
+ */
+export const RAW_LOGS_LIMIT_SUCCESS = 20;
+export const RAW_LOGS_LIMIT_FAILURE = 200;
+
+/**
+ * Cap a rawLogs array for persistence. Returns a fresh array. When the log
+ * exceeds the success/failure limit, keep the head and tail slices joined by
+ * a "…truncated N lines…" marker so first-and-last diagnostics survive.
+ */
+export function capRawLogs(rawLogs: readonly string[], success: boolean): string[] {
+  const limit = success ? RAW_LOGS_LIMIT_SUCCESS : RAW_LOGS_LIMIT_FAILURE;
+  if (rawLogs.length <= limit) return [...rawLogs];
+  const half = Math.floor(limit / 2);
+  return [
+    ...rawLogs.slice(0, half),
+    `…truncated ${rawLogs.length - limit} lines…`,
+    ...rawLogs.slice(-half),
+  ];
+}
+
+/**
  * Pick the most "interesting" parsed instruction in the tx — the
  * primary user-visible operation. Priority order:
  *   1. Decoded protocol op on a non-infra program (jupiter.swap,
@@ -145,21 +176,10 @@ export async function persistTx(ctx: PersistContext, tx: TxUpdate): Promise<numb
   // and the detector runner — avoids allocating the `_all` list twice per tx.
   const parsedArgsPayload = primary ? { ...primary.args, _all: allInstructions } : null;
 
-  // Cap persisted rawLogs. Jupiter swaps routinely emit 500-2000 log lines;
-  // storing them verbatim bloats the jsonb column and makes list queries
-  // slow without adding information for the dashboard (full logs stay
-  // available via RPC). Keep only the first and last slice for diagnostics
-  // on failed txs.
-  const RAW_LOGS_LIMIT = 200;
-  const limitedRawLogs = parsed
-    ? parsed.rawLogs.length <= RAW_LOGS_LIMIT
-      ? [...parsed.rawLogs]
-      : [
-          ...parsed.rawLogs.slice(0, RAW_LOGS_LIMIT / 2),
-          `…truncated ${parsed.rawLogs.length - RAW_LOGS_LIMIT} lines…`,
-          ...parsed.rawLogs.slice(-RAW_LOGS_LIMIT / 2),
-        ]
-    : [];
+  // Cap persisted rawLogs (E.2) — slim on success, fuller on failure.
+  // See capRawLogs / RAW_LOGS_LIMIT_* above. When the tx wasn't parsed we
+  // have no logs to store.
+  const limitedRawLogs = parsed ? capRawLogs(parsed.rawLogs, parsed.success) : [];
 
   try {
     // Idempotent insert: the (agent_id, signature, block_time) unique index
