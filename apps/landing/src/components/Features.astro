@@ -1,4 +1,6 @@
 ---
+import { ANOMALY_RULES, ANOMALY_RULE_COUNT } from '../data/anomaly-rules';
+
 interface Feature {
   idx: string;
   title: string;
@@ -32,8 +34,8 @@ const features: Feature[] = [
   {
     idx: 'F.04',
     title: 'Anomaly Detection',
-    body: 'Eight rules across tx and cron triggers: slippage spike, gas spike, error rate, drawdown, stale agent, decision↔swap mismatch, stale oracle, ghost execution. Per-agent thresholds, warning→critical escalation.',
-    tag: '8 rules · dedupe',
+    body: `${ANOMALY_RULE_COUNT} rules across tx and cron triggers: ${ANOMALY_RULES.join(', ')}. Per-agent thresholds, warning→critical escalation.`,
+    tag: `${ANOMALY_RULE_COUNT} rules · dedupe`,
     iconPath: '<path d="M12 3v4m0 10v4M3 12h4m10 0h4M5.6 5.6l2.8 2.8m7.2 7.2l2.8 2.8M5.6 18.4l2.8-2.8m7.2-7.2l2.8-2.8"/>',
   },
   {

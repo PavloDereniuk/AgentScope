@@ -1,4 +1,6 @@
 ---
+import { ANOMALY_RULE_COUNT } from '../data/anomaly-rules';
+
 const DASHBOARD_URL = import.meta.env.PUBLIC_DASHBOARD_URL ?? 'https://app.agentscopehq.dev';
 ---
 
@@ -30,7 +32,7 @@ const DASHBOARD_URL = import.meta.env.PUBLIC_DASHBOARD_URL ?? 'https://app.agent
 
         <div class="hero-meta">
           <div><strong>&lt; 1s</strong>SSE latency</div>
-          <div><strong>8</strong>anomaly rules</div>
+          <div><strong>{ANOMALY_RULE_COUNT}</strong>anomaly rules</div>
           <div><strong>2</strong>SDKs: eliza · agent-kit</div>
           <div><strong>OSS</strong>MIT · built in public</div>
         </div>
