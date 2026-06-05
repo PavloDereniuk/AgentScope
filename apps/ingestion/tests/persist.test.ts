@@ -1,13 +1,18 @@
 /**
- * Tests for the rawLogs persistence cap (E.2 — storage diet).
+ * Tests for the persistence storage-diet helpers (E.2 + E.5).
  *
- * Pure-helper coverage for capRawLogs: slim slice on success, fuller slice
- * on failure, head/tail preservation, and the truncation marker. No DB —
- * the helper is side-effect free.
+ * Pure-helper coverage — no DB, both helpers are side-effect free:
+ *   - capRawLogs (E.2): slim/fuller log slice + truncation marker.
+ *   - compactInstructionOutline (E.5): drops per-instruction args from `_all`.
  */
 
 import { describe, expect, it } from 'vitest';
-import { RAW_LOGS_LIMIT_FAILURE, RAW_LOGS_LIMIT_SUCCESS, capRawLogs } from '../src/persist';
+import {
+  RAW_LOGS_LIMIT_FAILURE,
+  RAW_LOGS_LIMIT_SUCCESS,
+  capRawLogs,
+  compactInstructionOutline,
+} from '../src/persist';
 
 const makeLogs = (n: number): string[] => Array.from({ length: n }, (_, i) => `line ${i}`);
 
@@ -70,5 +75,42 @@ describe('capRawLogs (E.2)', () => {
     const logs = makeLogs(RAW_LOGS_LIMIT_FAILURE);
     expect(capRawLogs(logs, false)).toHaveLength(RAW_LOGS_LIMIT_FAILURE);
     expect(capRawLogs(logs, true).length).toBeLessThan(RAW_LOGS_LIMIT_FAILURE);
+  });
+});
+
+describe('compactInstructionOutline (E.5)', () => {
+  const ix = (index: number, programId: string, name: string, args: Record<string, unknown>) => ({
+    index,
+    programId,
+    name,
+    args,
+  });
+
+  it('keeps index/programId/name for each instruction', () => {
+    const out = compactInstructionOutline([
+      ix(0, 'ComputeBudget111111111111111111111111111111', 'unknown', {}),
+      ix(1, 'JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4', 'jupiter.swap', { inAmount: '100' }),
+    ]);
+    expect(out).toEqual([
+      { index: 0, programId: 'ComputeBudget111111111111111111111111111111', name: 'unknown' },
+      { index: 1, programId: 'JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4', name: 'jupiter.swap' },
+    ]);
+  });
+
+  it('drops per-instruction args (the storage win)', () => {
+    const out = compactInstructionOutline([
+      ix(0, 'JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4', 'jupiter.route', {
+        // A bulky multi-hop route_plan — exactly what used to bloat `_all`.
+        routePlan: Array.from({ length: 8 }, (_, i) => ({ swap: i, percent: 12 })),
+        inAmount: '1000000000',
+        quotedOutAmount: '987654321',
+      }),
+    ]);
+    expect(out[0]).not.toHaveProperty('args');
+    expect(Object.keys(out[0] ?? {})).toEqual(['index', 'programId', 'name']);
+  });
+
+  it('returns an empty array for a tx with no instructions', () => {
+    expect(compactInstructionOutline([])).toEqual([]);
   });
 });

@@ -74,6 +74,30 @@ export function capRawLogs(rawLogs: readonly string[], success: boolean): string
   ];
 }
 
+/** A single entry in the compact `_all` instruction outline (E.5). */
+export interface InstructionOutlineEntry {
+  index: number;
+  programId: string;
+  name: string;
+}
+
+/**
+ * Build the compact `_all` instruction outline (E.5 — storage diet).
+ *
+ * `parsed_args._all` keeps program id + name + index for every instruction in
+ * the tx, but deliberately NOT each instruction's args. The primary
+ * instruction's args already sit at the top level of `parsed_args`; carrying
+ * full per-hop args inside `_all` duplicated those and bloated the jsonb on
+ * multi-hop Jupiter routes — all for data nothing reads (the dashboard
+ * tx-drawer doesn't surface `parsedArgs`, and detector rules only consume the
+ * top-level primary args). The outline still answers "which instructions ran".
+ */
+export function compactInstructionOutline(
+  instructions: readonly { index: number; programId: string; name: string }[],
+): InstructionOutlineEntry[] {
+  return instructions.map((ix) => ({ index: ix.index, programId: ix.programId, name: ix.name }));
+}
+
 /**
  * Pick the most "interesting" parsed instruction in the tx — the
  * primary user-visible operation. Priority order:
@@ -164,17 +188,13 @@ export async function persistTx(ctx: PersistContext, tx: TxUpdate): Promise<numb
   }
 
   const primary = parsed ? pickPrimaryInstruction(parsed) : null;
-  const allInstructions =
-    parsed?.instructions.map((ix) => ({
-      index: ix.index,
-      programId: ix.programId,
-      name: ix.name,
-      args: ix.args,
-    })) ?? [];
+  // Compact `_all` outline (E.5) — program/name/index per instruction, no
+  // per-hop args. See compactInstructionOutline above.
+  const instructionOutline = compactInstructionOutline(parsed?.instructions ?? []);
 
   // Build the parsedArgs payload once and reuse it for both the DB insert
   // and the detector runner — avoids allocating the `_all` list twice per tx.
-  const parsedArgsPayload = primary ? { ...primary.args, _all: allInstructions } : null;
+  const parsedArgsPayload = primary ? { ...primary.args, _all: instructionOutline } : null;
 
   // Cap persisted rawLogs (E.2) — slim on success, fuller on failure.
   // See capRawLogs / RAW_LOGS_LIMIT_* above. When the tx wasn't parsed we
@@ -222,7 +242,7 @@ export async function persistTx(ctx: PersistContext, tx: TxUpdate): Promise<numb
         signature: tx.signature,
         slot: tx.slot,
         instruction: primary?.name ?? '(none)',
-        ixCount: allInstructions.length,
+        ixCount: instructionOutline.length,
       },
       'persisted tx',
     );
