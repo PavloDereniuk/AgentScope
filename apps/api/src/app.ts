@@ -29,6 +29,7 @@ import { createAlertsRouter } from './routes/alerts';
 import { createCliStreamRouter } from './routes/cli-stream';
 import { createIngestRouter } from './routes/ingest';
 import { createOtlpRouter } from './routes/otlp';
+import { createPublicBadgeRouter } from './routes/public-badge';
 import { createReasoningRouter } from './routes/reasoning';
 import { createSearchRouter } from './routes/search';
 import { createStatsRouter } from './routes/stats';
@@ -148,6 +149,11 @@ export function buildApp(deps: AppDeps) {
 
   // Public: liveness check for Railway, uptime pings, etc.
   app.get('/health', (c) => c.json({ ok: true }));
+
+  // Public badge endpoint — no auth. Mounted on /public so it never
+  // reaches the requireAuth middleware on the /api sub-router.
+  // GET /public/badge/:agentId → shields.io-compatible SVG (C.6).
+  app.route('/public', createPublicBadgeRouter(deps.db));
 
   // OTLP/HTTP ingest lives at /v1/traces — the canonical path every
   // OpenTelemetry SDK exporter hits by default. Not mounted under
