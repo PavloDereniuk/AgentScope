@@ -39,7 +39,15 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     init.body = JSON.stringify(body);
   }
 
-  const res = await fetch(resolveApiUrl(path), { ...init, signal: AbortSignal.timeout(30_000) });
+  let res: Response;
+  try {
+    res = await fetch(resolveApiUrl(path), { ...init, signal: AbortSignal.timeout(60_000) });
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'TimeoutError') {
+      throw new Error('Request timed out — the server may be starting up, please try again.');
+    }
+    throw err;
+  }
 
   if (res.status === 204) {
     return undefined as T;
