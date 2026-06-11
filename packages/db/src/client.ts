@@ -18,6 +18,14 @@ export interface DbConfig {
   statementTimeoutMs?: number | undefined;
   /** Set true to require TLS (Supabase always does). Default true. */
   ssl?: boolean | undefined;
+  /**
+   * Allow server-side prepared statements. Set false when connecting through
+   * pgbouncer in transaction-pooler mode (Supabase port 6543) — pgbouncer
+   * does not maintain connection state between transactions so prepared
+   * statements cause "prepared statement does not exist" errors.
+   * Auto-detected: defaults to false when the URL contains `:6543`.
+   */
+  prepare?: boolean | undefined;
 }
 
 /**
@@ -25,6 +33,9 @@ export interface DbConfig {
  * Disposing: call `await client.$client.end()` to close the pool.
  */
 export function createDb(config: DbConfig) {
+  // pgbouncer transaction pooler (Supabase port 6543) does not support
+  // prepared statements — detect by port and disable automatically.
+  const defaultPrepare = !config.connectionString.includes(':6543');
   // Named pgClient to avoid shadowing the `sql` tag imported from drizzle-orm.
   const pgClient = postgres(config.connectionString, {
     max: config.maxConnections ?? 10,
@@ -34,6 +45,7 @@ export function createDb(config: DbConfig) {
     connection: {
       statement_timeout: config.statementTimeoutMs ?? 30_000,
     },
+    prepare: config.prepare ?? defaultPrepare,
   });
 
   // drizzle-orm/postgres-js exposes `db.$client` automatically (the TClient
