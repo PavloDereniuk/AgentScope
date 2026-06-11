@@ -1,3 +1,4 @@
+import { ActivationBanner } from '@/components/ActivationBanner';
 import { InstructionLabel } from '@/components/InstructionLabel';
 import { IntegrationSnippet } from '@/components/IntegrationSnippet';
 import { Kpi, KpiRow } from '@/components/Kpi';
@@ -35,6 +36,7 @@ interface AgentDetail {
   framework: string;
   agentType: string;
   status: 'live' | 'stale' | 'failed';
+  lastSeenAt: string | null;
   alertsPausedUntil: string | null;
   alertRules: AlertRuleThresholds | null;
   tags: string[];
@@ -92,6 +94,15 @@ export function AgentDetailPage() {
   const [selectedTraceId, setSelectedTraceId] = useState<string | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [walletCopyState, setWalletCopyState] = useState<'idle' | 'copied' | 'error'>('idle');
+
+  const bannerKey = `agentscope.activation.${id}`;
+  const [bannerDismissed, setBannerDismissed] = useState(
+    () => localStorage.getItem(bannerKey) === '1',
+  );
+  const handleBannerDismiss = () => {
+    localStorage.setItem(bannerKey, '1');
+    setBannerDismissed(true);
+  };
 
   useEffect(() => {
     if (walletCopyState === 'idle') return;
@@ -155,6 +166,7 @@ export function AgentDetailPage() {
   }
 
   const { agent, recentTxCount, lastAlert } = data;
+  const showActivationBanner = !bannerDismissed && agent.lastSeenAt === null && recentTxCount === 0;
   const transactions = txData?.transactions ?? [];
 
   const successes = transactions.filter((t) => t.success).length;
@@ -255,6 +267,12 @@ export function AgentDetailPage() {
           </Dialog>
         </div>
       </div>
+
+      {showActivationBanner ? (
+        <div className="mb-4">
+          <ActivationBanner onDismiss={handleBannerDismiss} />
+        </div>
+      ) : null}
 
       <div className="mb-5">
         <IntegrationSnippet
