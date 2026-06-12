@@ -90,11 +90,21 @@ const envSchema = z.object({
    * simply omits the deadline. Defaults to the grant's 2026-08-01 date.
    */
   ADMIN_MILESTONE_DEADLINE: z.string().optional().default('2026-08-01'),
+  /**
+   * Agent UUID to expose via the public read-only demo endpoints (C.0b).
+   * When set, `GET /public/demo` returns `{agentId}` and the
+   * `/public/agents/:id/*` routes serve that agent's data without auth.
+   * Any other agent UUID resolves to 404 — no existence oracle for the
+   * rest of the registry.
+   * Unset → demo endpoints return 404 (feature disabled).
+   */
+  PUBLIC_DEMO_AGENT_ID: z.string().uuid().optional(),
 });
 
 export type Config = z.infer<typeof envSchema> & {
   OWNER_PRIVY_DID_SET: Set<string>;
   ADMIN_MILESTONE_TARGET_LIST: number[];
+  // PUBLIC_DEMO_AGENT_ID is already in z.infer — no extra field needed
 };
 
 /** Default milestone ladder used when the env var yields no valid targets. */

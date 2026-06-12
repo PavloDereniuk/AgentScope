@@ -10,6 +10,7 @@ import { AlertsPage } from './routes/alerts';
 import { OverviewPage } from './routes/overview';
 import { ReasoningPage } from './routes/reasoning';
 import { SettingsPage } from './routes/settings';
+import { ShareAgentPage, ShareRedirectPage } from './routes/share';
 
 export function App() {
   return (
@@ -32,6 +33,9 @@ export function App() {
               the API enforces the real 403 boundary regardless. */}
           <Route path="admin" element={<AdminPage />} />
         </Route>
+        {/* Public share routes — no auth required, outside ProtectedRoute */}
+        <Route path="share" element={<ShareRedirectPage />} />
+        <Route path="share/:id" element={<ShareAgentPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       <TweaksPanel />

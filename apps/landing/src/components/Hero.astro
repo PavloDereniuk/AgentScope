@@ -2,6 +2,7 @@
 import { ANOMALY_RULE_COUNT } from '../data/anomaly-rules';
 
 const DASHBOARD_URL = import.meta.env.PUBLIC_DASHBOARD_URL ?? 'https://app.agentscopehq.dev';
+const DEMO_URL = `${DASHBOARD_URL}/share`;
 ---
 
 <section class="hero-section">
@@ -27,7 +28,7 @@ const DASHBOARD_URL = import.meta.env.PUBLIC_DASHBOARD_URL ?? 'https://app.agent
 
         <div class="hero-cta-row">
           <a href={DASHBOARD_URL} class="btn btn-primary btn-lg">Start monitoring →</a>
-          <a href="#preview" class="btn btn-ghost btn-lg">See the dashboard</a>
+          <a href={DEMO_URL} class="btn btn-ghost btn-lg">View live demo →</a>
         </div>
 
         <div class="hero-meta">

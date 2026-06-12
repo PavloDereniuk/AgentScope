@@ -29,6 +29,7 @@ import { createAlertsRouter } from './routes/alerts';
 import { createCliStreamRouter } from './routes/cli-stream';
 import { createIngestRouter } from './routes/ingest';
 import { createOtlpRouter } from './routes/otlp';
+import { createPublicAgentRouter } from './routes/public-agent';
 import { createPublicBadgeRouter } from './routes/public-badge';
 import { createReasoningRouter } from './routes/reasoning';
 import { createSearchRouter } from './routes/search';
@@ -100,6 +101,18 @@ export interface AppDeps {
    */
   agentCreateIpLimiter?: RateLimiter;
   /**
+   * UUID of the single agent exposed by the public demo endpoints (C.0b).
+   * When set, `GET /public/demo` and `/public/agents/:id/*` serve that
+   * agent's sanitized data without auth. Unset → 404 on all demo routes.
+   */
+  publicDemoAgentId?: string;
+  /**
+   * Per-IP rate limiter for the public demo endpoints (C.0b). Separate
+   * budget from auth endpoints so a scraper hammering /public doesn't
+   * eat into the per-user agent-create quota. Unset → unlimited.
+   */
+  publicAgentIpLimiter?: RateLimiter;
+  /**
    * Browser origins permitted to call the API cross-origin. When the
    * list is empty (local dev, tests) the CORS middleware is not
    * mounted at all, so same-origin callers see no extra headers and no
@@ -154,6 +167,18 @@ export function buildApp(deps: AppDeps) {
   // reaches the requireAuth middleware on the /api sub-router.
   // GET /public/badge/:agentId → shields.io-compatible SVG (C.6).
   app.route('/public', createPublicBadgeRouter(deps.db));
+
+  // Public demo agent endpoints (C.0b) — no auth, demo-ID-gated.
+  // GET /public/demo → {agentId} | 404
+  // GET /public/agents/:id/{overview,transactions,alerts} → sanitized data
+  app.route(
+    '/public',
+    createPublicAgentRouter({
+      db: deps.db,
+      ...(deps.publicDemoAgentId !== undefined ? { demoAgentId: deps.publicDemoAgentId } : {}),
+      ...(deps.publicAgentIpLimiter !== undefined ? { ipLimiter: deps.publicAgentIpLimiter } : {}),
+    }),
+  );
 
   // OTLP/HTTP ingest lives at /v1/traces — the canonical path every
   // OpenTelemetry SDK exporter hits by default. Not mounted under
