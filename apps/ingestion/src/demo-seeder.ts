@@ -1,21 +1,18 @@
 /**
  * Demo agent seeder (C.0b).
  *
- * Inserts synthetic Jupiter swap transactions, OTel reasoning spans, and
- * occasional alerts for the public demo agent so /share/:id always shows
- * live-looking data without a real running agent.
+ * Inserts synthetic transactions, OTel reasoning spans, and occasional
+ * alerts for the public demo agent. Realistic mix: ~40% Jupiter swaps,
+ * ~45% SOL transfers, ~15% token transfers — small amounts, variable gaps.
  *
- * Enabled when DEMO_AGENT_ID env var is set. On first start (agent has no
- * transactions) seeds 7 days of history so the page is not empty on first
- * visit. Then runs every DEMO_SEED_INTERVAL_MS (default 4 h) to keep the
- * 24-hour KPIs non-zero.
+ * Enabled when DEMO_AGENT_ID env var is set. When DEMO_SEED_RESET=true is
+ * also set, wipes existing demo data before seeding (one-time reset).
+ * Runs every 4 h to keep 24-h KPIs non-zero.
  */
 
 import { randomBytes } from 'node:crypto';
 import { type Database, agentTransactions, agents, alerts, reasoningLogs } from '@agentscope/db';
 import { eq, sql } from 'drizzle-orm';
-
-// ── Logger interface (structurally compatible with pino.Logger) ───────────────
 
 interface SeederLogger {
   info: (obj: Record<string, unknown> | string, msg?: string) => void;
@@ -27,6 +24,8 @@ interface SeederLogger {
 const DEMO_SEED_INTERVAL_MS = 4 * 60 * 60 * 1000;
 
 const JUP_PROGRAM = 'JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4';
+const SYSTEM_PROGRAM = '11111111111111111111111111111111';
+const TOKEN_PROGRAM = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA';
 
 const MINTS = {
   SOL: 'So11111111111111111111111111111111111111112',
@@ -35,14 +34,11 @@ const MINTS = {
   JUP: 'JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN',
 } as const;
 
-// Base58 alphabet for fake Solana signatures
 const BASE58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
-
-// Approximate mainnet slot for a given Date (400 ms/slot, ~340 M as of 2026-06)
 const BASE_SLOT = 340_000_000;
 const BASE_TIME_MS = new Date('2026-06-12T00:00:00Z').getTime();
 
-// ── Low-level helpers ─────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function fakeSig(): string {
   const buf = randomBytes(64);
@@ -68,9 +64,7 @@ function randFloat(min: number, max: number): number {
   return min + Math.random() * (max - min);
 }
 
-// ── Synthetic data builders ───────────────────────────────────────────────────
-
-type SwapDir = 'SOL_TO_USDC' | 'USDC_TO_SOL' | 'SOL_TO_BONK' | 'SOL_TO_JUP';
+// ── Transaction builders ──────────────────────────────────────────────────────
 
 interface BuiltTx {
   row: {
@@ -89,16 +83,19 @@ interface BuiltTx {
   };
   sig: string;
   slippagePct: number;
+  isSwap: boolean;
 }
 
-function buildTx(agentId: string, at: Date, dir: SwapDir): BuiltTx {
-  const solPrice = randFloat(130, 165);
+function buildJupiterSwap(agentId: string, at: Date): BuiltTx {
   const sig = fakeSig();
-  const slot = dateToSlot(at);
-  const success = Math.random() > 0.08;
-  const feeLamports = randInt(4_500, 8_000);
-  const slippagePct = randFloat(0.05, success ? 2.1 : 4.8);
+  const solPrice = randFloat(130, 165);
+  const feeLamports = randInt(4_500, 55_000);
+  const success = Math.random() > 0.06;
+  const slippagePct = randFloat(0.03, success ? 1.8 : 4.2);
   const slippageBps = randInt(30, 100);
+
+  // Realistic small amounts: 0.005–0.12 SOL per swap
+  const r = Math.random();
   let inputMint: string;
   let outputMint: string;
   let inAmount: number;
@@ -106,16 +103,18 @@ function buildTx(agentId: string, at: Date, dir: SwapDir): BuiltTx {
   let solDelta: string;
   let instructionName: string;
 
-  if (dir === 'SOL_TO_USDC') {
-    const solAmt = randFloat(0.5, 3.0);
+  if (r < 0.5) {
+    // SOL → USDC
+    const solAmt = randFloat(0.005, 0.12);
     inputMint = MINTS.SOL;
     outputMint = MINTS.USDC;
     inAmount = Math.floor(solAmt * 1e9);
     outAmount = Math.floor(solAmt * solPrice * 1e6 * (1 - slippagePct / 100));
     solDelta = (-(solAmt + feeLamports / 1e9)).toFixed(9);
     instructionName = 'route';
-  } else if (dir === 'USDC_TO_SOL') {
-    const usdcAmt = randFloat(50, 400);
+  } else if (r < 0.8) {
+    // USDC → SOL
+    const usdcAmt = randFloat(2, 18);
     inputMint = MINTS.USDC;
     outputMint = MINTS.SOL;
     inAmount = Math.floor(usdcAmt * 1e6);
@@ -123,20 +122,16 @@ function buildTx(agentId: string, at: Date, dir: SwapDir): BuiltTx {
     outAmount = Math.floor(solOut * 1e9);
     solDelta = (solOut - feeLamports / 1e9).toFixed(9);
     instructionName = 'sharedAccountsRoute';
-  } else if (dir === 'SOL_TO_BONK') {
-    const solAmt = randFloat(0.1, 0.8);
-    inputMint = MINTS.SOL;
-    outputMint = MINTS.BONK;
-    inAmount = Math.floor(solAmt * 1e9);
-    outAmount = Math.floor(((solAmt * solPrice) / 0.000002) * (1 - slippagePct / 100));
-    solDelta = (-(solAmt + feeLamports / 1e9)).toFixed(9);
-    instructionName = 'route';
   } else {
-    const solAmt = randFloat(0.2, 1.5);
+    // SOL → BONK/JUP
+    const solAmt = randFloat(0.003, 0.05);
     inputMint = MINTS.SOL;
-    outputMint = MINTS.JUP;
+    outputMint = Math.random() > 0.5 ? MINTS.BONK : MINTS.JUP;
     inAmount = Math.floor(solAmt * 1e9);
-    outAmount = Math.floor(((solAmt * solPrice) / 0.75) * (1 - slippagePct / 100));
+    outAmount = Math.floor(
+      ((solAmt * solPrice) / (outputMint === MINTS.BONK ? 0.000002 : 0.75)) *
+        (1 - slippagePct / 100),
+    );
     solDelta = (-(solAmt + feeLamports / 1e9)).toFixed(9);
     instructionName = 'route';
   }
@@ -145,7 +140,7 @@ function buildTx(agentId: string, at: Date, dir: SwapDir): BuiltTx {
     row: {
       agentId,
       signature: sig,
-      slot,
+      slot: dateToSlot(at),
       blockTime: at.toISOString(),
       programId: JUP_PROGRAM,
       instructionName,
@@ -168,10 +163,85 @@ function buildTx(agentId: string, at: Date, dir: SwapDir): BuiltTx {
     },
     sig,
     slippagePct,
+    isSwap: true,
   };
 }
 
-// 3-span OTel reasoning trace: oracle → slippage eval → execution decision
+function buildSolTransfer(agentId: string, at: Date): BuiltTx {
+  const sig = fakeSig();
+  const feeLamports = 5_000;
+  const lamports = randInt(1_000, 40_000_000); // 0.000001–0.04 SOL
+  const solAmt = lamports / 1e9;
+  const isSend = Math.random() > 0.35;
+  const success = Math.random() > 0.03;
+  const solDelta = isSend
+    ? (-(solAmt + feeLamports / 1e9)).toFixed(9)
+    : (solAmt - feeLamports / 1e9).toFixed(9);
+
+  return {
+    row: {
+      agentId,
+      signature: sig,
+      slot: dateToSlot(at),
+      blockTime: at.toISOString(),
+      programId: SYSTEM_PROGRAM,
+      instructionName: 'transfer',
+      parsedArgs: {
+        protocol: 'system_program',
+        instructionName: 'transfer',
+        lamports,
+      },
+      solDelta,
+      tokenDeltas: [],
+      feeLamports,
+      success,
+      rawLogs: [],
+    },
+    sig,
+    slippagePct: 0,
+    isSwap: false,
+  };
+}
+
+function buildTokenTransfer(agentId: string, at: Date): BuiltTx {
+  const sig = fakeSig();
+  const feeLamports = 5_000;
+  // Token transfers don't move SOL (only fee)
+  const solDelta = (-(feeLamports / 1e9)).toFixed(9);
+
+  return {
+    row: {
+      agentId,
+      signature: sig,
+      slot: dateToSlot(at),
+      blockTime: at.toISOString(),
+      programId: TOKEN_PROGRAM,
+      instructionName: 'transferChecked',
+      parsedArgs: {
+        protocol: 'token_program',
+        instructionName: 'transferChecked',
+        mint: Math.random() > 0.5 ? MINTS.USDC : MINTS.BONK,
+      },
+      solDelta,
+      tokenDeltas: [],
+      feeLamports,
+      success: Math.random() > 0.02,
+      rawLogs: [],
+    },
+    sig,
+    slippagePct: 0,
+    isSwap: false,
+  };
+}
+
+function pickTx(agentId: string, at: Date): BuiltTx {
+  const r = Math.random();
+  if (r < 0.4) return buildJupiterSwap(agentId, at);
+  if (r < 0.85) return buildSolTransfer(agentId, at);
+  return buildTokenTransfer(agentId, at);
+}
+
+// 3-span OTel trace — only generated for Jupiter swaps
 function buildSpans(agentId: string, sig: string, at: Date, slippagePct: number) {
   const trace = hex(16);
   const rootId = hex(8);
@@ -213,7 +283,7 @@ function buildSpans(agentId: string, sig: string, at: Date, slippagePct: number)
         'slippage.threshold_pct': 2.5,
         'slippage.acceptable': slippagePct < 2.5,
         'route.hops': randInt(1, 3),
-        'pool.liquidity_usd': randInt(500_000, 8_000_000),
+        'pool.liquidity_usd': randInt(200_000, 5_000_000),
       } as Record<string, unknown>,
       txSignature: sig,
     },
@@ -242,63 +312,78 @@ function buildSpans(agentId: string, sig: string, at: Date, slippagePct: number)
 async function seedBatch(
   db: Database,
   agentId: string,
-  batchAnchor: Date,
+  anchor: Date,
   count: number,
 ): Promise<void> {
   for (let i = 0; i < count; i++) {
-    const at = new Date(batchAnchor.getTime() - i * randInt(8, 25) * 60_000);
-    const dirIndex = i % 4;
-    const dir: SwapDir =
-      dirIndex === 1
-        ? 'USDC_TO_SOL'
-        : dirIndex === 2
-          ? 'SOL_TO_BONK'
-          : dirIndex === 3
-            ? 'SOL_TO_JUP'
-            : 'SOL_TO_USDC';
-    const { row, sig, slippagePct } = buildTx(agentId, at, dir);
-    const spans = buildSpans(agentId, sig, at, slippagePct);
+    // Irregular gaps: 1–35 min between transactions
+    const at = new Date(anchor.getTime() - i * randInt(1, 35) * 60_000);
+    const built = pickTx(agentId, at);
 
-    await db.insert(agentTransactions).values(row).onConflictDoNothing();
-    await db.insert(reasoningLogs).values(spans).onConflictDoNothing();
+    await db.insert(agentTransactions).values(built.row).onConflictDoNothing();
 
-    // Slippage-spike alert when estimated slippage exceeds threshold
-    if (slippagePct > 2.5) {
-      const dayKey = at.toISOString().slice(0, 10);
-      await db
-        .insert(alerts)
-        .values({
-          agentId,
-          ruleName: 'slippage_spike',
-          severity: slippagePct > 4.0 ? 'critical' : 'warning',
-          payload: {
-            slippagePct: Number(slippagePct.toFixed(4)),
-            threshold: 2.5,
-            signature: sig,
-          } as Record<string, unknown>,
-          dedupeKey: `demo:slippage:${dayKey}`,
-        })
-        .onConflictDoNothing({ target: [alerts.agentId, alerts.ruleName, alerts.dedupeKey] });
+    // Reasoning spans only for Jupiter swaps
+    if (built.isSwap) {
+      const spans = buildSpans(agentId, built.sig, at, built.slippagePct);
+      await db.insert(reasoningLogs).values(spans).onConflictDoNothing();
+
+      if (built.slippagePct > 2.5) {
+        const dayKey = at.toISOString().slice(0, 10);
+        await db
+          .insert(alerts)
+          .values({
+            agentId,
+            ruleName: 'slippage_spike',
+            severity: built.slippagePct > 4.0 ? 'critical' : 'warning',
+            payload: {
+              slippagePct: Number(built.slippagePct.toFixed(4)),
+              threshold: 2.5,
+              signature: built.sig,
+            } as Record<string, unknown>,
+            dedupeKey: `demo:slippage:${dayKey}`,
+          })
+          .onConflictDoNothing({ target: [alerts.agentId, alerts.ruleName, alerts.dedupeKey] });
+      }
     }
   }
 }
 
-async function seedHistory(db: Database, agentId: string, logger: SeederLogger): Promise<void> {
-  const [row] = await db
-    .select({ cnt: sql<number>`cast(count(*) as int)` })
-    .from(agentTransactions)
-    .where(eq(agentTransactions.agentId, agentId));
+async function resetDemoData(db: Database, agentId: string, logger: SeederLogger): Promise<void> {
+  logger.info({ agentId }, 'demo seeder: resetting existing demo data');
+  // Delete in dependency order (reasoning_logs and alerts reference agent_id,
+  // agent_transactions has partitioned cascade). No FK between logs and txs.
+  await db.delete(reasoningLogs).where(eq(reasoningLogs.agentId, agentId));
+  await db.delete(alerts).where(eq(alerts.agentId, agentId));
+  await db.delete(agentTransactions).where(eq(agentTransactions.agentId, agentId));
+  logger.info({ agentId }, 'demo seeder: reset complete');
+}
 
-  if ((row?.cnt ?? 0) > 0) {
-    logger.info({ agentId }, 'demo seeder: history exists, skipping initial seed');
-    return;
+async function seedHistory(
+  db: Database,
+  agentId: string,
+  logger: SeederLogger,
+  forceReset: boolean,
+): Promise<void> {
+  if (forceReset) {
+    await resetDemoData(db, agentId, logger);
+  } else {
+    const [row] = await db
+      .select({ cnt: sql<number>`cast(count(*) as int)` })
+      .from(agentTransactions)
+      .where(eq(agentTransactions.agentId, agentId));
+    if ((row?.cnt ?? 0) > 0) {
+      logger.info({ agentId }, 'demo seeder: history exists, skipping');
+      return;
+    }
   }
 
   logger.info({ agentId }, 'demo seeder: seeding 7-day history');
   const now = Date.now();
   for (let daysAgo = 6; daysAgo >= 0; daysAgo--) {
     const anchor = new Date(now - daysAgo * 24 * 3_600_000);
-    await seedBatch(db, agentId, anchor, randInt(4, 9));
+    // More activity on recent days: 6–18 tx
+    const count = daysAgo <= 1 ? randInt(10, 18) : randInt(6, 14);
+    await seedBatch(db, agentId, anchor, count);
   }
 
   // decision_swap_mismatch alert 3 days back for variety
@@ -328,14 +413,15 @@ export interface DemoSeederDeps {
   db: Database;
   agentId: string;
   logger: SeederLogger;
-  /** Override for tests. Default: 4 hours. */
+  /** Wipe existing demo data before seeding. One-time reset via env var. */
+  reset?: boolean;
   intervalMs?: number;
 }
 
 async function runCycle(deps: DemoSeederDeps): Promise<void> {
   const { db, agentId, logger } = deps;
   const now = new Date();
-  await seedBatch(db, agentId, now, randInt(3, 5));
+  await seedBatch(db, agentId, now, randInt(3, 6));
   await db
     .update(agents)
     .set({ status: 'live', lastSeenAt: now.toISOString() })
@@ -346,8 +432,7 @@ async function runCycle(deps: DemoSeederDeps): Promise<void> {
 export function startDemoSeeder(deps: DemoSeederDeps): { stop: () => void } {
   const intervalMs = deps.intervalMs ?? DEMO_SEED_INTERVAL_MS;
 
-  // Seed history then run the first regular cycle right away
-  seedHistory(deps.db, deps.agentId, deps.logger)
+  seedHistory(deps.db, deps.agentId, deps.logger, deps.reset ?? false)
     .then(() => runCycle(deps))
     .catch((err: unknown) => deps.logger.error({ err }, 'demo seeder: initial seed failed'));
 

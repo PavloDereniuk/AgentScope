@@ -219,7 +219,12 @@ async function main(): Promise<void> {
   // synthetic Jupiter swaps + OTel reasoning spans. No-op when DEMO_AGENT_ID
   // is unset (all non-demo environments).
   const demoSeeder = config.DEMO_AGENT_ID
-    ? startDemoSeeder({ db, agentId: config.DEMO_AGENT_ID, logger })
+    ? startDemoSeeder({
+        db,
+        agentId: config.DEMO_AGENT_ID,
+        logger,
+        ...(config.DEMO_SEED_RESET ? { reset: true } : {}),
+      })
     : null;
   if (demoSeeder) logger.info({ agentId: config.DEMO_AGENT_ID }, 'demo seeder started');
 

@@ -73,6 +73,11 @@ const envSchema = z.object({
    * Must match PUBLIC_DEMO_AGENT_ID on the API service.
    */
   DEMO_AGENT_ID: z.string().uuid().optional(),
+  /** Set to "true" once to wipe and re-seed demo data. Remove after first deploy. */
+  DEMO_SEED_RESET: z
+    .string()
+    .optional()
+    .transform((v) => v === 'true'),
 });
 
 export type Config = z.infer<typeof envSchema>;
