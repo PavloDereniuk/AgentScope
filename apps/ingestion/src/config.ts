@@ -64,6 +64,15 @@ const envSchema = z.object({
    * release cycle.
    */
   TELEGRAM_DEFAULT_CHAT_ID: z.string().min(1).optional(),
+
+  // ── Demo agent seeder (C.0b) ───────────────────────────────────────────────
+  /**
+   * UUID of the demo agent to keep populated with synthetic transactions and
+   * reasoning spans. When set, `startDemoSeeder` runs every 4 hours inside
+   * the ingestion worker — no extra infrastructure required.
+   * Must match PUBLIC_DEMO_AGENT_ID on the API service.
+   */
+  DEMO_AGENT_ID: z.string().uuid().optional(),
 });
 
 export type Config = z.infer<typeof envSchema>;

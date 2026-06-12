@@ -24,6 +24,7 @@ import { createBalanceFetcher } from './balance-fetcher';
 import { loadConfig } from './config';
 import { startCron } from './cron';
 import { getDb } from './db';
+import { startDemoSeeder } from './demo-seeder';
 import type { DetectorDeps } from './detector-runner';
 import { createEventPublisher } from './event-publisher';
 import { logger } from './logger';
@@ -214,6 +215,14 @@ async function main(): Promise<void> {
       });
   }, 30_000);
 
+  // Demo agent seeder — keeps the public /share/:id page populated with
+  // synthetic Jupiter swaps + OTel reasoning spans. No-op when DEMO_AGENT_ID
+  // is unset (all non-demo environments).
+  const demoSeeder = config.DEMO_AGENT_ID
+    ? startDemoSeeder({ db, agentId: config.DEMO_AGENT_ID, logger })
+    : null;
+  if (demoSeeder) logger.info({ agentId: config.DEMO_AGENT_ID }, 'demo seeder started');
+
   // Start periodic cron for time-based rules (drawdown, error_rate, stale_agent).
   // Pass alerter + publishEvent so cron-triggered alerts reach Telegram and
   // the dashboard SSE bus — same channels the tx-triggered detector uses.
@@ -294,6 +303,7 @@ async function main(): Promise<void> {
   const shutdown = (signal: string) => {
     logger.info({ signal }, 'shutting down');
     clearInterval(reconcileTimer);
+    demoSeeder?.stop();
     cron.stop();
     partitionMaintenance.stop();
     abuseMonitor.stop();

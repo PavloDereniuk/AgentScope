@@ -254,9 +254,11 @@ describe('Public demo agent endpoints (C.0b)', () => {
       const body = (await res.json()) as { alerts: { triggeredAt: string }[] };
       expect(body.alerts).toHaveLength(2);
       // newest first
-      const [a0, a1] = body.alerts;
-      expect(new Date(a0!.triggeredAt).getTime()).toBeGreaterThan(
-        new Date(a1!.triggeredAt).getTime(),
+      const first = body.alerts[0];
+      const second = body.alerts[1];
+      if (!first || !second) throw new Error('expected 2 alerts');
+      expect(new Date(first.triggeredAt).getTime()).toBeGreaterThan(
+        new Date(second.triggeredAt).getTime(),
       );
     });
   });
