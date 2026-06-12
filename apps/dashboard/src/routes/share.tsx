@@ -15,8 +15,8 @@ import { resolveApiUrl } from '@/lib/api-url';
 import { cn } from '@/lib/utils';
 import { formatAlertSummary, formatRuleTitle } from '@agentscope/shared';
 import { useQuery } from '@tanstack/react-query';
-import { ExternalLink, LogIn } from 'lucide-react';
-import { useEffect } from 'react';
+import { ChevronDown, ChevronRight, ExternalLink, LogIn } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 
 // ---------------------------------------------------------------------------
@@ -62,6 +62,16 @@ interface PublicAlert {
   triggeredAt: string;
 }
 
+interface PublicSpan {
+  spanId: string;
+  parentSpanId: string | null;
+  spanName: string;
+  startTime: string;
+  endTime: string;
+  attributes: Record<string, unknown>;
+  traceId: string;
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -88,6 +98,68 @@ function formatDate(iso: string): string {
 // ---------------------------------------------------------------------------
 // Sub-components
 // ---------------------------------------------------------------------------
+
+const SPAN_ATTR_KEYS: Record<string, string[]> = {
+  price_oracle_check: ['sol.price_usd', 'oracle.source', 'oracle.confidence'],
+  slippage_evaluation: [
+    'slippage.estimated_pct',
+    'slippage.threshold_pct',
+    'slippage.acceptable',
+    'route.hops',
+  ],
+  swap_execution_decision: ['decision', 'confidence', 'market.condition'],
+};
+
+function SpanDuration({ startTime, endTime }: { startTime: string; endTime: string }) {
+  const ms = new Date(endTime).getTime() - new Date(startTime).getTime();
+  return <span className="font-mono text-[10px] text-fg-3">{ms >= 0 ? `${ms}ms` : '—'}</span>;
+}
+
+function SpanTree({ spans }: { spans: PublicSpan[] }) {
+  if (spans.length === 0) return null;
+  return (
+    <tr>
+      <td colSpan={3} className="px-0 pb-1 pt-0">
+        <div className="mx-4 mb-1 overflow-hidden rounded border border-line bg-bg-3">
+          {spans.map((span, idx) => {
+            const attrKeys =
+              SPAN_ATTR_KEYS[span.spanName] ?? Object.keys(span.attributes).slice(0, 4);
+            const relevantAttrs = attrKeys
+              .map((k) => [k, span.attributes[k]] as [string, unknown])
+              .filter(([, v]) => v !== undefined);
+            return (
+              <div
+                key={span.spanId}
+                className={cn(
+                  'px-4 py-2',
+                  idx < spans.length - 1 && 'border-b border-line',
+                  span.parentSpanId !== null && 'pl-8',
+                )}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-[11px] text-fg-2">{span.spanName}</span>
+                  <SpanDuration startTime={span.startTime} endTime={span.endTime} />
+                </div>
+                {relevantAttrs.length > 0 && (
+                  <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5">
+                    {relevantAttrs.map(([k, v]) => (
+                      <span key={k} className="font-mono text-[10px] text-fg-3">
+                        <span className="text-fg-2">{k.split('.').pop()}</span>{' '}
+                        <span className="text-accent">
+                          {typeof v === 'boolean' ? String(v) : String(v)}
+                        </span>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </td>
+    </tr>
+  );
+}
 
 function SignInBanner() {
   const dashboardUrl = import.meta.env.VITE_DASHBOARD_URL ?? '';
@@ -154,6 +226,7 @@ function SeverityDot({ severity }: { severity: string }) {
 
 export function ShareAgentPage() {
   const { id } = useParams<{ id: string }>();
+  const [expandedSig, setExpandedSig] = useState<string | null>(null);
 
   const {
     data: overviewData,
@@ -181,6 +254,16 @@ export function ShareAgentPage() {
     queryFn: () => publicFetch<{ alerts: PublicAlert[] }>(`/public/agents/${id}/alerts`),
     enabled: Boolean(id),
     refetchInterval: 60_000,
+  });
+
+  const { data: spansData } = useQuery({
+    queryKey: ['public-agent-spans', id, expandedSig],
+    queryFn: () =>
+      publicFetch<{ spans: PublicSpan[] }>(
+        `/public/agents/${id}/transactions/${expandedSig}/spans`,
+      ),
+    enabled: Boolean(id) && expandedSig !== null,
+    staleTime: 5 * 60 * 1000,
   });
 
   if (overviewLoading) {
@@ -304,40 +387,80 @@ export function ShareAgentPage() {
                   <tbody>
                     {transactions.map((tx) => {
                       const delta = Number(tx.solDelta);
+                      const isJupiter =
+                        tx.instructionName === 'route' ||
+                        tx.instructionName === 'sharedAccountsRoute';
+                      const isExpanded = expandedSig === tx.signature;
+                      const currentSpans = isExpanded && spansData ? spansData.spans : [];
                       return (
-                        <tr key={tx.id} className="border-b border-line last:border-b-0">
-                          <td className="px-4 py-2.5 font-mono text-[11px] text-fg-3">
-                            {formatTime(tx.blockTime)}
-                          </td>
-                          <td className="px-4 py-2.5">
-                            <div className="flex items-center gap-2">
-                              <span
-                                className={cn(
-                                  'h-1.5 w-1.5 shrink-0 rounded-full',
-                                  tx.success ? 'bg-accent' : 'bg-crit',
+                        <>
+                          <tr
+                            key={tx.id}
+                            className={cn(
+                              'border-b border-line last:border-b-0',
+                              isJupiter && 'cursor-pointer hover:bg-bg-3',
+                              isExpanded && 'bg-bg-3',
+                            )}
+                            onClick={
+                              isJupiter
+                                ? () => setExpandedSig(isExpanded ? null : tx.signature)
+                                : undefined
+                            }
+                            onKeyDown={
+                              isJupiter
+                                ? (e) => {
+                                    if (e.key === 'Enter' || e.key === ' ') {
+                                      setExpandedSig(isExpanded ? null : tx.signature);
+                                    }
+                                  }
+                                : undefined
+                            }
+                            tabIndex={isJupiter ? 0 : undefined}
+                          >
+                            <td className="px-4 py-2.5 font-mono text-[11px] text-fg-3">
+                              {formatTime(tx.blockTime)}
+                            </td>
+                            <td className="px-4 py-2.5">
+                              <div className="flex items-center gap-2">
+                                <span
+                                  className={cn(
+                                    'h-1.5 w-1.5 shrink-0 rounded-full',
+                                    tx.success ? 'bg-accent' : 'bg-crit',
+                                  )}
+                                />
+                                <span className="font-mono text-[11px] text-fg-2">
+                                  {tx.instructionName ?? 'unknown'}
+                                </span>
+                                {isJupiter && (
+                                  <span className="ml-auto text-fg-3">
+                                    {isExpanded ? (
+                                      <ChevronDown className="h-3 w-3" />
+                                    ) : (
+                                      <ChevronRight className="h-3 w-3" />
+                                    )}
+                                  </span>
                                 )}
-                              />
-                              <span className="font-mono text-[11px] text-fg-2">
-                                {tx.instructionName ?? 'unknown'}
-                              </span>
-                            </div>
-                          </td>
-                          <td className="px-4 py-2.5 text-right">
-                            <a
-                              href={`https://solscan.io/tx/${tx.signature}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className={cn(
-                                'font-mono text-[11px] hover:underline',
-                                delta > 0 ? 'text-accent' : delta < 0 ? 'text-crit' : 'text-fg-3',
-                              )}
-                              title={tx.signature}
-                            >
-                              {delta > 0 ? '+' : ''}
-                              {Number.isFinite(delta) ? delta.toFixed(4) : '0'}
-                            </a>
-                          </td>
-                        </tr>
+                              </div>
+                            </td>
+                            <td className="px-4 py-2.5 text-right">
+                              <a
+                                href={`https://solscan.io/tx/${tx.signature}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className={cn(
+                                  'font-mono text-[11px] hover:underline',
+                                  delta > 0 ? 'text-accent' : delta < 0 ? 'text-crit' : 'text-fg-3',
+                                )}
+                                title={tx.signature}
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                {delta > 0 ? '+' : ''}
+                                {Number.isFinite(delta) ? delta.toFixed(4) : '0'}
+                              </a>
+                            </td>
+                          </tr>
+                          {isExpanded && <SpanTree spans={currentSpans} />}
+                        </>
                       );
                     })}
                   </tbody>

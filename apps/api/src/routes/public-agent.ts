@@ -17,8 +17,8 @@
  * GET /public/agents/:id/alerts       → recent alerts
  */
 
-import { type Database, agentTransactions, agents, alerts } from '@agentscope/db';
-import { and, desc, eq, gte, lt, or, sql } from 'drizzle-orm';
+import { type Database, agentTransactions, agents, alerts, reasoningLogs } from '@agentscope/db';
+import { and, asc, desc, eq, gte, lt, or, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
@@ -205,6 +205,39 @@ export function createPublicAgentRouter(deps: PublicAgentRouterDeps) {
     const nextCursor = hasMore && last ? encodeTxCursor(last.blockTime, last.id) : null;
 
     return c.json({ transactions: items, nextCursor });
+  });
+
+  router.get('/agents/:id/transactions/:signature/spans', async (c) => {
+    applyRateLimit(ipLimiter, c.req.raw);
+
+    const parsed = agentIdParamSchema.safeParse(c.req.param());
+    if (!parsed.success) {
+      throw new HTTPException(404, { message: 'not found' });
+    }
+    const { id } = parsed.data;
+    await getDemoAgent(id);
+
+    const sigParsed = z.string().min(1).max(128).safeParse(c.req.param('signature'));
+    if (!sigParsed.success) {
+      throw new HTTPException(404, { message: 'not found' });
+    }
+
+    const rows = await db
+      .select({
+        spanId: reasoningLogs.spanId,
+        parentSpanId: reasoningLogs.parentSpanId,
+        spanName: reasoningLogs.spanName,
+        startTime: reasoningLogs.startTime,
+        endTime: reasoningLogs.endTime,
+        attributes: reasoningLogs.attributes,
+        traceId: reasoningLogs.traceId,
+      })
+      .from(reasoningLogs)
+      .where(and(eq(reasoningLogs.agentId, id), eq(reasoningLogs.txSignature, sigParsed.data)))
+      .orderBy(asc(reasoningLogs.startTime))
+      .limit(50);
+
+    return c.json({ spans: rows });
   });
 
   router.get('/agents/:id/alerts', async (c) => {

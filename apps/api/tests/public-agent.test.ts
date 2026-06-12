@@ -9,7 +9,7 @@
  * All routes are unauthenticated; only the configured demoAgentId is served.
  */
 
-import { agentTransactions, agents, alerts, users } from '@agentscope/db';
+import { agentTransactions, agents, alerts, reasoningLogs, users } from '@agentscope/db';
 import pino from 'pino';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/index';
@@ -219,6 +219,80 @@ describe('Public demo agent endpoints (C.0b)', () => {
       expect(tx).toBeDefined();
       expect(tx?.parsedArgs).toBeUndefined();
       expect(tx?.rawLogs).toBeUndefined();
+    });
+  });
+
+  // --- GET /public/agents/:id/transactions/:signature/spans ---
+
+  describe('GET /public/agents/:id/transactions/:signature/spans', () => {
+    it('returns empty spans array when no reasoning logs exist for that signature', async () => {
+      const res = await ctx.app.request(
+        `/public/agents/${ctx.demoAgentDbId}/transactions/unknownsig/spans`,
+      );
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { spans: unknown[] };
+      expect(body.spans).toHaveLength(0);
+    });
+
+    it('returns spans ordered by startTime for a matching signature', async () => {
+      const sig = 'sig_spans_test_001';
+      const traceId = 'a'.repeat(32);
+      const now = new Date();
+
+      await ctx.testDb.db.insert(agentTransactions).values({
+        agentId: ctx.demoAgentDbId,
+        signature: sig,
+        slot: 1,
+        blockTime: now.toISOString(),
+        programId: 'JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4',
+        success: true,
+        feeLamports: 5000,
+        solDelta: '-0.01',
+      });
+
+      await ctx.testDb.db.insert(reasoningLogs).values([
+        {
+          agentId: ctx.demoAgentDbId,
+          traceId,
+          spanId: 'span0001',
+          parentSpanId: null,
+          spanName: 'price_oracle_check',
+          startTime: new Date(now.getTime() - 3000).toISOString(),
+          endTime: new Date(now.getTime() - 2000).toISOString(),
+          attributes: { 'sol.price_usd': 150 },
+          txSignature: sig,
+        },
+        {
+          agentId: ctx.demoAgentDbId,
+          traceId,
+          spanId: 'span0002',
+          parentSpanId: 'span0001',
+          spanName: 'swap_execution_decision',
+          startTime: new Date(now.getTime() - 1000).toISOString(),
+          endTime: now.toISOString(),
+          attributes: { decision: 'execute_swap' },
+          txSignature: sig,
+        },
+      ]);
+
+      const res = await ctx.app.request(
+        `/public/agents/${ctx.demoAgentDbId}/transactions/${sig}/spans`,
+      );
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        spans: { spanName: string; parentSpanId: string | null }[];
+      };
+      expect(body.spans).toHaveLength(2);
+      expect(body.spans[0]?.spanName).toBe('price_oracle_check');
+      expect(body.spans[0]?.parentSpanId).toBeNull();
+      expect(body.spans[1]?.spanName).toBe('swap_execution_decision');
+    });
+
+    it('returns 404 for a non-demo agent id', async () => {
+      const res = await ctx.app.request(
+        `/public/agents/${OTHER_AGENT_ID}/transactions/somesig/spans`,
+      );
+      expect(res.status).toBe(404);
     });
   });
 
