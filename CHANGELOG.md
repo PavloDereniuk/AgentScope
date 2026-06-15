@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.10] - 2026-06-15
+
+### Added
+- **Onboarding checklist** on agent-detail replaces the single-line "Step 2" activation banner. Three steps: *Agent registered* (always done) → *Wire up your agent* (shows `npm i @agentscopehq/agent-kit-sdk` + per-agent token with a copy button) → *Awaiting first trace* (auto-checks when the agent sends its first span). Warn-tint while pending, accent-tint on completion. Auto-dismisses 2.5 s after traffic arrives so the user briefly sees the all-green state. Manually dismissible; state persisted in `localStorage`. ([`95880b1`](https://github.com/PavloDereniuk/AgentScope/commit/95880b1), C.0c)
+
+---
+
 ### Added
 - **Owner-only admin / grant-ops panel** (Cluster F — `/admin` in the dashboard, 14 API tests). Unlike the per-user dashboard (Privy + RLS scoped to `user_id`), the admin surface aggregates platform-wide metrics across every builder, for reporting the Solana Foundation Ukraine grant milestones (M1=4 → M2=10 → M3=25 builders, deadline 2026-08-01). The hero is milestone progress tracked under **two** builder definitions side by side: *registered* (distinct users with ≥1 agent) and *active* (≥1 transaction or reasoning span) — the owner files whichever is appropriate per milestone. Plus: a builder-growth chart (30d), infra headroom (DB size vs the Supabase 500 MB cap with a days-to-cap projection, Helius monitored-agents vs the ~23-agent credit ceiling, ingest lag), a per-builder engagement table (active/dormant), and an alerts breakdown by rule × severity.
 - **`GET /api/me`** → `{ isOwner }` — lets the dashboard reveal the `/admin` nav and guard the route without ever shipping the owner DID list to the client bundle (the server stays the single source of truth).
@@ -133,7 +140,8 @@ First post-submission iteration. The 2026-05-11 Colosseum Frontier submission sh
 ### Security
 - RLS enabled on every child partition of `agent_transactions` (`2026_04` through `2026_09` plus `_default`). Postgres does not inherit RLS from a partitioned parent, and PostgREST exposes each partition as its own `/rest/v1/<name>` endpoint — without per-partition `ENABLE ROW LEVEL SECURITY`, an anon/authenticated caller could hit a partition directly and bypass the parent's `tx_owner_access` policy. New migration `0010_rls_on_partitions.sql`; service-role ingestion (BYPASSRLS) untouched. ([`1ac359d`](https://github.com/PavloDereniuk/AgentScope/commit/1ac359d), P.11)
 
-[Unreleased]: https://github.com/PavloDereniuk/AgentScope/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/PavloDereniuk/AgentScope/compare/v0.4.10...HEAD
+[0.4.10]: https://github.com/PavloDereniuk/AgentScope/compare/v0.4.1...v0.4.10
 [0.4.1]: https://github.com/PavloDereniuk/AgentScope/releases/tag/v0.4.1
 [0.4.0]: https://github.com/PavloDereniuk/AgentScope/releases/tag/v0.4.0
 [0.3.0]: https://github.com/PavloDereniuk/AgentScope/releases/tag/v0.3.0
