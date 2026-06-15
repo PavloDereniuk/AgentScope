@@ -19,7 +19,7 @@
 
 import { type Database, agentTransactions, agents, alerts, reasoningLogs } from '@agentscope/db';
 import { and, asc, desc, eq, gte, lt, or, sql } from 'drizzle-orm';
-import { Hono } from 'hono';
+import { type Context, Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 import { decodeTxCursor, encodeTxCursor } from '../lib/cursor';
@@ -59,12 +59,17 @@ function getClientIp(req: Request): string | null {
   return null;
 }
 
-function applyRateLimit(limiter: RateLimiter | undefined, req: Request): void {
+// Sets Retry-After before throwing so clients back off correctly.
+// Note: c.header() must be called before HTTPException — the global error
+// handler (error.ts) rebuilds the response but preserves headers already set
+// on the context (same pattern as ingest.ts:211 and otlp.ts:121).
+function applyRateLimit(limiter: RateLimiter | undefined, c: Context): void {
   if (!limiter) return;
-  const ip = getClientIp(req);
+  const ip = getClientIp(c.req.raw);
   if (!ip) return;
   const decision = limiter.take(ip);
   if (!decision.ok) {
+    c.header('Retry-After', String(decision.retryAfterSec));
     throw new HTTPException(429, { message: 'rate limit exceeded' });
   }
 }
@@ -108,7 +113,7 @@ export function createPublicAgentRouter(deps: PublicAgentRouterDeps) {
   }
 
   router.get('/agents/:id/overview', async (c) => {
-    applyRateLimit(ipLimiter, c.req.raw);
+    applyRateLimit(ipLimiter, c);
 
     const parsed = agentIdParamSchema.safeParse(c.req.param());
     if (!parsed.success) {
@@ -152,7 +157,7 @@ export function createPublicAgentRouter(deps: PublicAgentRouterDeps) {
   });
 
   router.get('/agents/:id/transactions', async (c) => {
-    applyRateLimit(ipLimiter, c.req.raw);
+    applyRateLimit(ipLimiter, c);
 
     const parsed = agentIdParamSchema.safeParse(c.req.param());
     if (!parsed.success) {
@@ -208,7 +213,7 @@ export function createPublicAgentRouter(deps: PublicAgentRouterDeps) {
   });
 
   router.get('/agents/:id/transactions/:signature/spans', async (c) => {
-    applyRateLimit(ipLimiter, c.req.raw);
+    applyRateLimit(ipLimiter, c);
 
     const parsed = agentIdParamSchema.safeParse(c.req.param());
     if (!parsed.success) {
@@ -241,7 +246,7 @@ export function createPublicAgentRouter(deps: PublicAgentRouterDeps) {
   });
 
   router.get('/agents/:id/alerts', async (c) => {
-    applyRateLimit(ipLimiter, c.req.raw);
+    applyRateLimit(ipLimiter, c);
 
     const parsed = agentIdParamSchema.safeParse(c.req.param());
     if (!parsed.success) {

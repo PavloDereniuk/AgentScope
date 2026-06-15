@@ -20,6 +20,29 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 
 // ---------------------------------------------------------------------------
+// Env-var validation — mirrors resolveLandingUrl in ProtectedRoute.tsx.
+// VITE_DASHBOARD_URL is embedded in the "Sign in" link on the public share
+// page; an unvalidated value could be a javascript: or data: URL.
+// ---------------------------------------------------------------------------
+
+function resolveDashboardUrl(raw: string | undefined): string {
+  if (!raw) return '/';
+  try {
+    const u = new URL(raw);
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') {
+      console.warn('[share] VITE_DASHBOARD_URL must use http(s); using fallback.');
+      return '/';
+    }
+    return u.toString();
+  } catch {
+    console.warn('[share] VITE_DASHBOARD_URL is not a valid URL; using fallback.');
+    return '/';
+  }
+}
+
+const DASHBOARD_URL = resolveDashboardUrl(import.meta.env.VITE_DASHBOARD_URL);
+
+// ---------------------------------------------------------------------------
 // Types matching the public API responses
 // ---------------------------------------------------------------------------
 
@@ -162,8 +185,7 @@ function SpanTree({ spans }: { spans: PublicSpan[] }) {
 }
 
 function SignInBanner() {
-  const dashboardUrl = import.meta.env.VITE_DASHBOARD_URL ?? '';
-  const loginHref = dashboardUrl ? `${dashboardUrl}/` : '/';
+  const loginHref = DASHBOARD_URL.endsWith('/') ? DASHBOARD_URL : `${DASHBOARD_URL}/`;
   return (
     <div className="sticky top-0 z-50 flex items-center justify-between gap-3 border-b border-[color:color-mix(in_oklch,var(--accent)_30%,var(--line))] bg-[color-mix(in_oklch,var(--accent)_6%,var(--bg))] px-5 py-2.5">
       <p className="font-mono text-[11px] text-fg-2">

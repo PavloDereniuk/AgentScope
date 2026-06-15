@@ -273,7 +273,7 @@ function buildSpans(agentId: string, sig: string, at: Date, slippagePct: number)
       agentId,
       traceId: trace,
       spanId: evalId,
-      parentSpanId: rootId as string | null,
+      parentSpanId: rootId,
       spanName: 'slippage_evaluation',
       startTime: new Date(at.getTime() - 2_100).toISOString(),
       endTime: new Date(at.getTime() - 900).toISOString(),
@@ -291,7 +291,7 @@ function buildSpans(agentId: string, sig: string, at: Date, slippagePct: number)
       agentId,
       traceId: trace,
       spanId: execId,
-      parentSpanId: rootId as string | null,
+      parentSpanId: rootId,
       spanName: 'swap_execution_decision',
       startTime: new Date(at.getTime() - 900).toISOString(),
       endTime: new Date(at.getTime() - 100).toISOString(),
@@ -431,14 +431,34 @@ async function runCycle(deps: DemoSeederDeps): Promise<void> {
 
 export function startDemoSeeder(deps: DemoSeederDeps): { stop: () => void } {
   const intervalMs = deps.intervalMs ?? DEMO_SEED_INTERVAL_MS;
+  let timer: ReturnType<typeof setInterval> | undefined;
 
-  seedHistory(deps.db, deps.agentId, deps.logger, deps.reset ?? false)
-    .then(() => runCycle(deps))
-    .catch((err: unknown) => deps.logger.error({ err }, 'demo seeder: initial seed failed'));
+  async function init(): Promise<void> {
+    // Pre-flight: confirm the agent row exists before inserting child records.
+    // If DEMO_AGENT_ID is misconfigured, FK violations would be thrown on every
+    // cycle — this turns that into a clear one-time error and stops the seeder.
+    const [existing] = await deps.db
+      .select({ id: agents.id })
+      .from(agents)
+      .where(eq(agents.id, deps.agentId))
+      .limit(1);
+    if (!existing) {
+      deps.logger.error(
+        { agentId: deps.agentId },
+        'demo seeder: DEMO_AGENT_ID not found in db — seeder disabled. Create the agent row first.',
+      );
+      return;
+    }
+    await seedHistory(deps.db, deps.agentId, deps.logger, deps.reset ?? false);
+    await runCycle(deps);
+    timer = setInterval(() => {
+      runCycle(deps).catch((err: unknown) =>
+        deps.logger.error({ err }, 'demo seeder: cycle failed'),
+      );
+    }, intervalMs);
+  }
 
-  const timer = setInterval(() => {
-    runCycle(deps).catch((err: unknown) => deps.logger.error({ err }, 'demo seeder: cycle failed'));
-  }, intervalMs);
+  init().catch((err: unknown) => deps.logger.error({ err }, 'demo seeder: initial seed failed'));
 
   return { stop: () => clearInterval(timer) };
 }
