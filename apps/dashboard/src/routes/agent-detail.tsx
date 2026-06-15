@@ -1,7 +1,7 @@
-import { ActivationBanner } from '@/components/ActivationBanner';
 import { InstructionLabel } from '@/components/InstructionLabel';
 import { IntegrationSnippet } from '@/components/IntegrationSnippet';
 import { Kpi, KpiRow } from '@/components/Kpi';
+import { OnboardingChecklist } from '@/components/OnboardingChecklist';
 import { PausedBadge } from '@/components/PausedBadge';
 import { RulesPausedBadge } from '@/components/RulesPausedBadge';
 import { TraceDrawer } from '@/components/TraceDrawer';
@@ -166,7 +166,8 @@ export function AgentDetailPage() {
   }
 
   const { agent, recentTxCount, lastAlert } = data;
-  const showActivationBanner = !bannerDismissed && agent.lastSeenAt === null && recentTxCount === 0;
+  const hasTraffic = recentTxCount > 0 || agent.lastSeenAt !== null;
+  const showChecklist = !bannerDismissed;
   const transactions = txData?.transactions ?? [];
 
   const successes = transactions.filter((t) => t.success).length;
@@ -268,9 +269,13 @@ export function AgentDetailPage() {
         </div>
       </div>
 
-      {showActivationBanner ? (
+      {showChecklist ? (
         <div className="mb-4">
-          <ActivationBanner onDismiss={handleBannerDismiss} />
+          <OnboardingChecklist
+            agentToken={agent.ingestToken ?? ''}
+            hasTraffic={hasTraffic}
+            onDismiss={handleBannerDismiss}
+          />
         </div>
       ) : null}
 
