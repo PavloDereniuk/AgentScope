@@ -13,6 +13,6 @@ jobs:
     steps:
       - name: Ping API health endpoint
         run: |
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://agentscope-api.up.railway.app/health)
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://api.agentscopehq.dev/health)
           echo "HTTP $STATUS"
           [ "$STATUS" = "200" ] || exit 1
