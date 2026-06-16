@@ -1,3 +1,4 @@
+import { LogoMark } from '@/components/AgentScopeLogo';
 import { useAlertsSeenAt } from '@/lib/alerts-seen';
 import { apiClient } from '@/lib/api-client';
 import { useAuthActions } from '@/lib/auth-actions';
@@ -97,9 +98,7 @@ export function Sidebar() {
     >
       {/* Logo */}
       <div className="mb-4 flex items-center gap-[10px] border-b border-line px-[10px] pb-5 pt-[6px] font-mono text-sm font-semibold">
-        <span className="grid h-5 w-5 place-items-center rounded-[4px] bg-accent">
-          <span className="h-2 w-2 rounded-full bg-surface ring-[1.5px] ring-surface" />
-        </span>
+        <LogoMark size={20} />
         <span>agentscope</span>
         <sup className="ml-1 text-[9px] font-medium tracking-[0.08em] text-fg-3">v0.9</sup>
       </div>
