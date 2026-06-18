@@ -49,6 +49,12 @@ export interface TxSnapshot {
   feeLamports: number;
   success: boolean;
   blockTime: string;
+  /**
+   * Primary program ID for this transaction. Optional to avoid breaking
+   * existing tests; when absent, per-program rules like `priority_fee_spike`
+   * abstain rather than throw.
+   */
+  programId?: string | undefined;
 }
 
 // ── Default thresholds (from env / config) ───────────────────────────────────
@@ -83,6 +89,13 @@ export interface DefaultThresholds {
    * non-loop strategy (HFT-grade bots set higher per-agent overrides).
    */
   txRateMaxPerMin: number;
+  /**
+   * Fee multiplier over 24h rolling median for the SAME program. Warning fires
+   * above this value; critical fires at 5×. Default 10× — per-program fee
+   * patterns are tighter than the agent-wide baseline, so a higher multiplier
+   * avoids false positives on programs with naturally high variance.
+   */
+  priorityFeeMult: number;
 }
 
 // ── Slot-neighbour lookup (A.1 Phase 2) ──────────────────────────────────────

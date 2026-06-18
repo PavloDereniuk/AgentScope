@@ -56,6 +56,11 @@ const DETECTOR_DEFAULTS: DefaultThresholds = {
   // legitimate HFT-grade strategies set per-agent overrides via the
   // dashboard. Critical fires at 2× (60/min), same slope as error_rate.
   txRateMaxPerMin: 30,
+  // 10× per-program median over 24h. Per-program fee distributions are
+  // tighter than the agent-wide median (gas_spike uses 3×), so a higher
+  // multiplier avoids false positives while still catching extreme overpay
+  // from a misconfigured ComputeBudget instruction. Critical at 5× (50×).
+  priorityFeeMult: 10,
 };
 
 async function main(): Promise<void> {

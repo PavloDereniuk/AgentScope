@@ -1,4 +1,4 @@
-/**
+﻿/**
  * TDD tests for slippage_spike rule (tasks 5.3 + 5.4).
  *
  * The rule fires when a Jupiter swap's slippage tolerance (slippageBps
@@ -21,6 +21,7 @@ const defaults = {
   sandwichSlippagePct: 2,
   lowBalanceSol: 0.005,
   txRateMaxPerMin: 30,
+  priorityFeeMult: 10,
 };
 
 function makeTxCtx(overrides: {

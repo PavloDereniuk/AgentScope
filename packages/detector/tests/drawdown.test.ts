@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Integration tests for drawdown rule (task 5.7).
  */
 
@@ -17,6 +17,7 @@ const defaults = {
   sandwichSlippagePct: 2,
   lowBalanceSol: 0.005,
   txRateMaxPerMin: 30,
+  priorityFeeMult: 10,
 };
 
 let testDb: TestDatabase;

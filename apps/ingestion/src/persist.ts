@@ -277,6 +277,7 @@ export async function persistTx(ctx: PersistContext, tx: TxUpdate): Promise<numb
           feeLamports: parsed?.feeLamports ?? 0,
           success: parsed?.success ?? true,
           blockTime: tx.blockTime,
+          programId: primary?.programId ?? tx.programIds[0],
         });
         if (alertCount > 0) {
           ctx.logger.info({ agentId, signature: tx.signature, alertCount }, 'detector fired');

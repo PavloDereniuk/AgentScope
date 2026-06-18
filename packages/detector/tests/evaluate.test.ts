@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Unit tests for the rule evaluator (task 5.2).
  *
  * These tests use in-memory stubs вЂ” no database, no real rules.
@@ -22,6 +22,7 @@ const defaultThresholds = {
   sandwichSlippagePct: 2,
   lowBalanceSol: 0.005,
   txRateMaxPerMin: 30,
+  priorityFeeMult: 10,
 };
 
 const baseAgent = { id: 'agent-1', alertRules: {} };

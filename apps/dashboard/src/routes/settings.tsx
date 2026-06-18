@@ -233,6 +233,7 @@ export function SettingsPage() {
       'staleMinutesThreshold',
       'lowBalanceSolThreshold',
       'txRateMaxPerMinThreshold',
+      'priorityFeeMultThreshold',
     ] as const;
     for (const field of fields) {
       const val = fd.get(field) as string;
@@ -376,6 +377,14 @@ export function SettingsPage() {
                   suffix="tx/min"
                   step="1"
                   defaultValue={selected?.alertRules?.txRateMaxPerMinThreshold}
+                />
+                <ThresholdInput
+                  name="priorityFeeMultThreshold"
+                  label="Priority fee spike"
+                  hint="× program median over 24h · critical at 5×"
+                  suffix="×"
+                  step="1"
+                  defaultValue={selected?.alertRules?.priorityFeeMultThreshold}
                 />
               </div>
             </Card>
@@ -878,6 +887,7 @@ const RULE_LABELS: Record<AlertRuleName, string> = {
   slippage_sandwich: 'MEV sandwich',
   low_balance: 'Low balance',
   tx_rate_anomaly: 'Runaway loop',
+  priority_fee_spike: 'Priority fee spike',
 };
 
 function ThresholdInput({

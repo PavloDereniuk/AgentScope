@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Tests for stale_oracle rule (Epic 17).
  *
  * Seeds an agent + reasoning trace with ANALYZE_MARKET (market.price_usd)
@@ -21,6 +21,7 @@ const defaults = {
   sandwichSlippagePct: 2,
   lowBalanceSol: 0.005,
   txRateMaxPerMin: 30,
+  priorityFeeMult: 10,
 };
 
 let testDb: TestDatabase;

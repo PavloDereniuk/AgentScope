@@ -26,6 +26,7 @@ import {
   decisionSwapMismatchRule,
   evaluateTx,
   gasRule,
+  priorityFeeRule,
   sandwichRule,
   slippageRule,
   staleOracleRule,
@@ -43,6 +44,7 @@ const TX_RULES: readonly TxRuleDef[] = [
   slippageRule,
   sandwichRule,
   gasRule,
+  priorityFeeRule,
   decisionSwapMismatchRule,
   staleOracleRule,
 ];

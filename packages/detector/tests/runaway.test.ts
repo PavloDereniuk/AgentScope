@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Integration tests for tx_rate_anomaly rule (post-MVP roadmap A.3, v0.4.2).
  *
  * Uses the same PGlite test-db pattern as error_rate — runs all real
@@ -28,6 +28,7 @@ const defaults = {
   lowBalanceSol: 0.005,
   // 30 tx/min default ⇒ a 5-min window must hold ≤150 tx before the rule fires.
   txRateMaxPerMin: 30,
+  priorityFeeMult: 10,
 };
 
 let testDb: TestDatabase;

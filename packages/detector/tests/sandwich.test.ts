@@ -1,4 +1,4 @@
-/**
+﻿/**
  * TDD tests for slippage_sandwich rule (post-MVP roadmap A.1, v0.4.0).
  *
  * Evidence-only phase: compare actual on-chain receive amount (from
@@ -29,6 +29,7 @@ const defaults = {
   sandwichSlippagePct: 2,
   lowBalanceSol: 0.005,
   txRateMaxPerMin: 30,
+  priorityFeeMult: 10,
 };
 
 function makeTokenDelta(mint: SolanaPubkey, delta: string): TokenDelta {

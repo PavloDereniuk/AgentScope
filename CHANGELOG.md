@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.4] - 2026-06-18
+
+### Added
+- **`priority_fee_spike` detector rule** (A.8) — tx-triggered, per-program ComputeBudget overpay detection. Unlike `gas_spike` (which compares a fee against the agent-wide 24h median), this rule compares the fee against the 24h median for the **same program** on this agent. Catches the class of bug where a misconfigured `ComputeBudget` instruction silently inflates fees on one protocol without moving the agent-wide baseline enough to trigger `gas_spike`. Warning fires above threshold (default 10×); critical fires at 5× threshold (50×). Abstains when `programId` is absent (legacy paths) or when the agent has no prior history for that program. 9 TDD integration tests covering: default threshold, within-threshold skip, per-agent override, critical escalation, program isolation (other program's median does not pollute), missing `programId`, missing history, misconfig guard, and dedupe key. Per-agent override via `priorityFeeMultThreshold` in the dashboard Settings → Alert Thresholds. DB migration `0015` adds the enum value. (A.8)
+- **`programId` field in `TxSnapshot`** (optional) — `persist.ts` now forwards the primary program ID from each transaction into the detector snapshot, enabling per-program rules to query program-scoped historical data.
+
 ## [0.4.10] - 2026-06-15
 
 ### Added

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Tests for ghost_execution rule (Epic 17).
  *
  * Cron rule. Seeds an agent with several EXECUTE_SWAP spans + a mix of
@@ -22,6 +22,7 @@ const defaults = {
   sandwichSlippagePct: 2,
   lowBalanceSol: 0.005,
   txRateMaxPerMin: 30,
+  priorityFeeMult: 10,
 };
 
 let testDb: TestDatabase;

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Integration test for detector runner (task 5.9).
  *
  * Seeds an agent, calls runTxDetector with a high-slippage tx snapshot,
@@ -29,6 +29,7 @@ const defaults: DefaultThresholds = {
   sandwichSlippagePct: 2,
   lowBalanceSol: 0.005,
   txRateMaxPerMin: 30,
+  priorityFeeMult: 10,
 };
 
 const silentLogger = {

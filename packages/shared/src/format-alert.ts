@@ -69,6 +69,7 @@ const RULE_TITLES: Record<string, string> = {
   slippage_sandwich: 'MEV Sandwich Suspected',
   low_balance: 'Wallet Running Low',
   tx_rate_anomaly: 'Runaway Loop Suspected',
+  priority_fee_spike: 'Priority Fee Spike',
   // Pseudo-rule emitted by POST /api/agents/:id/test-alert. Not part of
   // ALERT_RULE_NAMES (never persisted), but the formatters must handle it
   // because it travels through the same telegram/webhook senders that
@@ -214,6 +215,17 @@ export function formatAlertSummary(
       if (!threshold || threshold <= 0) return `Bot firing ${rateStr}${ctxStr}`;
       const ratio = rate / threshold;
       return `Bot firing ${rateStr} — ${ratio.toFixed(1)}× above ${threshold} tx/min cap${ctxStr}`;
+    }
+    case 'priority_fee_spike': {
+      const ratio = num(payload, 'ratio');
+      const fee = num(payload, 'feeLamports');
+      const median = num(payload, 'medianFeeLamports');
+      const programId = str(payload, 'programId');
+      if (fee == null) return 'Priority fee spiked above per-program median';
+      const ratioStr = ratio ? ` — ${ratio}× above median` : '';
+      const medianStr = median != null ? ` (${fmtSol(median)})` : '';
+      const progStr = programId ? ` on ${programId.slice(0, 8)}…` : '';
+      return `Fee ${fmtSol(fee)}${ratioStr}${medianStr}${progStr}`;
     }
     case 'test_alert':
       return 'If you can read this, alert delivery is working.';
@@ -366,6 +378,17 @@ export function formatAlertDetails(
         { label: 'Window', value: fmtMinutes(num(payload, 'windowMinutes')) },
       ];
     }
+    case 'priority_fee_spike': {
+      const ratio = num(payload, 'ratio');
+      const thresholdMult = num(payload, 'thresholdMult');
+      return [
+        { label: 'Fee', value: fmtSol(num(payload, 'feeLamports')) },
+        { label: 'Program median', value: fmtSol(num(payload, 'medianFeeLamports')) },
+        { label: 'Ratio', value: ratio == null ? '—' : `${ratio}×` },
+        { label: 'Threshold', value: thresholdMult == null ? '—' : `${thresholdMult}×` },
+        { label: 'Program', value: str(payload, 'programId') ?? '—' },
+      ];
+    }
     // The smoke-test payload (`isTest`, `source`) is plumbing-only metadata —
     // dumping it as bullet rows adds noise without telling the user anything
     // they don't already know from the title and impact line.
@@ -414,6 +437,8 @@ export function formatAlertImpact(
       return "The bot's wallet is running low on SOL. The next priority fee or rent payment may brick the agent — refill before it stops trading silently.";
     case 'tx_rate_anomaly':
       return 'The bot is firing transactions far faster than expected. Most likely it is stuck in a retry loop or the LLM keeps re-deciding — every tx burns priority fees until you intervene.';
+    case 'priority_fee_spike':
+      return 'The bot paid far more in priority fees than its historical baseline for this program. A misconfigured ComputeBudget instruction is the most common cause — fix it before it quietly drains the wallet.';
     case 'test_alert':
       return 'This is a smoke test triggered from your dashboard. No real anomaly was detected — no action needed.';
     default:
@@ -485,6 +510,11 @@ export function formatAlertAction(
       return [
         'Pause the bot from the dashboard while you diagnose.',
         'Inspect recent tx + reasoning traces for the loop trigger.',
+      ];
+    case 'priority_fee_spike':
+      return [
+        'Review the ComputeBudget instruction set for this program.',
+        'Pause the bot if overpay is draining the wallet faster than expected.',
       ];
     default:
       return [];

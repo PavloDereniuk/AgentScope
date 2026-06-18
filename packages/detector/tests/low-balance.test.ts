@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Tests for low_balance cron rule (post-MVP roadmap A.2, v0.4.1).
  *
  * Pure-unit: no Postgres, no chain. The rule reads balance through an
@@ -26,6 +26,7 @@ const defaults = {
   // 0.005 SOL warning → 0.001 SOL critical (one-fifth).
   lowBalanceSol: 0.005,
   txRateMaxPerMin: 30,
+  priorityFeeMult: 10,
 };
 
 function makeCtx(overrides: {

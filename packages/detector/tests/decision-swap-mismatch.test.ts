@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Tests for decision_swap_mismatch rule (Epic 17).
  *
  * Seeds an agent + a jupiter.swap transaction + a MAKE_DECISION span
@@ -24,6 +24,7 @@ const defaults = {
   sandwichSlippagePct: 2,
   lowBalanceSol: 0.005,
   txRateMaxPerMin: 30,
+  priorityFeeMult: 10,
 };
 
 let testDb: TestDatabase;

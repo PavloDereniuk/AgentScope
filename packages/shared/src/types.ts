@@ -30,6 +30,7 @@ export const ALERT_RULE_NAMES = [
   'slippage_sandwich',
   'low_balance',
   'tx_rate_anomaly',
+  'priority_fee_spike',
 ] as const;
 export type AlertRuleName = (typeof ALERT_RULE_NAMES)[number];
 
@@ -112,6 +113,13 @@ export interface AlertRuleThresholds {
    * rule is designed to catch (zacycled LLM decisions, retry-on-error storms).
    */
   txRateMaxPerMinThreshold?: number | undefined;
+  /**
+   * Fee multiplier over 24h rolling median for the SAME program. Catches
+   * ComputeBudget overpay bugs that gas_spike (agent-wide median) may miss
+   * because they inflate the baseline gradually. Warning fires above threshold;
+   * critical fires at 5× threshold. Default 10×.
+   */
+  priorityFeeMultThreshold?: number | undefined;
   /**
    * Per-rule alert silencing. Keyed by `AlertRuleName`; each value is an
    * ISO-8601 timestamp until which delivery for that specific rule is muted.

@@ -108,6 +108,7 @@ export const alertRuleThresholdsSchema = z.object({
   // Tx/min cap for the runaway-loop rule. Positive only — a 0 would mean
   // "alert on any tx" which is a misconfig, not a useful detector setting.
   txRateMaxPerMinThreshold: z.number().positive().optional(),
+  priorityFeeMultThreshold: z.number().positive().optional(),
   // Per-rule pause map. `z.record(enum, ...)` validates that every key is a
   // known rule name; values are ISO-8601 datetimes (offset accepted). Past
   // values auto-resume — gate compares with `now` at delivery time.

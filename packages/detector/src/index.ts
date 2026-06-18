@@ -32,3 +32,4 @@ export { sandwichRule } from './rules/sandwich';
 export { slippageRule } from './rules/slippage';
 export { staleOracleRule } from './rules/stale-oracle';
 export { staleRule } from './rules/stale';
+export { priorityFeeRule } from './rules/priority-fee';

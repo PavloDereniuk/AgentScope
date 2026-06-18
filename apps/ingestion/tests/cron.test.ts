@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Integration test for cron evaluator (task 5.10).
  *
  * Seeds an agent with no recent transactions (stale for 31 min),
@@ -29,6 +29,7 @@ const defaults: DefaultThresholds = {
   sandwichSlippagePct: 2,
   lowBalanceSol: 0.005,
   txRateMaxPerMin: 30,
+  priorityFeeMult: 10,
 };
 
 const silentLogger = { error: () => {}, info: () => {}, warn: () => {} };
