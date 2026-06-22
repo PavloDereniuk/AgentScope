@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 import { useEffect } from 'react';
 import { setTokenGetter } from './api-client';
 
-const solanaConnectors = toSolanaWalletConnectors();
+const solanaConnectors = toSolanaWalletConnectors({ shouldAutoConnect: false });
 
 const PRIVY_APP_ID = import.meta.env.VITE_PRIVY_APP_ID;
 
