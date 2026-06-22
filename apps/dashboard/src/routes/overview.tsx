@@ -221,7 +221,11 @@ export function OverviewPage() {
           title="Top Agents · by recent activity"
           meta={`${topAgents.length} shown · click to open`}
         >
-          {topAgents.length > 0 ? (
+          {agentsQuery.isLoading ? (
+            <div className="px-6 py-12 text-center">
+              <p className="text-[13px] text-fg-3">Loading agents…</p>
+            </div>
+          ) : topAgents.length > 0 ? (
             <div className="flex flex-col">
               {topAgents.map((agent, i) => (
                 <Link

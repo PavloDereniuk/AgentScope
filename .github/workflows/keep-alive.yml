@@ -2,8 +2,9 @@ name: Keep Railway alive
 
 on:
   schedule:
-    # Every 3 days at 10:00 UTC — well within Railway's 7-day inactivity threshold
-    - cron: '0 10 */3 * *'
+    # Daily at 10:00 UTC — well within Railway's 7-day inactivity threshold.
+    # /health now runs SELECT 1 so this also keeps the Postgres pool warm.
+    - cron: '0 10 * * *'
   workflow_dispatch:
 
 jobs:

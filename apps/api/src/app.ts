@@ -12,6 +12,7 @@
 import { timingSafeEqual } from 'node:crypto';
 import type { DeliverDeps } from '@agentscope/alerter';
 import type { Database } from '@agentscope/db';
+import { sql } from 'drizzle-orm';
 import { zValidator } from '@hono/zod-validator';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
@@ -161,7 +162,17 @@ export function buildApp(deps: AppDeps) {
   const otlpLimiter = deps.otlpLimiter;
 
   // Public: liveness check for Railway, uptime pings, etc.
-  app.get('/health', (c) => c.json({ ok: true }));
+  // Also touches the DB with a cheap SELECT 1 so the connection pool stays
+  // warm between requests — prevents multi-second reconnect delays on the
+  // first authenticated request after a period of inactivity.
+  app.get('/health', async (c) => {
+    try {
+      await deps.db.execute(sql`SELECT 1`);
+    } catch {
+      return c.json({ ok: false }, 503);
+    }
+    return c.json({ ok: true });
+  });
 
   // Public badge endpoint — no auth. Mounted on /public so it never
   // reaches the requireAuth middleware on the /api sub-router.

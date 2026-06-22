@@ -39,7 +39,7 @@ export function createDb(config: DbConfig) {
   // Named pgClient to avoid shadowing the `sql` tag imported from drizzle-orm.
   const pgClient = postgres(config.connectionString, {
     max: config.maxConnections ?? 10,
-    idle_timeout: 20,
+    idle_timeout: 60,
     connect_timeout: 10,
     ssl: config.ssl ?? 'require',
     connection: {

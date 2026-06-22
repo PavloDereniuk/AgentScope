@@ -6,6 +6,7 @@
 
 import { type DeliverDeps, createTelegramSender } from '@agentscope/alerter';
 import { createDb } from '@agentscope/db';
+import { sql } from 'drizzle-orm';
 import { serve } from '@hono/node-server';
 import { buildApp } from './app';
 import { loadConfig } from './config';
@@ -84,11 +85,23 @@ const server = serve({ fetch: app.fetch, port: config.PORT }, (info) => {
   logger.info({ port: info.port }, 'agentscope-api listening');
 });
 
+// Keep the Postgres connection pool warm so the first authenticated request
+// after a quiet period doesn't stall waiting for pool reconnection.
+// 30s is half the idle_timeout (60s) so at least one connection survives
+// between user-initiated requests.
+const DB_HEARTBEAT_MS = 30_000;
+const dbHeartbeat = setInterval(() => {
+  db.execute(sql`SELECT 1`).catch((err: unknown) => {
+    logger.warn({ err }, 'db heartbeat failed');
+  });
+}, DB_HEARTBEAT_MS);
+
 // Graceful shutdown: Railway and most PaaS send SIGTERM before SIGKILL.
 // Close the HTTP server to stop accepting new connections, then drain the
 // Postgres pool so in-flight inserts get a chance to flush.
 const shutdown = (signal: string) => {
   logger.info({ signal }, 'api shutting down');
+  clearInterval(dbHeartbeat);
   server.close((err) => {
     if (err) logger.error({ err }, 'http server close failed');
     db.$client
