@@ -387,4 +387,10 @@ const KNOWN_PROGRAMS: ReadonlyMap<string, string> = new Map([
   ['JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4', 'Jupiter v6'],
   // Kamino Lend — verified against packages/parser/src/kamino/parser.ts:KAMINO_LEND_PROGRAM_ID.
   ['KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD', 'Kamino Lend'],
+  // Raydium AMM v4 — non-Anchor legacy AMM, instruction code in first data byte.
+  // Verified against mainnet fixtures (packages/parser/src/raydium/idl.json).
+  ['675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8', 'Raydium AMM v4'],
+  // Raydium CLMM — Anchor-based concentrated-liquidity MM.
+  // swap_v2 discriminator: sha256("global:swap_v2")[..8] = 2b04ed0b1ac91e62.
+  ['CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK', 'Raydium CLMM'],
 ]);

@@ -1,0 +1,109 @@
+{
+  "_note": "Raydium AMM v4 is not an Anchor program — no on-chain IDL exists. CLMM is Anchor. Both layouts were verified against mainnet fixtures (2026-06).",
+  "amm_v4": {
+    "programId": "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8",
+    "instructions": {
+      "9": {
+        "name": "swap_base_in",
+        "note": "First byte = instruction code. args at offset 1 (u64 LE amount_in) and offset 9 (u64 LE minimum_amount_out). 17 accounts.",
+        "accounts": [
+          "token_program",
+          "amm",
+          "amm_authority",
+          "amm_open_orders",
+          "amm_coin_vault",
+          "amm_pc_vault",
+          "market_program",
+          "market",
+          "market_bids",
+          "market_asks",
+          "market_event_queue",
+          "market_coin_vault",
+          "market_pc_vault",
+          "market_vault_signer",
+          "user_source_token_account",
+          "user_destination_token_account",
+          "user_source_owner"
+        ]
+      },
+      "11": {
+        "name": "swap_base_out",
+        "note": "Like swap_base_in but amount semantics differ. offset 1 = max_amount_in, offset 9 = amount_out.",
+        "accounts": [
+          "token_program",
+          "amm",
+          "amm_authority",
+          "amm_open_orders",
+          "amm_coin_vault",
+          "amm_pc_vault",
+          "market_program",
+          "market",
+          "market_bids",
+          "market_asks",
+          "market_event_queue",
+          "market_coin_vault",
+          "market_pc_vault",
+          "market_vault_signer",
+          "user_source_token_account",
+          "user_destination_token_account",
+          "user_source_owner"
+        ]
+      }
+    }
+  },
+  "clmm": {
+    "programId": "CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK",
+    "note": "Anchor program. Discriminators: sha256('global:<snake_case_name>')[..8].",
+    "instructions": {
+      "2b04ed0b1ac91e62": {
+        "name": "swap_v2",
+        "anchorName": "swap_v2",
+        "args": [
+          { "name": "amount",                "type": "u64",  "byteOffset": 8  },
+          { "name": "other_amount_threshold", "type": "u64",  "byteOffset": 16 },
+          { "name": "sqrt_price_limit_x64",  "type": "u128", "byteOffset": 24 },
+          { "name": "is_base_input",         "type": "bool", "byteOffset": 40 }
+        ],
+        "accounts": [
+          "payer",
+          "authority",
+          "amm_config",
+          "pool_state",
+          "input_token_account",
+          "output_token_account",
+          "input_vault",
+          "output_vault",
+          "input_token_program",
+          "output_token_program",
+          "memo_program",
+          "input_vault_mint",
+          "output_vault_mint"
+        ]
+      },
+      "f8c69e91e17587c8": {
+        "name": "swap",
+        "anchorName": "swap",
+        "args": [
+          { "name": "amount",                "type": "u64",  "byteOffset": 8  },
+          { "name": "other_amount_threshold", "type": "u64",  "byteOffset": 16 },
+          { "name": "sqrt_price_limit_x64",  "type": "u128", "byteOffset": 24 },
+          { "name": "is_base_input",         "type": "bool", "byteOffset": 40 }
+        ],
+        "accounts": [
+          "payer",
+          "amm_config",
+          "pool_state",
+          "input_token_account",
+          "output_token_account",
+          "input_vault",
+          "output_vault",
+          "input_token_program",
+          "output_token_program",
+          "input_vault_mint",
+          "output_vault_mint",
+          "observation_state"
+        ]
+      }
+    }
+  }
+}
