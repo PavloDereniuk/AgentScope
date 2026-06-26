@@ -6,8 +6,8 @@
 
 import { type DeliverDeps, createTelegramSender } from '@agentscope/alerter';
 import { createDb } from '@agentscope/db';
-import { sql } from 'drizzle-orm';
 import { serve } from '@hono/node-server';
+import { sql } from 'drizzle-orm';
 import { buildApp } from './app';
 import { loadConfig } from './config';
 import { createPrivyVerifier } from './lib/auth-verifier';

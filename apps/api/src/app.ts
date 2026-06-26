@@ -12,8 +12,8 @@
 import { timingSafeEqual } from 'node:crypto';
 import type { DeliverDeps } from '@agentscope/alerter';
 import type { Database } from '@agentscope/db';
-import { sql } from 'drizzle-orm';
 import { zValidator } from '@hono/zod-validator';
+import { sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { HTTPException } from 'hono/http-exception';
@@ -29,6 +29,7 @@ import { createAgentsRouter } from './routes/agents';
 import { createAlertsRouter } from './routes/alerts';
 import { createCliStreamRouter } from './routes/cli-stream';
 import { createIngestRouter } from './routes/ingest';
+import { createMetricsRouter } from './routes/metrics';
 import { createOtlpRouter } from './routes/otlp';
 import { createPublicAgentRouter } from './routes/public-agent';
 import { createPublicBadgeRouter } from './routes/public-badge';
@@ -173,6 +174,11 @@ export function buildApp(deps: AppDeps) {
     }
     return c.json({ ok: true });
   });
+
+  // Prometheus metrics scrape endpoint (B.5) — no auth, plain-text.
+  // Designed for an internal scraper on the same private network.
+  // Self-hosters point Prometheus static_configs at <api-host>/metrics.
+  app.route('', createMetricsRouter(deps.db));
 
   // Public badge endpoint — no auth. Mounted on /public so it never
   // reaches the requireAuth middleware on the /api sub-router.

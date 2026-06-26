@@ -28,7 +28,7 @@ const silentLogger = pino({ level: 'silent' });
  * cheap stubs are safe here — full integration lives in agents.test.ts.
  */
 function makeRealApp() {
-  const stubDb = {} as unknown as Database;
+  const stubDb = { execute: async () => [] } as unknown as Database;
   const stubVerifier: AuthVerifier = {
     async verify() {
       return { userId: 'stub' };
