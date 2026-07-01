@@ -393,4 +393,7 @@ const KNOWN_PROGRAMS: ReadonlyMap<string, string> = new Map([
   // Raydium CLMM — Anchor-based concentrated-liquidity MM.
   // swap_v2 discriminator: sha256("global:swap_v2")[..8] = 2b04ed0b1ac91e62.
   ['CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK', 'Raydium CLMM'],
+  // Orca Whirlpools — Anchor-based CLMM. swap disc f8c69e91e17587c8, swap_v2 2b04ed0b1ac91e62.
+  // Verified against mainnet fixtures (packages/parser/src/orca/idl.json).
+  ['whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc', 'Orca Whirlpools'],
 ]);

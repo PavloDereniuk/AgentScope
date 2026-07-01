@@ -1,0 +1,90 @@
+{
+  "_note": "Orca Whirlpools is an Anchor program. Layouts verified against mainnet fixtures (2026-07). Discriminators: sha256('global:<snake_case_name>')[..8].",
+  "whirlpool": {
+    "programId": "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc",
+    "instructions": {
+      "f8c69e91e17587c8": {
+        "name": "swap",
+        "anchorName": "swap",
+        "note": "Single-pool swap. 11 accounts. Mints resolved via tokenOwnerAccount→tokenAccountMints map.",
+        "args": [
+          { "name": "amount",                   "type": "u64",  "byteOffset": 8  },
+          { "name": "other_amount_threshold",   "type": "u64",  "byteOffset": 16 },
+          { "name": "sqrt_price_limit_x64",     "type": "u128", "byteOffset": 24 },
+          { "name": "amount_specified_is_input", "type": "bool", "byteOffset": 40 },
+          { "name": "a_to_b",                   "type": "bool", "byteOffset": 41 }
+        ],
+        "accounts": [
+          "tokenProgram",
+          "tokenAuthority",
+          "whirlpool",
+          "tokenOwnerAccountA",
+          "tokenVaultA",
+          "tokenOwnerAccountB",
+          "tokenVaultB",
+          "tickArray0",
+          "tickArray1",
+          "tickArray2",
+          "oracle"
+        ],
+        "mintResolution": "tokenAccountMints[accounts[3]] = mintA; tokenAccountMints[accounts[5]] = mintB; a_to_b=true → input=A,output=B; false → input=B,output=A"
+      },
+      "2b04ed0b1ac91e62": {
+        "name": "swap_v2",
+        "anchorName": "swapV2",
+        "note": "Token-2022 compatible swap. 15+ accounts. Direct mints at accounts[5] and accounts[6].",
+        "args": [
+          { "name": "amount",                   "type": "u64",  "byteOffset": 8  },
+          { "name": "other_amount_threshold",   "type": "u64",  "byteOffset": 16 },
+          { "name": "sqrt_price_limit_x64",     "type": "u128", "byteOffset": 24 },
+          { "name": "amount_specified_is_input", "type": "bool", "byteOffset": 40 },
+          { "name": "a_to_b",                   "type": "bool", "byteOffset": 41 }
+        ],
+        "accounts": [
+          "tokenProgramA",
+          "tokenProgramB",
+          "memoProgram",
+          "tokenAuthority",
+          "whirlpool",
+          "tokenMintA",
+          "tokenMintB",
+          "tokenOwnerAccountA",
+          "tokenVaultA",
+          "tokenOwnerAccountB",
+          "tokenVaultB",
+          "tickArray0",
+          "tickArray1",
+          "tickArray2",
+          "oracle"
+        ],
+        "mintResolution": "accounts[5] = tokenMintA (direct); accounts[6] = tokenMintB (direct); a_to_b=true → input=A,output=B"
+      },
+      "c360ed6c44a2dbe6": {
+        "name": "two_hop_swap",
+        "anchorName": "twoHopSwap",
+        "note": "Two-pool chained swap. Mint resolution via owner net flows (no direct mint accounts in v1).",
+        "args": [
+          { "name": "amount",                   "type": "u64",  "byteOffset": 8  },
+          { "name": "other_amount_threshold",   "type": "u64",  "byteOffset": 16 },
+          { "name": "amount_specified_is_input", "type": "bool", "byteOffset": 24 },
+          { "name": "a_to_b_one",               "type": "bool", "byteOffset": 25 },
+          { "name": "a_to_b_two",               "type": "bool", "byteOffset": 26 }
+        ],
+        "mintResolution": "ownerSpentMints[0] = inputMint; ownerGainedMints[0] = outputMint (net user flow)"
+      },
+      "ba8fd11dfe02c275": {
+        "name": "two_hop_swap_v2",
+        "anchorName": "twoHopSwapV2",
+        "note": "Token-2022 two-pool swap. Same args as two_hop_swap. Mint resolution via owner net flows.",
+        "args": [
+          { "name": "amount",                   "type": "u64",  "byteOffset": 8  },
+          { "name": "other_amount_threshold",   "type": "u64",  "byteOffset": 16 },
+          { "name": "amount_specified_is_input", "type": "bool", "byteOffset": 24 },
+          { "name": "a_to_b_one",               "type": "bool", "byteOffset": 25 },
+          { "name": "a_to_b_two",               "type": "bool", "byteOffset": 26 }
+        ],
+        "mintResolution": "ownerSpentMints[0] = inputMint; ownerGainedMints[0] = outputMint (net user flow)"
+      }
+    }
+  }
+}
