@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-07-01
+
+### Added
+- **Orca Whirlpools swap parser** (A.5) — all four Whirlpool instructions parsed: `swap` (v1, 11 accounts), `swap_v2` (15+ accounts, Token-2022 compatible), `two_hop_swap`, `two_hop_swap_v2`. Emits `orca.swap` / `orca.two_hop_swap` with `inputMint`, `outputMint`, amounts, `aToB`, `poolId`, and `variant` discriminating v1 vs v2. Mint resolution: token-account balance map for single-pool swaps (both variants); `ownerSpentMints`/`ownerGainedMints` net-flow fallback for two-hop variants. 11 TDD tests, 5 mainnet fixtures. Brings DEX coverage to Jupiter + Raydium + Orca + Kamino — >90% of Solana DEX volume.
+
 ## [0.5.4] - 2026-06-18
 
 ### Added
