@@ -109,9 +109,10 @@
   **Дизайн-нотатки:** AMM v4 — non-Anchor, перший байт = instruction code (9=SwapBaseIn, 11=SwapBaseOut), args at fixed offsets. CLMM — Anchor, swap_v2 disc=sha256("global:swap_v2")[..8]=`2b04ed0b1ac91e62`, mints at accounts[11/12]. AMM v4 direct calls рідкісні (~10% від txs у програми, 90% CPI-only від Jupiter). tx-timeline icon — post-MVP (dashboard окремо).
 
 ### A.5 — Orca Whirlpools parser
-- [ ] **A.5** Парсер для Orca Whirlpools (`whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc`). Аналогічно A.4
+- [x] **A.5** (commit pending, 2026-07-01) Парсер для Orca Whirlpools (`whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc`). swap/swap_v2/two_hop_swap/two_hop_swap_v2. 5 mainnet fixtures, 11 TDD тестів, 18/18 turbo зелені.
   ⏱ 3 дні · 📦 v0.5.1 · 🎯 *"Whirlpools parsing shipped. AgentScope now reads Orca, Jupiter, Raydium and Kamino — that's >90% of Solana DEX volume covered for agent observability."*
-  **Файли:** `packages/parser/src/orca/{idl.json, parser.ts}` + tests
+  **Файли:** [packages/parser/src/orca/idl.json](../packages/parser/src/orca/idl.json) · [packages/parser/src/orca/parser.ts](../packages/parser/src/orca/parser.ts) · [packages/parser/tests/orca.test.ts](../packages/parser/tests/orca.test.ts) · 5 fixtures (orca-1..5)
+  **Дизайн-нотатки:** swap (v1) = 11 accounts, disc f8c69e91e17587c8, mints via tokenAccountMints[tokenOwnerAccount{A,B}] + aToB flag. swap_v2 = 15+ accounts, disc 2b04ed0b1ac91e62, direct mints at acc[5]/acc[6], pool at acc[4]. two_hop_swap — owner net flow fallback для мінтів. scripts/fetch-orca-fixtures.ts збирає нові fixtures.
 
 ### A.6 — Drift Protocol parser (perps)
 - [ ] **A.6** Парсер для Drift v2 (`dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH`) — placeOrder, fillOrder, cancelOrder. **Складність:** perps мають свою market-index model
@@ -119,9 +120,11 @@
   **Файли:** `packages/parser/src/drift/{idl.json, parser.ts}` + tests
 
 ### A.7 — Marinade liquid staking parser
-- [ ] **A.7** Парсер для Marinade (`MarBmsSgKXdrN1egZf5sqe1TMThiYsCfVuvAJBbQNTQ`) — deposit, liquidUnstake, claim. Швидко (стейкінг має простіший shape ніж DEX)
+- [x] **A.7** (2026-07-07) Парсер для Marinade — `deposit`, `liquid_unstake`, `order_unstake`, `claim`. 12 TDD тестів, 6 mainnet fixtures (2 deposit, 2 liquid_unstake, 1 order_unstake, 1 claim). Стейкінг має простіший shape ніж DEX — тільки SOL↔mSOL, тому args плоскі (`amountLamports`/`msolAmount` + `stateAddress`), без swap-стилю `{inputMint,outputMint}`.
   ⏱ 2 дні · 📦 v0.5.3 · 🎯 *"Marinade staking now visible. Yield-strategy agents that route between Kamino and Marinade — fully observable from a single dashboard."*
-  **Файли:** `packages/parser/src/marinade/{idl.json, parser.ts}` + tests
+  **Файли:** [packages/parser/src/marinade/idl.json](../packages/parser/src/marinade/idl.json) · [packages/parser/src/marinade/parser.ts](../packages/parser/src/marinade/parser.ts) · [packages/parser/tests/marinade.test.ts](../packages/parser/tests/marinade.test.ts) · [scripts/fetch-marinade-fixtures.ts](../scripts/fetch-marinade-fixtures.ts)
+  **🔴 Виправлення адреси програми (важливо):** оригінальний roadmap-запис `MarBmsSgKXdrN1egZf5sqe1TMThiYsCfVuvAJBbQNTQ` — **неіснуючий акаунт на mainnet** (`getAccountInfo` → null, перевірено). Правильна адреса `MarBmsSgKXdrN1egZf5sqe1TMai9K1rChYNDJgjq7aD` — звірена проти `docs.marinade.finance/developers/contract-addresses` + живого `getAccountInfo` (executable BPF program) ПЕРЕД написанням парсера. Схоже, попередня сесія записала roadmap-адресу з пам'яті без верифікації — урок: завжди звіряти program ID проти on-chain стану чи офіційної документації, ніколи з training-пам'яті.
+  **Дизайн-нотатки:** `claim` не має числового аргументу в instruction data (лише 8-байтовий дискримінатор) — сума криється в ticket-акаунті, тому парсер повертає `reservePda`+`ticketAccount` замість суми. `order_unstake` додано понад точний roadmap-опис (deposit/liquidUnstake/claim) — без нього `claim` не мав би парного інструменту створення тікета delayed-unstake; обидва мають однаковий shape (disc + u64 msol_amount), тому додавання дешеве. `deposit_stake_account` (10 випадків у 463 tx сканування) свідомо НЕ реалізовано — поза точним описом задачі. accounts[0]=state підтверджено на всіх 4 інструкціях проти офіційної docs-адреси; `liquid_unstake`'s accounts[4]=treasuryMsolAccount і `claim`'s accounts[1]=reservePda також збігаються з офіційними docs-адресами один-в-один.
 
 ### A.8 — Priority fee anomaly rule
 - [x] **A.8** `priority_fee_spike` rule — fee у tx > N × median fee для цього програма за останні 24h. Захист від тихих overpay-bug'ів (наприклад, неправильно встановлений ComputeBudget instruction)
@@ -137,7 +140,7 @@
 > **Мета:** зняти "Telegram only" як блокер з SPEC §7; додати DX-фічі що роблять self-host і CI/CD інтеграцію легкою.
 
 ### B.1 — Discord webhook channel
-- [ ] **B.1** Новий channel `discord` у `packages/alerter` — POST до Discord webhook URL з embed shape (severity-color, title, fields). Per-agent `discordWebhookUrl` поле у `agents` таблиці
+- [ ] **B.1** ⏸ **(відкладено — робити в останню чергу після B.2-B.8)** Новий channel `discord` у `packages/alerter` — POST до Discord webhook URL з embed shape (severity-color, title, fields). Per-agent `discordWebhookUrl` поле у `agents` таблиці
   ⏱ 2 дні · 📦 v0.6.0 · 🎯 *"Discord alerts shipped. Drop your channel webhook into AgentScope settings, get rich embeds (color-coded severity, parsed tx, reasoning summary). No bot setup — just a webhook URL."*
   **Файли:** `packages/alerter/src/discord.ts` + tests · `packages/db` migration · `apps/api` routes/agents PATCH · `apps/dashboard/src/routes/settings.tsx` Notifications card
 
@@ -157,9 +160,9 @@
   **Файли:** `apps/ingestion/src/email-digest.ts` (cron worker, 09:00 UTC) · `packages/alerter` extension · `apps/dashboard/src/routes/settings.tsx`
 
 ### B.5 — Prometheus /metrics endpoint
-- [ ] **B.5** `GET /metrics` на API — текстовий Prometheus exposition format: `agentscope_tx_total{user,agent}`, `agentscope_alerts_total{severity,rule}`, `agentscope_reasoning_spans_total`, `agentscope_ingest_lag_seconds`. **Self-hosters' must-have**
-  ⏱ 1 день · 📦 v0.6.4 · 🎯 *"AgentScope now exposes /metrics in Prometheus format. Self-hosters: pipe it to Grafana, build your own dashboards. We eat our own dogfood (observability for the observability tool)."*
-  **Файли:** `apps/api/src/routes/metrics.ts` (no auth — internal scrape) · zero new deps (стрічний string builder)
+- [x] **B.5** (commit `c64096b`, 2026-06-26) `GET /metrics` на API — текстовий Prometheus exposition format: `agentscope_tx_total{user,agent}`, `agentscope_alerts_total{severity,rule}`, `agentscope_reasoning_spans_total`, `agentscope_ingest_lag_seconds`. **Self-hosters' must-have**
+  ⏱ 1 день · 📦 **v0.6.4** · 🎯 *"AgentScope now exposes /metrics in Prometheus format. Self-hosters: pipe it to Grafana, build your own dashboards. We eat our own dogfood (observability for the observability tool)."*
+  **Файли:** [apps/api/src/routes/metrics.ts](../apps/api/src/routes/metrics.ts) (no auth — internal scrape) · [apps/api/tests/metrics.test.ts](../apps/api/tests/metrics.test.ts) (7 тестів) · zero new deps (string builder)
 
 ### B.6 — GitHub Action: agent health check
 - [ ] **B.6** Reusable workflow `agentscopehq/agent-health-check@v1`: запускається cron'ом у юзера, перевіряє `GET /api/agents/:id` → `lastSeenAt` < N min → success/fail. Готова action для CI/CD інтеграції
@@ -329,11 +332,11 @@
 - **C.0** (~2 год): activation banner на agent-detail коли `lastSeenAt == null` — закриває gap між «зареєстрував» і «побачив першу дату».
 - **C.0b** (~4.5 год): public read-only demo agent — юзери бачать платформу до реєстрації, знижує бар'єр входу.
 
-**Phase 1 (high-value, low-risk):** A.8 → B.1 → B.5 → C.6
-- ~5 днів, закриває "найбільший pain" блок: priority fee anomaly, Discord alerts, Prometheus metrics, README status badge.
+**Phase 1 (high-value, low-risk):** A.8 ✅ → B.5 ✅ → C.6 ✅ — *ЗАКРИТА (B.1 відкладено)*
+- Priority fee anomaly, Prometheus metrics, README badge — всі зроблені. B.1 Discord відкладено на кінець.
 
-**Phase 2 (parser surge):** A.4 → A.5 → A.7 → A.6
-- 4 парсери підряд, ~11 днів. Раз вже у parser-зоні — не випадати в інші файлові кластери.
+**Phase 2 (parser surge):** A.4 ✅ → A.5 ✅ → A.7 ✅ → A.6
+- 4 парсери підряд, ~11 днів. Раз вже у parser-зоні — не випадати в інші файлові кластери. Залишився A.6 (Drift perps) — найскладніший через market-index model.
 
 **Phase 3 (DX + self-host):** B.7 → B.6 → B.8
 - Спрямовано на self-host story для open-source momentum.
@@ -345,6 +348,8 @@
 - Найдорожчі за часом і потребують Claude API integration. Робити коли інші clusters виходять у v0.8.x.
 
 **Залишок (B.2, B.3, B.4, C.1, C.2, C.3, C.4, C.5):** інтерліфувати між phases як "відпочинок від важких задач".
+
+**B.1 (Discord) — в самому кінці:** робити після B.2-B.8 і решти Cluster B.
 
 ---
 
@@ -379,6 +384,9 @@
 | v0.4.4 | 2026-06-03 | E.2 (rawLogs storage diet) | ✅ released |
 | v0.4.6 | 2026-06-05 | E.5 (compact parsed_args._all) | ✅ released |
 | v0.5.0 | 2026-06-23 | A.4 (Raydium AMM v4 + CLMM parser) | ✅ released |
+| v0.6.4 | 2026-06-26 | B.5 (Prometheus /metrics endpoint) | ✅ released |
+| v0.5.1 | 2026-07-01 | A.5 (Orca Whirlpools parser) | ✅ released |
+| v0.5.3 | 2026-07-07 | A.7 (Marinade liquid staking parser) | 🔄 pending commit |
 | … | … | … | … |
 
 ---

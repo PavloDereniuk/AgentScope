@@ -13,6 +13,7 @@ import './jupiter/parser';
 import './kamino/parser';
 import './orca/parser';
 import './raydium/parser';
+import './marinade/parser';
 import './system/parser';
 
 export { parseTransaction, registerParser } from './dispatcher';
@@ -20,6 +21,7 @@ export { jupiterParser } from './jupiter/parser';
 export { kaminoParser, getKaminoLoadWarnings } from './kamino/parser';
 export { orcaParser } from './orca/parser';
 export { raydiumAmmParser, raydiumClmmParser } from './raydium/parser';
+export { marinadeParser } from './marinade/parser';
 export { systemParser } from './system/parser';
 export type {
   ParseInput,

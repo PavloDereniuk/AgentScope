@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Marinade Finance liquid-staking parser** (A.7) — `deposit`, `liquid_unstake`, `order_unstake`, and `claim` all parsed. Since staking only ever moves SOL ↔ mSOL (no arbitrary token pair to resolve), args stay flat: `amountLamports`/`msolAmount` + `stateAddress`, rather than the swap-style `{inputMint, outputMint}` shape used by the DEX parsers. `claim` carries no numeric arg (the amount lives in the ticket account) — instead exposes `reservePda` + `ticketAccount`. 12 TDD tests, 6 mainnet fixtures (2 deposit, 2 liquid_unstake, 1 order_unstake, 1 claim).
+- **Program ID correction:** the Marinade address previously drafted in `POST-MVP-ROADMAP.md` (`MarBmsSgKXdrN1egZf5sqe1TMThiYsCfVuvAJBbQNTQ`) does not exist on mainnet (`getAccountInfo` → null). Verified the real program ID (`MarBmsSgKXdrN1egZf5sqe1TMai9K1rChYNDJgjq7aD`) against `docs.marinade.finance/developers/contract-addresses` and a live `getAccountInfo` call before writing any parser code.
+
 ## [0.5.1] - 2026-07-01
 
 ### Added

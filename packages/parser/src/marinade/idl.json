@@ -1,0 +1,60 @@
+{
+  "_note": "Marinade Finance liquid-staking program is Anchor-based. Layouts verified against mainnet fixtures (2026-07). Discriminators: sha256('global:<snake_case_name>')[..8]. Program address corrected from an earlier (nonexistent) roadmap placeholder — verified against docs.marinade.finance/developers/contract-addresses and a live getAccountInfo call.",
+  "marinadeFinance": {
+    "programId": "MarBmsSgKXdrN1egZf5sqe1TMai9K1rChYNDJgjq7aD",
+    "stateAddress": "8szGkuLTAux9XMgZ2vtY39jVSowEcpBfFfD8hXSEqdGC",
+    "msolMint": "mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So",
+    "instructions": {
+      "f223c68952e1f2b6": {
+        "name": "deposit",
+        "anchorName": "deposit",
+        "note": "Deposit native SOL, receive mSOL (minted or drawn from the liquidity pool's mSOL leg). 11 accounts.",
+        "args": [{ "name": "lamports", "type": "u64", "byteOffset": 8 }],
+        "accounts": [
+          "state",
+          "msolMint",
+          "liqPoolSolLegPda",
+          "liqPoolMsolLeg",
+          "liqPoolMsolLegAuthority",
+          "reservePda",
+          "transferFrom",
+          "mintTo",
+          "msolMintAuthority",
+          "systemProgram",
+          "tokenProgram"
+        ]
+      },
+      "1e1e77f0bfe30c10": {
+        "name": "liquid_unstake",
+        "anchorName": "liquidUnstake",
+        "note": "Instant unstake: burn mSOL, receive SOL from the liquidity pool's SOL leg (minus a small fee). 10 accounts.",
+        "args": [{ "name": "msol_amount", "type": "u64", "byteOffset": 8 }],
+        "accounts": [
+          "state",
+          "msolMint",
+          "liqPoolSolLegPda",
+          "liqPoolMsolLeg",
+          "treasuryMsolAccount",
+          "getMsolFrom",
+          "getMsolFromAuthority",
+          "transferSolTo",
+          "systemProgram",
+          "tokenProgram"
+        ]
+      },
+      "61a7906b75be8024": {
+        "name": "order_unstake",
+        "anchorName": "orderUnstake",
+        "note": "Delayed unstake: burn mSOL now, create a ticket account redeemable via claim() once the epoch matures. 8 accounts.",
+        "args": [{ "name": "msol_amount", "type": "u64", "byteOffset": 8 }]
+      },
+      "3ec6d6c1d59f6cd2": {
+        "name": "claim",
+        "anchorName": "claim",
+        "note": "Redeem a matured delayed-unstake ticket for SOL. No numeric args — amount is implicit in the ticket account. 6 accounts: state, reservePda, ticketAccount, transferSolTo, clock, systemProgram.",
+        "args": [],
+        "accounts": ["state", "reservePda", "ticketAccount", "transferSolTo", "clock", "systemProgram"]
+      }
+    }
+  }
+}

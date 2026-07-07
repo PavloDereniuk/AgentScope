@@ -396,4 +396,8 @@ const KNOWN_PROGRAMS: ReadonlyMap<string, string> = new Map([
   // Orca Whirlpools — Anchor-based CLMM. swap disc f8c69e91e17587c8, swap_v2 2b04ed0b1ac91e62.
   // Verified against mainnet fixtures (packages/parser/src/orca/idl.json).
   ['whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc', 'Orca Whirlpools'],
+  // Marinade Finance liquid staking — Anchor-based. Verified against
+  // docs.marinade.finance/developers/contract-addresses + live getAccountInfo,
+  // NOT the address in an earlier roadmap draft (that one doesn't exist on mainnet).
+  ['MarBmsSgKXdrN1egZf5sqe1TMai9K1rChYNDJgjq7aD', 'Marinade Finance'],
 ]);
