@@ -1,0 +1,68 @@
+{
+  "_note": "Drift v2 perpetuals program (Anchor). Discriminators = sha256('global:<snake_case_name>')[..8], verified against the official Drift IDL from TWO authoritative sources: the on-chain Anchor IDL account (v2.150.0) and github.com/drift-labs/protocol-v2 sdk/src/idl/drift.json (v2.162.0). OrderParams Borsh layout taken verbatim from that IDL's type definition. Program state PDA (findProgramAddress(['drift_state'], program)) confirmed on-chain: 5zpq7DvB6UdFFvpmBPspGPNfUGoBRRCE2HHg5u3gxcsN (owner = the Drift program). See A.6 design notes in POST-MVP-ROADMAP.md for why fixtures are IDL-constructed rather than mainnet-caught (Drift's 2026 order flow is ~100% Swift signed-message orders submitted by keepers; classic outer place/cancel calls are absent from every pagination-reachable window, >6000 tx scanned).",
+  "drift": {
+    "programId": "dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH",
+    "stateAddress": "5zpq7DvB6UdFFvpmBPspGPNfUGoBRRCE2HHg5u3gxcsN",
+    "enums": {
+      "OrderType": ["market", "limit", "triggerMarket", "triggerLimit", "oracle"],
+      "MarketType": ["spot", "perp"],
+      "PositionDirection": ["long", "short"]
+    },
+    "orderParamsLayout": {
+      "_note": "Borsh, in declaration order. All fields the parser reads are fixed-size and precede the first Option field (maxTs), so decoding is independent of which trailing options are set — this holds for real on-chain txs too. Offsets below are relative to the OrderParams start (i.e. data offset 8 for place_perp_order/place_and_take_perp_order; data offset 12 for place_orders' first element after the u32 vec length).",
+      "orderType": { "type": "u8 enum", "offset": 0 },
+      "marketType": { "type": "u8 enum", "offset": 1 },
+      "direction": { "type": "u8 enum", "offset": 2 },
+      "userOrderId": { "type": "u8", "offset": 3 },
+      "baseAssetAmount": { "type": "u64", "offset": 4 },
+      "price": { "type": "u64", "offset": 12 },
+      "marketIndex": { "type": "u16", "offset": 20 },
+      "reduceOnly": { "type": "bool", "offset": 22 },
+      "_trailing": "postOnly(u8), bitFlags(u8), maxTs(Option<i64>), triggerPrice(Option<u64>), triggerCondition(u8 enum), oraclePriceOffset(Option<i32>), auctionDuration(Option<u8>), auctionStartPrice(Option<i64>), auctionEndPrice(Option<i64>) — not read by the parser"
+    },
+    "instructions": {
+      "45a15dca787e4cb9": {
+        "name": "place_perp_order",
+        "anchorName": "placePerpOrder",
+        "note": "Place a single perp order. args: params(OrderParams) at data offset 8. 3 accounts.",
+        "accounts": ["state", "user", "authority"]
+      },
+      "3c3f327b0cc53cbe": {
+        "name": "place_orders",
+        "anchorName": "placeOrders",
+        "note": "Place a batch of orders. args: params(Vec<OrderParams>): u32 length at offset 8, first element at offset 12. 3 accounts.",
+        "accounts": ["state", "user", "authority"]
+      },
+      "d53301bb6cdce6e0": {
+        "name": "place_and_take_perp_order",
+        "anchorName": "placeAndTakePerpOrder",
+        "note": "Place a perp order and immediately take against the book/AMM. args: params(OrderParams) at offset 8, then successCondition(Option<u32>). 4 accounts — authority moves to index 3 (userStats inserted at 2).",
+        "accounts": ["state", "user", "userStats", "authority"]
+      },
+      "5f81edf00831df84": {
+        "name": "cancel_order",
+        "anchorName": "cancelOrder",
+        "note": "Cancel one order by id. args: orderId(Option<u32>) at offset 8 (1-byte present flag, then u32 if present; None = cancel-by-other-means). 3 accounts.",
+        "accounts": ["state", "user", "authority"]
+      },
+      "eee15f9ee36708c2": {
+        "name": "cancel_orders",
+        "anchorName": "cancelOrders",
+        "note": "Cancel a filtered set of orders. args at offset 8: marketType(Option<MarketType>), marketIndex(Option<u16>), direction(Option<PositionDirection>). 3 accounts.",
+        "accounts": ["state", "user", "authority"]
+      },
+      "f223c68952e1f2b6": {
+        "name": "deposit",
+        "anchorName": "deposit",
+        "note": "Deposit collateral into a spot market. args at offset 8: marketIndex(u16), amount(u64), reduceOnly(bool). 7 accounts — authority at index 3. NB: same discriminator as Marinade's deposit (both sha256('global:deposit')); the dispatcher routes by programId so there is no collision.",
+        "accounts": ["state", "user", "userStats", "authority", "spotMarketVault", "userTokenAccount", "tokenProgram"]
+      },
+      "b712469c946da122": {
+        "name": "withdraw",
+        "anchorName": "withdraw",
+        "note": "Withdraw collateral from a spot market. args at offset 8: marketIndex(u16), amount(u64), reduceOnly(bool). 8 accounts — authority at index 3, driftSigner inserted at 5.",
+        "accounts": ["state", "user", "userStats", "authority", "spotMarketVault", "driftSigner", "userTokenAccount", "tokenProgram"]
+      }
+    }
+  }
+}

@@ -115,9 +115,14 @@
   **Дизайн-нотатки:** swap (v1) = 11 accounts, disc f8c69e91e17587c8, mints via tokenAccountMints[tokenOwnerAccount{A,B}] + aToB flag. swap_v2 = 15+ accounts, disc 2b04ed0b1ac91e62, direct mints at acc[5]/acc[6], pool at acc[4]. two_hop_swap — owner net flow fallback для мінтів. scripts/fetch-orca-fixtures.ts збирає нові fixtures.
 
 ### A.6 — Drift Protocol parser (perps)
-- [ ] **A.6** Парсер для Drift v2 (`dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH`) — placeOrder, fillOrder, cancelOrder. **Складність:** perps мають свою market-index model
-  ⏱ 3 дні · 📦 v0.5.2 · 🎯 *"AgentScope now parses Drift perp orders — leverage agents are finally observable end-to-end. Place, fill, cancel — all with mark price, market index, and size."*
-  **Файли:** `packages/parser/src/drift/{idl.json, parser.ts}` + tests
+- [x] **A.6** (2026-07-14) Парсер для Drift v2 (`dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH`) — класичні order-інструкції агента: `place_perp_order`, `place_orders`, `place_and_take_perp_order`, `cancel_order`, `cancel_orders` + collateral `deposit`/`withdraw`. 13 TDD тестів, 9 fixtures, 18/18 turbo зелені.
+  ⏱ 3 дні · 📦 v0.5.2 · 🎯 *"AgentScope now parses Drift perp orders — leverage agents are finally observable end-to-end. Place, cancel, size, direction, market index — all with real semantics."*
+  **Файли:** [packages/parser/src/drift/idl.json](../packages/parser/src/drift/idl.json) · [packages/parser/src/drift/parser.ts](../packages/parser/src/drift/parser.ts) · [packages/parser/tests/drift.test.ts](../packages/parser/tests/drift.test.ts) · 9 fixtures (drift-*) · [scripts/fetch-drift-fixtures.ts](../scripts/fetch-drift-fixtures.ts)
+  **🔴 Скоуп-рішення (власник, 2026-07-14):** decode тільки **класичні order-інструкції, які надсилає сам агент** через standard `@drift-labs/sdk`. НЕ keeper-side `fill_*` / Swift signed-message інструкції.
+  **🔴 Відхилення від roadmap (важливо):** roadmap казав "placeOrder, **fillOrder**, cancelOrder", але `fill_perp_order` — це keeper-дія (виконує чужий ордер), не те, що надсилає моніторений агент. Замість fill додано `place_orders` (batch), `place_and_take_perp_order` (market-order path) + deposit/withdraw.
+  **🔴 Fixtures IDL-constructed, НЕ mainnet-caught (свідоме відхилення від TDD-дисципліни, погоджено):** станом на 2026-07 Drift order-flow майже повністю мігрував на **Swift signed-message orders** (подають keeper'и; домінантні outer-дискримінатори `ef10c888…`/`033a28eb…` **відсутні навіть у найновішому опублікованому IDL** v2.162.0). Класичні outer place/cancel виклики недосяжні жодним pagination-вікном — просканував **>6000 свіжих tx усіма стратегіями (deep-history, trader-authorities), нуль hits**. Тому fixtures згенеровано за офіційним IDL-layout (генератор з web3.js-серіалізацією), а bytes звірено проти двох авторитетних IDL-джерел.
+  **Верифікація (звірено, не з пам'яті):** дискримінатори = sha256("global:<snake>")[..8], звірені проти on-chain Anchor IDL (v2.150.0) + GitHub protocol-v2 (v2.162.0). Program state PDA `5zpq7DvB6UdFFvpmBPspGPNfUGoBRRCE2HHg5u3gxcsN` (findProgramAddress(["drift_state"])) підтверджено on-chain owned by program. `OrderParams` layout — verbatim з IDL type. Незалежний декодер підтвердив усі офсети.
+  **Дизайн-нотатки:** усі поля, що читає парсер (orderType/marketType/direction/marketIndex/baseAssetAmount/price/reduceOnly), лежать на фіксованих офсетах ПЕРЕД першим Option-полем `OrderParams` (maxTs) → decode робастний до будь-яких реальних tx незалежно від trailing-опцій. Account-позиції різні: place3 → authority@2; place_and_take → authority@3 (userStats@2); deposit/withdraw → authority@3. `deposit` disc = `f223c68952e1f2b6` збігається з Marinade's deposit (обидва sha256("global:deposit")), але dispatcher маршрутизує по programId → без конфлікту.
 
 ### A.7 — Marinade liquid staking parser
 - [x] **A.7** (2026-07-07) Парсер для Marinade — `deposit`, `liquid_unstake`, `order_unstake`, `claim`. 12 TDD тестів, 6 mainnet fixtures (2 deposit, 2 liquid_unstake, 1 order_unstake, 1 claim). Стейкінг має простіший shape ніж DEX — тільки SOL↔mSOL, тому args плоскі (`amountLamports`/`msolAmount` + `stateAddress`), без swap-стилю `{inputMint,outputMint}`.
@@ -335,8 +340,8 @@
 **Phase 1 (high-value, low-risk):** A.8 ✅ → B.5 ✅ → C.6 ✅ — *ЗАКРИТА (B.1 відкладено)*
 - Priority fee anomaly, Prometheus metrics, README badge — всі зроблені. B.1 Discord відкладено на кінець.
 
-**Phase 2 (parser surge):** A.4 ✅ → A.5 ✅ → A.7 ✅ → A.6
-- 4 парсери підряд, ~11 днів. Раз вже у parser-зоні — не випадати в інші файлові кластери. Залишився A.6 (Drift perps) — найскладніший через market-index model.
+**Phase 2 (parser surge):** A.4 ✅ → A.5 ✅ → A.7 ✅ → A.6 ✅ — **ЗАКРИТА**
+- 4 парсери підряд. A.6 (Drift perps) закрив фазу: скоуп звужено до класичних agent-order інструкцій (Drift order-flow мігрував на Swift; keeper/fill-інструкції поза скоупом). Далі — Phase 3 (DX + self-host): B.7 → B.6 → B.8.
 
 **Phase 3 (DX + self-host):** B.7 → B.6 → B.8
 - Спрямовано на self-host story для open-source momentum.
@@ -386,7 +391,8 @@
 | v0.5.0 | 2026-06-23 | A.4 (Raydium AMM v4 + CLMM parser) | ✅ released |
 | v0.6.4 | 2026-06-26 | B.5 (Prometheus /metrics endpoint) | ✅ released |
 | v0.5.1 | 2026-07-01 | A.5 (Orca Whirlpools parser) | ✅ released |
-| v0.5.3 | 2026-07-07 | A.7 (Marinade liquid staking parser) | 🔄 pending commit |
+| v0.5.3 | 2026-07-07 | A.7 (Marinade liquid staking parser) | ✅ released |
+| v0.5.2 | 2026-07-14 | A.6 (Drift v2 perps parser) | 🔄 pending commit |
 | … | … | … | … |
 
 ---

@@ -3,17 +3,7 @@ import { apiClient } from '@/lib/api-client';
 import { useIsOwner } from '@/lib/use-is-owner';
 import { cn } from '@/lib/utils';
 import { useQuery } from '@tanstack/react-query';
-import { useMemo } from 'react';
 import { Navigate } from 'react-router-dom';
-import {
-  Area,
-  AreaChart,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts';
 
 // ─── Response shapes (mirror apps/api/src/routes/admin.ts) ──────────────────
 
@@ -42,20 +32,6 @@ interface Milestones {
   deadline: string | null;
   registered: MilestoneLeg;
   active: MilestoneLeg;
-}
-
-interface GrowthPoint {
-  t: string;
-  newUsers: number;
-  newAgents: number;
-  newBuilders: number;
-  cumulativeBuilders: number;
-}
-
-interface Growth {
-  window: string;
-  baselineBuilders: number;
-  points: GrowthPoint[];
 }
 
 interface Infra {
@@ -94,7 +70,6 @@ interface AlertBreakdownRow {
 interface AdminSummary {
   overview: Overview;
   milestones: Milestones;
-  growth: Growth;
   infra: Infra;
   builders: { builders: BuilderRow[] };
   alertsBreakdown: { window: string; breakdown: AlertBreakdownRow[] };
@@ -102,7 +77,7 @@ interface AdminSummary {
 
 /**
  * Owner-only grant-ops panel (Cluster F). Aggregates platform-wide metrics —
- * builder counts vs grant milestones, growth, infra headroom, per-builder
+ * builder counts vs grant milestones, infra headroom, per-builder
  * engagement — that the per-user dashboard deliberately never shows.
  *
  * Access is enforced server-side (every /api/admin/* call returns 403 to
@@ -125,7 +100,6 @@ export function AdminPage() {
 
   const o = summary.data?.overview;
   const m = summary.data?.milestones;
-  const growthData = summary.data?.growth;
   const infraData = summary.data?.infra;
   const buildersData = summary.data?.builders;
   const breakdownData = summary.data?.alertsBreakdown;
@@ -201,13 +175,7 @@ export function AdminPage() {
         />
       </KpiRow>
 
-      <div className="mb-5 grid grid-cols-[1.5fr_1fr] gap-4 max-[1100px]:grid-cols-1">
-        <Card
-          title="Builder growth · 30d"
-          meta={growthData ? `${growthData.points.length} days` : ''}
-        >
-          <GrowthChart data={growthData} />
-        </Card>
+      <div className="mb-5">
         <Card title="Infra headroom" meta="free-tier caps">
           <InfraPanel infra={infraData} loading={loading} />
         </Card>
@@ -303,72 +271,6 @@ function MilestoneCard({
           </div>
         ) : null}
       </div>
-    </div>
-  );
-}
-
-// ─── Growth chart ───────────────────────────────────────────────────────────
-
-function GrowthChart({ data }: { data: Growth | undefined }) {
-  const points = useMemo(
-    () =>
-      (data?.points ?? []).map((p) => ({
-        day: p.t.slice(5, 10), // MM-DD
-        builders: p.cumulativeBuilders,
-        agents: p.newAgents,
-      })),
-    [data],
-  );
-
-  if (points.length < 2) {
-    return <Empty label="Not enough history yet" />;
-  }
-
-  return (
-    <div className="px-2 py-3">
-      <ResponsiveContainer width="100%" height={220}>
-        <AreaChart data={points} margin={{ top: 8, right: 12, bottom: 0, left: -18 }}>
-          <defs>
-            <linearGradient id="adminGrowth" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="var(--accent)" stopOpacity={0.35} />
-              <stop offset="100%" stopColor="var(--accent)" stopOpacity={0} />
-            </linearGradient>
-          </defs>
-          <CartesianGrid stroke="var(--line-soft)" vertical={false} />
-          <XAxis
-            dataKey="day"
-            tick={{ fontSize: 10, fill: 'var(--fg-3)', fontFamily: 'monospace' }}
-            tickLine={false}
-            axisLine={false}
-            minTickGap={24}
-          />
-          <YAxis
-            allowDecimals={false}
-            tick={{ fontSize: 10, fill: 'var(--fg-3)', fontFamily: 'monospace' }}
-            tickLine={false}
-            axisLine={false}
-            width={32}
-          />
-          <Tooltip
-            contentStyle={{
-              background: 'var(--surface-2)',
-              border: '1px solid var(--line)',
-              borderRadius: 6,
-              fontSize: 11,
-              fontFamily: 'monospace',
-            }}
-            labelStyle={{ color: 'var(--fg-2)' }}
-          />
-          <Area
-            type="monotone"
-            dataKey="builders"
-            name="cumulative builders"
-            stroke="var(--accent)"
-            strokeWidth={1.5}
-            fill="url(#adminGrowth)"
-          />
-        </AreaChart>
-      </ResponsiveContainer>
     </div>
   );
 }

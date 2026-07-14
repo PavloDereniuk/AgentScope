@@ -400,4 +400,8 @@ const KNOWN_PROGRAMS: ReadonlyMap<string, string> = new Map([
   // docs.marinade.finance/developers/contract-addresses + live getAccountInfo,
   // NOT the address in an earlier roadmap draft (that one doesn't exist on mainnet).
   ['MarBmsSgKXdrN1egZf5sqe1TMai9K1rChYNDJgjq7aD', 'Marinade Finance'],
+  // Drift v2 perpetuals — Anchor. Discriminators verified against the official
+  // Drift IDL (on-chain v2.150.0 + github.com/drift-labs/protocol-v2 v2.162.0);
+  // state PDA confirmed on-chain owned by the program. See src/drift/idl.json.
+  ['dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH', 'Drift v2'],
 ]);

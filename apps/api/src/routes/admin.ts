@@ -46,16 +46,12 @@ const HELIUS_AGENT_CEILING = 23;
  */
 const BYTES_PER_TX_ESTIMATE = 2500;
 
-/** Closed set of windows the growth / breakdown series accept. */
+/** Closed set of windows the breakdown / infra series accept. */
 const WINDOW_MS: Record<'24h' | '7d' | '30d', number> = {
   '24h': 24 * 60 * 60 * 1000,
   '7d': 7 * 24 * 60 * 60 * 1000,
   '30d': 30 * 24 * 60 * 60 * 1000,
 };
-
-const growthQuerySchema = z.object({
-  window: z.enum(['7d', '30d']).default('30d'),
-});
 
 const breakdownQuerySchema = z.object({
   window: z.enum(['24h', '7d', '30d']).default('7d'),
@@ -205,73 +201,6 @@ function getMilestonesPayload(builders: BuilderCounts, milestones: AdminMileston
   };
 }
 
-async function getGrowth(db: Database, window: '7d' | '30d') {
-  const since = new Date(Date.now() - WINDOW_MS[window]).toISOString();
-  const [seriesRaw, baselineRaw] = await Promise.all([
-    db.execute(sql`
-      with buckets as (
-        select t from generate_series(
-          date_trunc('day', (${since})::timestamptz),
-          date_trunc('day', now()),
-          '1 day'::interval
-        ) as t
-      ),
-      users_agg as (
-        select date_trunc('day', created_at) as d, count(*) as c
-        from users where created_at >= ${since} group by 1
-      ),
-      agents_agg as (
-        select date_trunc('day', created_at) as d, count(*) as c
-        from agents where created_at >= ${since} group by 1
-      ),
-      builder_join as (
-        select user_id, min(created_at) as joined from agents group by user_id
-      ),
-      builders_agg as (
-        select date_trunc('day', joined) as d, count(*) as c
-        from builder_join where joined >= ${since} group by 1
-      )
-      select
-        to_char(b.t at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as t,
-        cast(coalesce(u.c, 0) as int) as new_users,
-        cast(coalesce(a.c, 0) as int) as new_agents,
-        cast(coalesce(bu.c, 0) as int) as new_builders
-      from buckets b
-      left join users_agg u on b.t = u.d
-      left join agents_agg a on b.t = a.d
-      left join builders_agg bu on b.t = bu.d
-      order by b.t asc
-    `),
-    db.execute(sql`
-      select cast(count(*) as int) as n from (
-        select user_id, min(created_at) as joined from agents group by user_id
-      ) bj where joined < ${since}
-    `),
-  ]);
-
-  const baseline = Number(unwrapRows<{ n: number | string }>(baselineRaw)[0]?.n ?? 0) || 0;
-  const rows = unwrapRows<{
-    t: string;
-    new_users: number | string;
-    new_agents: number | string;
-    new_builders: number | string;
-  }>(seriesRaw);
-
-  let cumulative = baseline;
-  const points = rows.map((r) => {
-    cumulative += Number(r.new_builders);
-    return {
-      t: r.t,
-      newUsers: Number(r.new_users),
-      newAgents: Number(r.new_agents),
-      newBuilders: Number(r.new_builders),
-      cumulativeBuilders: cumulative,
-    };
-  });
-
-  return { window, baselineBuilders: baseline, points };
-}
-
 async function getInfra(db: Database, logger: Logger) {
   let dbBytes: number | null = null;
   try {
@@ -400,14 +329,6 @@ export function createAdminRouter(deps: AdminRouterDeps) {
     c.json(getMilestonesPayload(await fetchBuilderCounts(db), milestones)),
   );
 
-  router.get(
-    '/growth',
-    zValidator('query', growthQuerySchema, (result) => {
-      if (!result.success) throw new HTTPException(422, { message: 'invalid window' });
-    }),
-    async (c) => c.json(await getGrowth(db, c.req.valid('query').window)),
-  );
-
   router.get('/infra', async (c) => c.json(await getInfra(db, logger)));
 
   router.get('/builders', async (c) => c.json(await getBuildersTable(db)));
@@ -429,14 +350,12 @@ export function createAdminRouter(deps: AdminRouterDeps) {
     const builders = await fetchBuilderCounts(db);
     const overview = await getOverview(db, builders);
     const milestonesPayload = getMilestonesPayload(builders, milestones);
-    const growth = await getGrowth(db, '30d');
     const infra = await getInfra(db, logger);
     const buildersTable = await getBuildersTable(db);
     const alertsBreakdown = await getAlertsBreakdown(db, '7d');
     return c.json({
       overview,
       milestones: milestonesPayload,
-      growth,
       infra,
       builders: buildersTable,
       alertsBreakdown,

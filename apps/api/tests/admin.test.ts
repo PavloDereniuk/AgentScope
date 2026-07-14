@@ -260,28 +260,13 @@ describe('GET /api/admin/infra', () => {
   });
 });
 
-describe('GET /api/admin/growth + /builders + /alerts-breakdown', () => {
+describe('GET /api/admin/builders + /alerts-breakdown', () => {
   let ctx: TestApp;
   beforeEach(async () => {
     ctx = await setup();
   });
   afterEach(async () => {
     await ctx.testDb.close();
-  });
-
-  it('growth returns a dense daily series with cumulative builders', async () => {
-    await createAgent(ctx, ALICE, 'A', 'So11111111111111111111111111111111111111112');
-    const res = await ctx.app.request('/api/admin/growth?window=7d', { headers: bearer(OWNER) });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as {
-      window: string;
-      points: { t: string; newBuilders: number; cumulativeBuilders: number }[];
-    };
-    expect(body.window).toBe('7d');
-    expect(body.points.length).toBeGreaterThan(0);
-    // Cumulative is monotonic non-decreasing.
-    const last = body.points.at(-1);
-    expect(last?.cumulativeBuilders).toBe(1);
   });
 
   it('builders lists per-user engagement with dormant flag', async () => {
@@ -345,7 +330,6 @@ describe('GET /api/admin/summary', () => {
         transactions: { total: number };
       };
       milestones: { registered: { reachedCount: number } };
-      growth: { points: unknown[] };
       infra: { db: { capBytes: number } };
       builders: { builders: unknown[] };
       alertsBreakdown: { window: string };
@@ -355,7 +339,6 @@ describe('GET /api/admin/summary', () => {
     expect(body.overview.builders).toEqual({ registered: 2, active: 1 });
     expect(body.overview.transactions.total).toBe(1);
     expect(body.milestones.registered.reachedCount).toBe(0); // 2 builders < M1=4
-    expect(body.growth.points.length).toBeGreaterThan(0);
     expect(body.infra.db.capBytes).toBe(500 * 1024 * 1024);
     expect(body.builders.builders.length).toBe(2);
     expect(body.alertsBreakdown.window).toBe('7d');
