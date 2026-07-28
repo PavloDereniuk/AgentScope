@@ -115,7 +115,7 @@
   **Дизайн-нотатки:** swap (v1) = 11 accounts, disc f8c69e91e17587c8, mints via tokenAccountMints[tokenOwnerAccount{A,B}] + aToB flag. swap_v2 = 15+ accounts, disc 2b04ed0b1ac91e62, direct mints at acc[5]/acc[6], pool at acc[4]. two_hop_swap — owner net flow fallback для мінтів. scripts/fetch-orca-fixtures.ts збирає нові fixtures.
 
 ### A.6 — Drift Protocol parser (perps)
-- [x] **A.6** (2026-07-14) Парсер для Drift v2 (`dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH`) — класичні order-інструкції агента: `place_perp_order`, `place_orders`, `place_and_take_perp_order`, `cancel_order`, `cancel_orders` + collateral `deposit`/`withdraw`. 13 TDD тестів, 9 fixtures, 18/18 turbo зелені.
+- [x] **A.6** (commit [`f25b1b2`](https://github.com/PavloDereniuk/AgentScope/commit/f25b1b2), 2026-07-14) Парсер для Drift v2 (`dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH`) — класичні order-інструкції агента: `place_perp_order`, `place_orders`, `place_and_take_perp_order`, `cancel_order`, `cancel_orders` + collateral `deposit`/`withdraw`. 13 TDD тестів, 9 fixtures, 18/18 turbo зелені.
   ⏱ 3 дні · 📦 v0.5.2 · 🎯 *"AgentScope now parses Drift perp orders — leverage agents are finally observable end-to-end. Place, cancel, size, direction, market index — all with real semantics."*
   **Файли:** [packages/parser/src/drift/idl.json](../packages/parser/src/drift/idl.json) · [packages/parser/src/drift/parser.ts](../packages/parser/src/drift/parser.ts) · [packages/parser/tests/drift.test.ts](../packages/parser/tests/drift.test.ts) · 9 fixtures (drift-*) · [scripts/fetch-drift-fixtures.ts](../scripts/fetch-drift-fixtures.ts)
   **🔴 Скоуп-рішення (власник, 2026-07-14):** decode тільки **класичні order-інструкції, які надсилає сам агент** через standard `@drift-labs/sdk`. НЕ keeper-side `fill_*` / Swift signed-message інструкції.
@@ -391,8 +391,8 @@
 | v0.5.0 | 2026-06-23 | A.4 (Raydium AMM v4 + CLMM parser) | ✅ released |
 | v0.6.4 | 2026-06-26 | B.5 (Prometheus /metrics endpoint) | ✅ released |
 | v0.5.1 | 2026-07-01 | A.5 (Orca Whirlpools parser) | ✅ released |
-| v0.5.3 | 2026-07-07 | A.7 (Marinade liquid staking parser) | ✅ released |
-| v0.5.2 | 2026-07-14 | A.6 (Drift v2 perps parser) | 🔄 pending commit |
+| v0.5.3 | 2026-07-07 | A.7 (Marinade liquid staking parser) | 🔄 commit `bd55a9c` — CHANGELOG-секції і тега ще нема |
+| v0.5.2 | 2026-07-14 | A.6 (Drift v2 perps parser) | ✅ released |
 | … | … | … | … |
 
 ---
