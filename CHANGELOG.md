@@ -7,10 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-- **Marinade Finance liquid-staking parser** (A.7) — `deposit`, `liquid_unstake`, `order_unstake`, and `claim` all parsed. Since staking only ever moves SOL ↔ mSOL (no arbitrary token pair to resolve), args stay flat: `amountLamports`/`msolAmount` + `stateAddress`, rather than the swap-style `{inputMint, outputMint}` shape used by the DEX parsers. `claim` carries no numeric arg (the amount lives in the ticket account) — instead exposes `reservePda` + `ticketAccount`. 12 TDD tests, 6 mainnet fixtures (2 deposit, 2 liquid_unstake, 1 order_unstake, 1 claim).
-- **Program ID correction:** the Marinade address previously drafted in `POST-MVP-ROADMAP.md` (`MarBmsSgKXdrN1egZf5sqe1TMThiYsCfVuvAJBbQNTQ`) does not exist on mainnet (`getAccountInfo` → null). Verified the real program ID (`MarBmsSgKXdrN1egZf5sqe1TMai9K1rChYNDJgjq7aD`) against `docs.marinade.finance/developers/contract-addresses` and a live `getAccountInfo` call before writing any parser code.
-
 ## [0.5.2] - 2026-07-14
 
 Drift v2 perpetuals parser — the last item of the Cluster A parser surge (Phase 2). Perp-trading agents are now observable end-to-end alongside the DEX parsers (Jupiter, Raydium, Orca) and Kamino/Marinade.
@@ -22,10 +18,31 @@ Drift v2 perpetuals parser — the last item of the Cluster A parser surge (Phas
 ### Notes
 No schema change, no new deps, no runtime behaviour change for agents that do not touch Drift — the dispatcher routes by `programId`, so `deposit`'s discriminator colliding with Marinade's (both are `sha256("global:deposit")[..8]`) cannot cross-match. Gate: parser 13 new TDD tests, turbo 18/18 green.
 
+## [0.5.3] - 2026-07-07
+
+Marinade liquid-staking parser. Numbered above 0.5.2 but released a week earlier — the Drift work (0.5.2) was already in flight and took the lower number; both are additive parser releases, so the ordering carries no upgrade semantics.
+
+### Added
+- **Marinade Finance liquid-staking parser** (A.7) — `deposit`, `liquid_unstake`, `order_unstake`, and `claim` all parsed. Since staking only ever moves SOL ↔ mSOL (no arbitrary token pair to resolve), args stay flat: `amountLamports`/`msolAmount` + `stateAddress`, rather than the swap-style `{inputMint, outputMint}` shape used by the DEX parsers. `claim` carries no numeric arg (the amount lives in the ticket account) — instead exposes `reservePda` + `ticketAccount`. 12 TDD tests, 6 mainnet fixtures (2 deposit, 2 liquid_unstake, 1 order_unstake, 1 claim). ([`bd55a9c`](https://github.com/PavloDereniuk/AgentScope/commit/bd55a9c))
+- **Program ID correction:** the Marinade address previously drafted in `POST-MVP-ROADMAP.md` (`MarBmsSgKXdrN1egZf5sqe1TMThiYsCfVuvAJBbQNTQ`) does not exist on mainnet (`getAccountInfo` → null). Verified the real program ID (`MarBmsSgKXdrN1egZf5sqe1TMai9K1rChYNDJgjq7aD`) against `docs.marinade.finance/developers/contract-addresses` and a live `getAccountInfo` call before writing any parser code.
+
+### Notes
+`deposit_stake_account` is deliberately not implemented (10 occurrences across a 463-tx scan — outside the task's scope). `accounts[0] = state` was confirmed on all four instructions against the official docs address, as were `liquid_unstake`'s `accounts[4] = treasuryMsolAccount` and `claim`'s `accounts[1] = reservePda`. No schema change, no new deps.
+
 ## [0.5.1] - 2026-07-01
 
 ### Added
 - **Orca Whirlpools swap parser** (A.5) — all four Whirlpool instructions parsed: `swap` (v1, 11 accounts), `swap_v2` (15+ accounts, Token-2022 compatible), `two_hop_swap`, `two_hop_swap_v2`. Emits `orca.swap` / `orca.two_hop_swap` with `inputMint`, `outputMint`, amounts, `aToB`, `poolId`, and `variant` discriminating v1 vs v2. Mint resolution: token-account balance map for single-pool swaps (both variants); `ownerSpentMints`/`ownerGainedMints` net-flow fallback for two-hop variants. 11 TDD tests, 5 mainnet fixtures. Brings DEX coverage to Jupiter + Raydium + Orca + Kamino — >90% of Solana DEX volume.
+
+## [0.5.0] - 2026-06-23
+
+Raydium parsers — the release that opened the Cluster A parser surge. Recorded retroactively: the code shipped on 2026-06-23 but never got its own CHANGELOG section.
+
+### Added
+- **Raydium AMM v4 + CLMM swap parser** (A.4) — two `ProgramParser`s covering both Raydium families. `raydiumAmmParser` (`675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8`) handles `SwapBaseIn` (code 9) and `SwapBaseOut` (code 11): the program is **not** Anchor-based, so the first data byte is the instruction code and args sit at fixed offsets, with `accounts[14/15]` as the user's source/dest token accounts. `raydiumClmmParser` (`CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK`) handles `swap_v2` (disc `2b04ed0b…`, confirmed = `sha256("global:swap_v2")[..8]`) and `swap` v1 (disc `f8c69e91…`), resolving mints from `accounts[11/12]` (input/output vault mint). Both emit `{inputMint, outputMint, amountIn, poolId, variant}` via the same 3-strategy mint resolution (direct → `tokenAccountMintMap` → `ownerFlows`). 14 TDD tests, 10 mainnet fixtures (5 AMM + 5 CLMM). ([`5d6678b`](https://github.com/PavloDereniuk/AgentScope/commit/5d6678b))
+
+### Notes
+Direct AMM v4 calls are rare in practice (~10% of transactions hitting the program; the other ~90% arrive as CPI from Jupiter, where the Jupiter parser already claims the primary instruction). No schema change, no new deps.
 
 ## [0.5.4] - 2026-06-18
 
@@ -168,6 +185,10 @@ First post-submission iteration. The 2026-05-11 Colosseum Frontier submission sh
 
 [Unreleased]: https://github.com/PavloDereniuk/AgentScope/compare/v0.5.2...HEAD
 [0.5.2]: https://github.com/PavloDereniuk/AgentScope/releases/tag/v0.5.2
+[0.5.3]: https://github.com/PavloDereniuk/AgentScope/releases/tag/v0.5.3
+[0.5.1]: https://github.com/PavloDereniuk/AgentScope/releases/tag/v0.5.1
+[0.5.0]: https://github.com/PavloDereniuk/AgentScope/releases/tag/v0.5.0
+[0.5.4]: https://github.com/PavloDereniuk/AgentScope/releases/tag/v0.5.4
 [0.4.10]: https://github.com/PavloDereniuk/AgentScope/compare/v0.4.1...v0.4.10
 [0.4.1]: https://github.com/PavloDereniuk/AgentScope/releases/tag/v0.4.1
 [0.4.0]: https://github.com/PavloDereniuk/AgentScope/releases/tag/v0.4.0

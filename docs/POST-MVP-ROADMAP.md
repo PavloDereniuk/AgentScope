@@ -125,7 +125,7 @@
   **Дизайн-нотатки:** усі поля, що читає парсер (orderType/marketType/direction/marketIndex/baseAssetAmount/price/reduceOnly), лежать на фіксованих офсетах ПЕРЕД першим Option-полем `OrderParams` (maxTs) → decode робастний до будь-яких реальних tx незалежно від trailing-опцій. Account-позиції різні: place3 → authority@2; place_and_take → authority@3 (userStats@2); deposit/withdraw → authority@3. `deposit` disc = `f223c68952e1f2b6` збігається з Marinade's deposit (обидва sha256("global:deposit")), але dispatcher маршрутизує по programId → без конфлікту.
 
 ### A.7 — Marinade liquid staking parser
-- [x] **A.7** (2026-07-07) Парсер для Marinade — `deposit`, `liquid_unstake`, `order_unstake`, `claim`. 12 TDD тестів, 6 mainnet fixtures (2 deposit, 2 liquid_unstake, 1 order_unstake, 1 claim). Стейкінг має простіший shape ніж DEX — тільки SOL↔mSOL, тому args плоскі (`amountLamports`/`msolAmount` + `stateAddress`), без swap-стилю `{inputMint,outputMint}`.
+- [x] **A.7** (commit [`bd55a9c`](https://github.com/PavloDereniuk/AgentScope/commit/bd55a9c), 2026-07-07) Парсер для Marinade — `deposit`, `liquid_unstake`, `order_unstake`, `claim`. 12 TDD тестів, 6 mainnet fixtures (2 deposit, 2 liquid_unstake, 1 order_unstake, 1 claim). Стейкінг має простіший shape ніж DEX — тільки SOL↔mSOL, тому args плоскі (`amountLamports`/`msolAmount` + `stateAddress`), без swap-стилю `{inputMint,outputMint}`.
   ⏱ 2 дні · 📦 v0.5.3 · 🎯 *"Marinade staking now visible. Yield-strategy agents that route between Kamino and Marinade — fully observable from a single dashboard."*
   **Файли:** [packages/parser/src/marinade/idl.json](../packages/parser/src/marinade/idl.json) · [packages/parser/src/marinade/parser.ts](../packages/parser/src/marinade/parser.ts) · [packages/parser/tests/marinade.test.ts](../packages/parser/tests/marinade.test.ts) · [scripts/fetch-marinade-fixtures.ts](../scripts/fetch-marinade-fixtures.ts)
   **🔴 Виправлення адреси програми (важливо):** оригінальний roadmap-запис `MarBmsSgKXdrN1egZf5sqe1TMThiYsCfVuvAJBbQNTQ` — **неіснуючий акаунт на mainnet** (`getAccountInfo` → null, перевірено). Правильна адреса `MarBmsSgKXdrN1egZf5sqe1TMai9K1rChYNDJgjq7aD` — звірена проти `docs.marinade.finance/developers/contract-addresses` + живого `getAccountInfo` (executable BPF program) ПЕРЕД написанням парсера. Схоже, попередня сесія записала roadmap-адресу з пам'яті без верифікації — урок: завжди звіряти program ID проти on-chain стану чи офіційної документації, ніколи з training-пам'яті.
@@ -391,7 +391,7 @@
 | v0.5.0 | 2026-06-23 | A.4 (Raydium AMM v4 + CLMM parser) | ✅ released |
 | v0.6.4 | 2026-06-26 | B.5 (Prometheus /metrics endpoint) | ✅ released |
 | v0.5.1 | 2026-07-01 | A.5 (Orca Whirlpools parser) | ✅ released |
-| v0.5.3 | 2026-07-07 | A.7 (Marinade liquid staking parser) | 🔄 commit `bd55a9c` — CHANGELOG-секції і тега ще нема |
+| v0.5.3 | 2026-07-07 | A.7 (Marinade liquid staking parser) | ✅ released |
 | v0.5.2 | 2026-07-14 | A.6 (Drift v2 perps parser) | ✅ released |
 | … | … | … | … |
 
