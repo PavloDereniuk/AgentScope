@@ -78,7 +78,31 @@
   **Пріоритизовано 2026-06-10:** кожен deploy без цього фіксу = ~30с деградація для всіх активних юзерів. При зростанні builders (грантова M2+) стає все більш помітним. Виявлено 2026-06-02 під час викочування admin-панелі (Cluster F).
   **Підтверджено 2026-06-15:** [packages/db/src/client.ts:38](../packages/db/src/client.ts) має авто-детекцію `:6543` → `prepare: false`. Railway вже має transaction pooler URL (порт 6543) на api + ingestion. Закрито без окремого коміту.
 
-**Cluster E total:** ~5 днів, 6 micro-releases (v0.4.3 → v0.5.0-infra). **E.1 + E.2 — must-have для M3 на free-tier; E.7 — deploy-safety (пріоритет до залучення нових юзерів).**
+### E.8 — Security scanning у CI
+- [ ] **E.8** (додано 2026-07-28) `pnpm audit --audit-level=high` крок у [.github/workflows/ci.yml](../.github/workflows/ci.yml) + CodeQL workflow (JS/TS) + Dependabot або Renovate config на security-only updates. Зараз CI = lint/typecheck/test/build, **нуль security-сканів**, хоча репо має публічний `SECURITY.md` з обіцянкою reporting-процесу
+  ⏱ 0.5 дня · 📦 v0.5.1-infra · 🎯 *(internal/ops — без твіту, або мінорна згадка у self-host anons)*
+  **Файли:** `.github/workflows/ci.yml` (+audit step) · `.github/workflows/codeql.yml` (новий) · `.github/dependabot.yml` — security-only, щоб не воювати з no-deps правилом
+  **Обґрунтування:** ми продаємо observability для гаманців з реальними коштами. Публічний репо без жодного сканування — суперечність між `SECURITY.md` і практикою. Zero нових runtime-депів (усе GitHub-native).
+
+### E.9 — Release automation (tag → GitHub Release)
+- [ ] **E.9** (додано 2026-07-28) Workflow на push тега `v*`: витягнути відповідну секцію з `CHANGELOG.md` → `gh release create` з тими notes. Зараз реліз-нотатки робляться вручну і **процес уже двічі відставав** — три коміти поспіль (`747f0e5`, `b267a65`, `f1337ad`) були саме backfill-ом пропущених секцій CHANGELOG
+  ⏱ 0.5 дня · 📦 v0.5.2-infra · 🎯 *(internal/ops)*
+  **Файли:** `.github/workflows/release.yml` (новий) · `scripts/extract-changelog-section.ts` (pure, тестований)
+  **Обґрунтування:** roadmap вимагає «кожен пункт = окремий git tag + GitHub Release notes» — але це найпростіша річ, яку solo-розробник забуває першою. Автоматизація дешевша за дисципліну.
+
+### E.10 — Публічна status-сторінка
+- [ ] **E.10** (додано 2026-07-28) `status.agentscopehq.dev` — UptimeRobot free (50 monitors) на `/health` api + ingestion + dashboard, публічний status-page, лінк у футері landing + dashboard. Довіра для білдерів, які думають вести на нас продакшн-агента
+  ⏱ 2 год · 📦 v0.5.3-infra · 🎯 *"AgentScope now has a public status page. If we're down, you'll see it before you have to ask. Observability tools that don't publish their own uptime are asking for trust they haven't shown."*
+  **Файли:** external (UptimeRobot config) · `apps/landing/src/components/Footer.astro` · `apps/dashboard/src/components/shell/` footer link
+  **Залежність:** нуль коду в критичному шляху; `/health` уже існує і навмисно не чіпає DB.
+
+### E.11 — Backup / restore runbook
+- [ ] **E.11** (додано 2026-07-28) Supabase **free tier не має PITR** — зараз втрата проєкту = втрата всіх даних білдерів і всієї грантової звітності. Scheduled GH Action: `pg_dump` (schema + data, без RLS-ролей) → зашифрований artifact з 30-денною retention. `docs/DEPLOY.md` §9 — restore-процедура, перевірена на локальному Postgres хоча б раз
+  ⏱ 1 день · 📦 v0.5.4-infra · 🎯 *(internal/ops — без твіту)*
+  **Файли:** `.github/workflows/backup.yml` (новий, cron daily) · `docs/DEPLOY.md` §9 «Backup & restore»
+  **Обґрунтування (аналіз 2026-07-28):** єдиний ризик у списку, що **не має ліміту збитку**. Усе інше в Cluster E — про вартість і швидкість; це про існування проєкту. Grant proof-артефакти живуть у тій самій БД.
+
+**Cluster E total:** ~7 днів, 10 micro-releases (v0.4.3 → v0.5.4-infra). **E.1 + E.2 — must-have для M3 на free-tier; E.7 — deploy-safety; E.11 — єдиний пункт з необмеженим збитком при відмові.**
 
 ---
 
@@ -136,7 +160,29 @@
   ⏱ 1 день · 📦 v0.5.4 · 🎯 *"Your agent silently paid 200x normal priority fee on this swap. AgentScope now flags it — most observability tools don't even surface compute budget."*
   **Файли:** `packages/detector/src/rules/priority-fee.ts` + tests · Reuse `gas_spike` median-query pattern
 
-**Cluster A total:** ~16 днів, 8 micro-releases (v0.4.0 → v0.5.4)
+### A.9 — Unknown program interaction rule
+- [ ] **A.9** (додано 2026-07-28) `unknown_program_interaction` rule — агент вперше викликає програму, якої нема ні в `KNOWN_PROGRAMS`, ні в його власній історії за N днів (default 30). Severity=warning, escalate=critical якщо у тій самій tx є SOL/SPL outflow. Дешево: історія вже у `agent_transactions`, whitelist уже у парсері
+  ⏱ 1 день · 📦 v0.5.5 · 🎯 *"Your agent just called a program it has never touched before — and moved funds in the same transaction. AgentScope now flags first-contact with unknown programs. The #1 way agent wallets get drained, caught at the first hop."*
+  **Файли:** `packages/detector/src/rules/unknown-program.ts` + tests · reuse `KNOWN_PROGRAMS` з [packages/parser/src/dispatcher.ts](../packages/parser/src/dispatcher.ts) · `packages/shared/{types,schemas,format-alert}.ts`
+  **Обґрунтування (аналіз 2026-07-28):** усі 13 наявних правил ловлять «технічно щось зламалось» (slippage, gas, stale, rate, balance). **Жодне не покриває security-вектори** — а саме через них агентські гаманці реально помирають. A.9-A.11 закривають цю категорію.
+
+### A.10 — Token approval / delegate anomaly
+- [ ] **A.10** (додано 2026-07-28) `token_approval_anomaly` rule — SPL Token `approve` / `approve_checked` на delegate, якого нема в історії агента, або з `amount == u64::MAX` (unlimited approval). Потребує decode SPL Token program у парсері (зараз декодуємо System, але не Token instructions)
+  ⏱ 1.5 дня · 📦 v0.5.6 · 🎯 *"Unlimited token approval to an address your agent has never seen? That's how wallets get emptied while you sleep. AgentScope now decodes SPL approve instructions and alerts on the delegate — not just on the transfer that comes after."*
+  **Файли:** `packages/parser/src/spl-token/` (новий, `approve`/`approve_checked`/`revoke`) · `packages/detector/src/rules/token-approval.ts` + tests
+  **Залежність:** потребує SPL Token parser — це єдиний з A.9-A.11, що не «безкоштовний». Робити після A.9/A.11 якщо час тисне.
+
+### A.11 — Outbound transfer drain
+- [ ] **A.11** (додано 2026-07-28) `outbound_transfer_drain` rule — серія SOL/SPL transfer-ів на адресу(и) поза відомим набором counterparty агента у межах вікна (default 15 хв), сумарно > X% від балансу на початок вікна. Ловить повільний дренаж дрібними сумами, який per-tx правила пропускають
+  ⏱ 1 день · 📦 v0.5.7 · 🎯 *"Drains don't always come as one big transfer. AgentScope now watches the aggregate: a run of small outbound transfers to fresh addresses that adds up to a meaningful slice of the wallet fires an alert — even when no single tx looks wrong."*
+  **Файли:** `packages/detector/src/rules/transfer-drain.ts` + tests · reuse sliding-window паттерн з [packages/detector/src/rules/runaway.ts](../packages/detector/src/rules/runaway.ts) · balance snapshot з `balance-fetcher` prime-cache (E.1)
+
+### A.12 — pump.fun / memecoin launchpad parser ⚠️ ПОТРЕБУЄ ПОГОДЖЕННЯ ВЛАСНИКА
+- [ ] **A.12** (додано 2026-07-28) Парсер для pump.fun (`buy`/`sell`/`create`) — саме там найбільше agent-активності і найбільше катастроф. **⚠️ Поза whitelisted-списком протоколів у CLAUDE.md** (Jupiter/Kamino + roadmap-відкриті Raydium/Orca/Drift/Marinade) → **не починати без явного «так» власника**
+  ⏱ TBD (оцінка ~3 дні за аналогією з A.4/A.5, не валідована) · 📦 v0.5.8 · 🎯 *"Memecoin agents are where the wild things are. AgentScope now parses pump.fun buys and sells with real semantics — mint, SOL in, tokens out, bonding-curve state. Your degen agent is finally legible."*
+  **Відкриті питання перед стартом:** (a) чи це наша цільова аудиторія, чи відволікання від «серйозних» yield/arb агентів; (b) чи є мейнтейнс-ризик — pump.fun міняє програму частіше за DEX-и.
+
+**Cluster A total:** ~19 днів (+A.12 TBD), 12 micro-releases (v0.4.0 → v0.5.8). **A.1-A.8 закриті; A.9-A.11 — новий security-зріз (додано 2026-07-28).**
 
 ---
 
@@ -253,7 +299,20 @@
   ⏱ 2 дні · 📦 v0.8.1 · 🎯 *"AgentScope API now has interactive docs at api.agentscopehq.dev/docs. Built from the actual Zod schemas — no drift between spec and code. Try requests right in the browser, copy curl out, done."*
   **Файли:** Migration `@hono/zod-validator` → `@hono/zod-openapi` (incremental, one route at a time) · `apps/api/src/openapi.ts` · `apps/api/src/routes/docs.ts`
 
-**Cluster C total:** ~12 днів, 8 micro-releases (v0.7.2 → v0.8.1)
+### C.9 — Weekly share-card (PNG)
+- [ ] **C.9** (додано 2026-07-28) Кнопка «Share week» на agent-detail → рендерить картку 1200×630 (tx count, alerts fired, P&L delta, uptime streak, agent name) + copy-to-clipboard/download. Серверний рендер через SVG-string → PNG (без headless-браузера, без нових депів — reuse паттерн з [apps/api/src/routes/public-badge.ts](../apps/api/src/routes/public-badge.ts))
+  ⏱ 1.5 дня · 📦 v0.8.2 · 🎯 *"Your agent's week, in one image. Tap 'Share week' and get a card with tx count, alerts, and P&L — sized for X. Your agent's track record, public if you want it."*
+  **Файли:** `apps/api/src/routes/public-card.ts` (SVG → PNG) · `apps/dashboard/src/components/ShareWeekButton.tsx`
+  **Обґрунтування (аналіз 2026-07-28):** у продукті **нуль user-generated acquisition surface**. C.6 (badge) — статичний і живе у README; це — recurring момент, який юзер хоче показати. Найдешевший growth-важіль у Cluster C.
+  **Залежність:** public sanitization паттерн з C.0b/C.6. **Відкрите питання:** SVG→PNG без депа — треба перевірити, чи вистачає можливостей; якщо ні, віддавати SVG і не тягнути `resvg`/`sharp`.
+
+### C.10 — Alert feedback («useful / noise»)
+- [ ] **C.10** (додано 2026-07-28) Дві кнопки на кожному alert у фіді → `alerts.feedback` enum (`useful` / `noise` / null). Показувати noise-rate per rule у settings. Дає **реальні лейбли** замість чистої статистики і напряму годує D.1 auto-tuning
+  ⏱ 1 день · 📦 v0.8.3 · 🎯 *"Every AgentScope alert now has a thumbs up/down. Tell us which ones were noise and your thresholds tune themselves against your labels, not our guesses. Alert fatigue is a product bug, not a user problem."*
+  **Файли:** `packages/db` migration (`alerts.feedback`) · `apps/api/src/routes/alerts.ts` PATCH · `apps/dashboard/src/routes/alerts.tsx`
+  **Залежність:** D.1 (auto-tuning) стає суттєво сильнішим з цими даними → **робити C.10 ПЕРЕД D.1**, щоб на момент D.1 уже назбиралась історія лейблів.
+
+**Cluster C total:** ~16.5 днів, 12 micro-releases (v0.4.8 → v0.8.3)
 
 ---
 
@@ -311,19 +370,107 @@
 
 ---
 
+## Cluster G — Grant Ops / Acquisition & Retention 🔴 (додано 2026-07-28, deadline-driven)
+
+> **Мета:** закрити структурну діру, виявлену в аналізі 2026-07-28 — **роудмап на 38 задач був на 100% інженерним, а KPI гранту вимірюється у «active builders»**. F.1/F.2 дали *перегляд* цифр; Cluster G дає *важелі*, які на ці цифри впливають, і *proof*, який здається спонсору.
+>
+> **Контекст на момент додавання:** вікно M1 (4 білдери, червень–липень 2026) закривається **2026-08-01** — за 4 дні. [`GRANT-SF-UKRAINE-AWARDED.md §8`](GRANT-SF-UKRAINE-AWARDED.md) має 4 незакриті owner-actions, включно з «приватний трекер білдерів», який на 90% уже реалізований у admin builders-таблиці (F.2).
+>
+> **Визначення «active» — з гранту, не наше:** ≥1 tx за останні 14 днів **АБО** ≥1 доставлений alert за останні 30 днів. Registered ≠ active; трекаємо обидві цифри окремо (рішення з Cluster F).
+
+### G.1 — Milestone proof exporter 🔴 НАЙТЕРМІНОВІШЕ
+- [ ] **G.1** Кнопка «Export milestone bundle» на `/admin` → (a) анонімізований CSV (`builder_hash`, `agents_count`, `first_tx_at`, `last_active_at`, `active_by_grant_definition`), (b) screenshot-ready вьюха без PII, (c) автопідрахунок registered vs active **саме за грантовим визначенням** (14д tx / 30д alert), а не за нашим внутрішнім. Зараз ці цифри збираються вручну під кожен milestone
+  ⏱ 3-4 год · 📦 v0.5.2-admin · 🎯 *(internal/ops — опц. building-in-public твіт про грантовий трекер)*
+  **Файли:** `apps/api/src/routes/admin.ts` (+`/milestone-export`) · `apps/dashboard/src/routes/admin.tsx` (кнопка + вьюха) · reuse `tx-csv.ts` serializer-паттерн з E17
+  **Чому першим:** без цього кожне закриття milestone = ручний SQL + ручна анонімізація + ручний скріншот, і так тричі (M1/M2/M3). Один раз написати — тричі здати.
+
+### G.2 — Re-activation nudge (registered але мовчить)
+- [ ] **G.2** Cron: агент зареєстрований >7 днів тому, `lastSeenAt == null`, нуль tx → одноразовий Telegram/email власнику агента з лінком на onboarding-checklist + ingest-token. Максимум 2 нагадування (день 7 і день 21), потім тиша назавжди
+  ⏱ 1 день · 📦 v0.5.3-admin · 🎯 *"Registered an agent and never wired it up? AgentScope now nudges you once — with your token and the three lines you need — instead of letting the account rot. Activation is our job, not yours."*
+  **Файли:** `apps/ingestion/src/reactivation-nudge.ts` (новий cron) · reuse `packages/alerter` sender · `agents.nudged_at` migration
+  **Обґрунтування:** C.0/C.0c (onboarding checklist) працюють **тільки якщо юзер зайде у дашборд**. Юзер, який зареєструвався і пішов, не побачить їх ніколи — а це саме та когорта, що відділяє registered від active, тобто саме та, яку рахує грант.
+  **⚠️ Обмеження:** двічі і все. Ми продаємо алерти — стати джерелом спаму означає вбити довіру до власного каналу.
+
+### G.3 — Weekly owner digest у Telegram
+- [ ] **G.3** Щопонеділка 09:00 UTC — Telegram власнику: `+N builders / N active / N churned` за тиждень, DB size vs 500 MB, Helius credits %, ingest lag, топ-3 правила за спрацюваннями. Reuse admin-агрегатів (F.1) + `telegram-bot.ts`
+  ⏱ 0.5 дня · 📦 v0.5.4-admin · 🎯 *(internal/ops)*
+  **Файли:** `apps/ingestion/src/owner-digest.ts` (новий cron) · reuse `apps/api` admin SQL-хелпери (винести у `packages/db` якщо дублюються)
+  **Обґрунтування:** ops-петля без відкривання дашборду. Помітити churn або наближення до storage-стелі через тиждень — дешево; через місяць — уже пізно.
+
+**Cluster G total:** ~2 дні, 3 micro-releases (v0.5.2-admin → v0.5.4-admin). **G.1 — блокер для здачі M1.**
+
+---
+
+## Cluster H — Monetization 🟡 (додано 2026-07-28)
+
+> **Мета:** дати платний шлях, якого зараз фізично не існує. Зараз `MAX_AGENTS_PER_USER=2` — це **глухий hard wall**: дашборд просто ховає кнопку «Add agent», користувач не бачить ні ціни, ні waitlist, ні пояснення.
+>
+> **Чому це у скоупі:** формулювання «through the free tier» / «using the free tier» **свідомо прибрано з M1 і KPI на вимогу спонсора** під час рев'ю ([`GRANT-SF-UKRAINE-AWARDED.md §2`](GRANT-SF-UKRAINE-AWARDED.md)). Тобто платні користувачі зараховуються у грантовий KPI нарівні з безкоштовними, і грант нас до free-only мотивації **не зобов'язує**.
+>
+> **Свідомо НЕ вирішуємо зараз:** ціну, тарифні межі, провайдера платежів. H.1 навмисно збирає сигнал **до** цих рішень.
+
+### H.1 — Upgrade CTA + waitlist (без білінгу)
+- [ ] **H.1** Замість мовчазного приховування Add-кнопки при досягненні cap — картка «Need more than 2 agents?» з коротким поясненням і формою waitlist (email + скільки агентів + який use-case → у БД, нотифікація власнику в Telegram). Жодних платежів, жодного провайдера
+  ⏱ 2 год · 📦 v0.8.4 · 🎯 *(internal — не твітити до появи реальної пропозиції)*
+  **Файли:** `apps/dashboard/src/routes/agents.tsx` (cap-стан) · `apps/api/src/routes/waitlist.ts` (новий) · `packages/db` migration `upgrade_waitlist`
+  **Обґрунтування:** дає pipeline-сигнал за 2 години і **не вимагає жодного рішення про ціни**. Якщо за місяць нуль заявок — H.2 не потрібен, і ми зекономили тижні. Якщо заявки є — у нас є конкретні use-case'и, на яких будувати тариф.
+
+### H.2 — Реальний білінг
+- [ ] **H.2** Платіжний провайдер (Helio як Solana-native кандидат, Stripe як дефолт), тарифні межі, enforcement у API. **⚠️ Не починати без сигналу з H.1** і без явного рішення власника про модель
+  ⏱ TBD · 📦 TBD · 🎯 *TBD*
+  **Відкриті питання:** (a) Helio (Solana-native, «eat your own dogfood») vs Stripe (нудно, надійно, є в кожного); (b) чи вводити paid tier взагалі до 25 білдерів, чи це передчасна оптимізація; (c) податкова/юридична сторона — соло-розробник, USDG-грант, платні підписки — окрема тема поза інженерією.
+
+**Cluster H total:** ~0.25 дня + TBD, 1-2 micro-releases. **H.1 — дешевий сигнал; H.2 — тільки за сигналом.**
+
+---
+
+## Cluster I — Docs & SEO surface 🟡 (додано 2026-07-28)
+
+> **Мета:** побудувати поверхню, яку **грант прямо вимагає для M2**, а роудмап не покривав жодним пунктом. [`GRANT-SF-UKRAINE-AWARDED.md §4`](GRANT-SF-UKRAINE-AWARDED.md), «Required moves between M1 and M2»: *«One Mintlify-quality quickstart published»* + *«≥1 blog post that ranks for a Solana-agent observability keyword»*.
+>
+> **Поточний стан (перевірено 2026-07-28):** [`apps/landing/src/pages`](../apps/landing/src/pages) містить рівно два файли — `index.astro` і `quickstart.astro`. Блогу нема. Docs-сайту нема. 13 правил детектора **ніде не задокументовані для користувача** — тільки в коді й у цьому роудмапі.
+>
+> **Zero нових депів:** Astro 4.16 вже стоїть, content collections і RSS — вбудовані.
+
+### I.1 — Blog на Astro content collections
+- [ ] **I.1** `apps/landing/src/pages/blog/` + content collection (`src/content/blog/*.md`), список, RSS-фід, OG-картинки, канонічні URL. Перший пост — той самий, що вимагає M2 (кандидат: «How we parse 7 Solana protocols for agent observability» або грант-ретроспектива)
+  ⏱ 1.5 дня · 📦 v0.6.6 · 🎯 *"AgentScope has a blog now. First post: how we decode Jupiter, Raydium, Orca, Drift, Kamino, Marinade and SPL from raw transactions — the unglamorous half of agent observability."*
+  **Файли:** `apps/landing/src/content/config.ts` · `apps/landing/src/pages/blog/[...slug].astro` + `index.astro` · `apps/landing/src/pages/rss.xml.ts`
+
+### I.2 — /docs з сайдбаром + rules reference
+- [ ] **I.2** Розширити одинокий `quickstart.astro` у повноцінний `/docs` з навігацією: Getting started (L0 REST / L1 OTel / L2 SDK), **Alert rules reference — усі 13 правил з порогами, дефолтами й прикладами payload'ів**, Self-host (синергія з B.7), API reference (лінк на C.8 Scalar)
+  ⏱ 2 дні · 📦 v0.6.7 · 🎯 *"Real docs shipped. Every alert rule documented — what fires it, what the default threshold is, what the payload looks like. No more reading our source to find out why you got pinged."*
+  **Файли:** `apps/landing/src/pages/docs/` · `apps/landing/src/components/DocsSidebar.astro` · джерело правди для rules — `packages/shared/src/types.ts` + `format-alert.ts`
+  **⚠️ Ризик дрейфу:** rules reference писаний руками розійдеться з кодом. Розглянути генерацію сторінки з `AlertRuleName` + дефолтів у білді.
+
+### I.3 — llms.txt + структуровані дані
+- [ ] **I.3** `/llms.txt` і `/llms-full.txt` на landing (стандарт для LLM-агентів, що читають сайти) + JSON-LD `SoftwareApplication` на index + `Article` на блог-постах
+  ⏱ 0.5 дня · 📦 v0.6.8 · 🎯 *"AgentScope now ships llms.txt. We build tools for AI agents — the least we can do is make our own docs machine-readable for the agents that go looking."*
+  **Файли:** `apps/landing/public/llms.txt` (або generated route) · `apps/landing/src/layouts/` JSON-LD
+  **Обґрунтування:** наша аудиторія — люди, які будують агентів, і дедалі частіше **самі агенти**, що шукають інструменти. Дешево, а наратив ідеально збігається з продуктом.
+
+**Cluster I total:** ~4 дні, 3 micro-releases (v0.6.6 → v0.6.8). **I.1 + I.2 — прямі вимоги гранту для M2.**
+
+---
+
 ## Загальна оцінка
 
 | Cluster | Releases | Tasks | Days | Twit moments |
 |---|---|---|---|---|
-| **E (Infra Hardening + Deploy-safety 🔴 PRIORITY)** | **v0.4.3 → v0.5.0-infra** | **6** | **~5** | **4** |
-| A (Detection + Parsers) | v0.4.0 → v0.5.4 | 8 | ~16 | 8 |
+| **E (Infra Hardening + Deploy-safety 🔴 PRIORITY)** | **v0.4.3 → v0.5.4-infra** | **10** | **~7** | **5** |
+| A (Detection + Parsers) | v0.4.0 → v0.5.8 | 12 | ~19 (+TBD) | 12 |
 | B (Notifications + DX) | v0.6.0 → v0.7.1 | 8 | ~11 | 8 |
-| **C (Dashboard UX + Growth 🔴 C.0/C.0b priority)** | **v0.4.8 → v0.8.1** | **10** | **~14.5** | **10** |
+| **C (Dashboard UX + Growth 🔴 C.0/C.0b priority)** | **v0.4.8 → v0.8.3** | **12** | **~16.5** | **12** |
 | D (AI/LLM features) | v0.9.0 → v0.9.3 | 4 | ~12 | 4 |
 | **F (Grant Ops / Admin) 🟢** | **v0.5.0-admin → v0.5.1-admin** | **2** | **~3** | **1** |
-| **Total** | **34 releases** | **38 tasks** | **~61.5 days** | **35 tweet-moments** |
+| **G (Grant Acquisition & Retention 🔴 NEW)** | **v0.5.2-admin → v0.5.4-admin** | **3** | **~2** | **1** |
+| **H (Monetization 🟡 NEW)** | **v0.8.4 → TBD** | **2** | **~0.25 (+TBD)** | **0** |
+| **I (Docs & SEO 🟡 NEW)** | **v0.6.6 → v0.6.8** | **3** | **~4** | **3** |
+| **Total** | **~52 releases** | **56 tasks** | **~75 days (+TBD)** | **~46 tweet-moments** |
 
-**Каденс:** один micro-release на тиждень при солірному vibe-coding ритмі — ~6 місяців до v0.9.3. Це не обіцянка, а ceiling.
+**Каденс:** один micro-release на тиждень при солірному vibe-coding ритмі. Це не обіцянка, а ceiling.
+
+**Ревізія 2026-07-28:** додано 18 задач (A.9-A.12, E.8-E.11, C.9-C.10, кластери G/H/I). Приводом був аналіз, що виявив три системні діри: (1) роудмап на 38 задач був **100% інженерним**, тоді як KPI гранту — «active builders»; (2) 13 правил детектора не покривали **жодного security-вектора**, хоча саме через них агентські гаманці помирають; (3) поверхня, яку грант **прямо вимагає для M2** (docs + blog), не мала жодного пункту.
 
 ---
 
@@ -343,16 +490,28 @@
 **Phase 2 (parser surge):** A.4 ✅ → A.5 ✅ → A.7 ✅ → A.6 ✅ — **ЗАКРИТА**
 - 4 парсери підряд. A.6 (Drift perps) закрив фазу: скоуп звужено до класичних agent-order інструкцій (Drift order-flow мігрував на Swift; keeper/fill-інструкції поза скоупом). Далі — Phase 3 (DX + self-host): B.7 → B.6 → B.8.
 
+**Phase 2.5 (🔴 GRANT-CRITICAL, вставлено 2026-07-28):** G.1 → (перевірити фактичний builder-count) → G.2 / аутріч → E.11
+- **Чому попереду Phase 3:** вікно M1 (4 білдери) закривається **2026-08-01**. G.1 (~4 год) перетворює ручний збір proof-артефактів на кнопку — і робить це тричі окупним (M1/M2/M3). Далі рішення розвилкове: якщо білдерів **<4** — G.2 + прямий аутріч важать більше за будь-яку фічу; якщо **≥4** — здаємо M1 і спокійно вертаємось у Phase 3.
+- **E.11 (backup) сюди ж:** грантові proof-дані живуть у тій самій Supabase-БД без PITR. Втратити їх напередодні звітності — єдиний ризик у роудмапі без стелі збитку.
+
 **Phase 3 (DX + self-host):** B.7 → B.6 → B.8
 - Спрямовано на self-host story для open-source momentum.
 
-**Phase 4 (Growth surface):** C.7 → C.8
-- Marketing-driven. C.7 (embeddable widget) залежить від C.0b (public read routes).
+**Phase 3.5 (M2-вимоги гранту):** I.1 → I.2 → H.1 → E.8 → E.9
+- I.1+I.2 — **буквальні вимоги** «Required moves between M1 and M2» з гранту (quickstart-рівня docs + блог-пост). I.2 добре лягає одразу після B.7 — self-host-сторінка пишеться, поки контекст свіжий. H.1 (2 год) запускає збір сигналу про попит на платний тариф якнайраніше — цінність росте з часом очікування. E.8/E.9 — дешева гігієна, добре йде «між важким».
 
-**Phase 5 (AI moat):** D.1 → D.2 → D.3 → D.4
-- Найдорожчі за часом і потребують Claude API integration. Робити коли інші clusters виходять у v0.8.x.
+**Phase 4 (Growth surface):** C.9 → C.7 → C.8 → E.10
+- Marketing-driven. C.9 (share-card) поперед C.7 — дешевша і дає recurring user-generated поверхню, тоді як widget одноразовий. C.7 залежить від C.0b (public read routes).
 
-**Залишок (B.2, B.3, B.4, C.1, C.2, C.3, C.4, C.5):** інтерліфувати між phases як "відпочинок від важких задач".
+**Phase 4.5 (Security rules):** A.9 → A.11 → A.10
+- Порядок за співвідношенням цінність/вартість: A.9 і A.11 переважно reuse наявних даних, A.10 потребує нового SPL Token парсера. Разом закривають категорію «агента дренять», якої в детекторі не було зовсім.
+
+**Phase 5 (AI moat):** C.10 → D.1 → D.2 → D.3 → D.4
+- **C.10 навмисно поперед D.1:** auto-tuning на реальних «useful/noise» лейблах суттєво сильніший за чисту статистику, а лейблам треба час назбиратись. Решта — найдорожчі за часом і потребують Claude API integration.
+
+**Залишок (B.2, B.3, B.4, C.1, C.2, C.3, C.4, C.5, G.3, I.3):** інтерліфувати між phases як "відпочинок від важких задач".
+
+**Потребують явного рішення власника перед стартом:** A.12 (pump.fun — поза whitelisted-протоколами у CLAUDE.md), H.2 (білінг — модель, провайдер, юридична сторона).
 
 **B.1 (Discord) — в самому кінці:** робити після B.2-B.8 і решти Cluster B.
 
