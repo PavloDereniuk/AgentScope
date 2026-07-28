@@ -82,7 +82,7 @@ function unwrapRows<T>(raw: unknown): T[] {
 }
 
 /** Count distinct registered + active builders in one round trip. */
-async function fetchBuilderCounts(db: Database): Promise<{ registered: number; active: number }> {
+async function fetchBuilderCounts(db: DbHandle): Promise<{ registered: number; active: number }> {
   // `filter` is applied before the distinct count, so `active` counts the
   // distinct users among agents that have ANY tx or reasoning span. Raw SQL
   // (not drizzle builder) because correlated EXISTS subqueries read cleaner
@@ -133,13 +133,22 @@ function computeMilestones(
 
 type BuilderCounts = { registered: number; active: number };
 
+/**
+ * Either the pooled client OR a pinned transaction handle — both expose the
+ * same drizzle query surface. The aggregate fetchers accept this so `/summary`
+ * can pass a single transaction (one pooled connection for ALL its queries),
+ * while the individual endpoints keep passing the top-level `db`. See the
+ * `/summary` handler note for why the transaction is load-bearing.
+ */
+type DbHandle = Database | Parameters<Parameters<Database['transaction']>[0]>[0];
+
 // ─── Aggregate fetchers ─────────────────────────────────────────────────────
 // Extracted from the route handlers so both the individual endpoints AND the
 // consolidated `/summary` endpoint share one implementation. Builder counts
 // are passed in (not refetched) so `/summary` computes them once for both the
 // overview and the milestones.
 
-async function getOverview(db: Database, builders: BuilderCounts) {
+async function getOverview(db: DbHandle, builders: BuilderCounts) {
   const since24h = new Date(Date.now() - WINDOW_MS['24h']).toISOString();
   const [statusRows, txRows, alertRows, spanRows] = await Promise.all([
     db.execute(sql`select status, cast(count(*) as int) as n from ${agents} group by status`),
@@ -201,7 +210,7 @@ function getMilestonesPayload(builders: BuilderCounts, milestones: AdminMileston
   };
 }
 
-async function getInfra(db: Database, logger: Logger) {
+async function getInfra(db: DbHandle, logger: Logger) {
   let dbBytes: number | null = null;
   try {
     const raw = await db.execute(sql`select pg_database_size(current_database()) as bytes`);
@@ -251,7 +260,7 @@ async function getInfra(db: Database, logger: Logger) {
   };
 }
 
-async function getBuildersTable(db: Database) {
+async function getBuildersTable(db: DbHandle) {
   const since30d = new Date(Date.now() - WINDOW_MS['30d']).toISOString();
   const since7d = new Date(Date.now() - WINDOW_MS['7d']).toISOString();
   const raw = await db.execute(sql`
@@ -314,7 +323,7 @@ async function getBuildersTable(db: Database) {
   return { builders };
 }
 
-async function getAlertsBreakdown(db: Database, window: '24h' | '7d' | '30d') {
+async function getAlertsBreakdown(db: DbHandle, window: '24h' | '7d' | '30d') {
   const since = new Date(Date.now() - WINDOW_MS[window]).toISOString();
   const rows = await db
     .select({
@@ -355,18 +364,27 @@ export function createAdminRouter(deps: AdminRouterDeps) {
     async (c) => c.json(await getAlertsBreakdown(db, c.req.valid('query').window)),
   );
 
-  // Consolidated single-request payload for the dashboard panel. Builder
-  // counts are computed first (one fast query, shared by overview + milestones),
-  // then the four independent aggregate groups run concurrently via Promise.all.
+  // Consolidated single-request payload for the dashboard panel.
   //
-  // Wall time is now max(group) instead of sum(group): the earlier fully
-  // sequential version summed every group and routinely blew past the client's
-  // 60s fetch timeout (api-client.ts), aborting the whole panel. Peak DB
-  // concurrency here is builders(done) → overview(4 internal queries) + infra
-  // + builders-table + alerts = ~7 in-flight, under the pool's max of 10, so
-  // this does NOT reintroduce the pool contention the old comment warned about
-  // (that was about the *browser* firing six parallel HTTP requests, each
-  // opening its own query set).
+  // CRITICAL: every query runs inside ONE transaction, i.e. on a SINGLE pooled
+  // connection. This is not for atomicity (these are read-only aggregates) —
+  // it caps the whole endpoint at one connection from the app's small pool
+  // (maxConnections: 5, see apps/api/src/server.ts).
+  //
+  // Why it matters: the individual fetchers fan out (getOverview alone fires 4
+  // queries via Promise.all). Running all five groups against the top-level
+  // `db` demanded ~7 simultaneous connections; with concurrent requests
+  // (react-query retries, StrictMode double-mount, manual refreshes) two such
+  // requests exhausted the 5-slot pool and DEADLOCKED — every /summary then hung
+  // until the client's 60s fetch timeout (api-client.ts) aborted it with a 499,
+  // leaving the whole panel stuck on "loading…". Reproduced against prod: pool
+  // 5 + this fan-out hangs; pinning to one connection stays ~0.8s even at 8
+  // concurrent. The queries themselves are all <150ms — speed was never the
+  // issue, connection fan-out was.
+  //
+  // Inside the pinned connection the groups run sequentially; getOverview's
+  // internal Promise.all is safe because those queries pipeline on the one
+  // reserved connection rather than grabbing extra pool slots.
   router.get('/summary', async (c) => {
     // Time each group so a future slow-down is diagnosable from the logs alone
     // (we can't attach a profiler to prod). `timed` records wall-ms per group.
@@ -380,22 +398,23 @@ export function createAdminRouter(deps: AdminRouterDeps) {
       }
     };
 
-    const builders = await timed('builderCounts', () => fetchBuilderCounts(db));
-    const [overview, infra, buildersTable, alertsBreakdown] = await Promise.all([
-      timed('overview', () => getOverview(db, builders)),
-      timed('infra', () => getInfra(db, logger)),
-      timed('buildersTable', () => getBuildersTable(db)),
-      timed('alertsBreakdown', () => getAlertsBreakdown(db, '7d')),
-    ]);
-    logger.info({ timings }, 'admin/summary group timings (ms)');
-    const milestonesPayload = getMilestonesPayload(builders, milestones);
-    return c.json({
-      overview,
-      milestones: milestonesPayload,
-      infra,
-      builders: buildersTable,
-      alertsBreakdown,
+    const payload = await db.transaction(async (tx) => {
+      const builders = await timed('builderCounts', () => fetchBuilderCounts(tx));
+      const overview = await timed('overview', () => getOverview(tx, builders));
+      const infra = await timed('infra', () => getInfra(tx, logger));
+      const buildersTable = await timed('buildersTable', () => getBuildersTable(tx));
+      const alertsBreakdown = await timed('alertsBreakdown', () => getAlertsBreakdown(tx, '7d'));
+      return {
+        overview,
+        milestones: getMilestonesPayload(builders, milestones),
+        infra,
+        builders: buildersTable,
+        alertsBreakdown,
+      };
     });
+
+    logger.info({ timings }, 'admin/summary group timings (ms)');
+    return c.json(payload);
   });
 
   return router;
