@@ -341,18 +341,27 @@ export function createAdminRouter(deps: AdminRouterDeps) {
     async (c) => c.json(await getAlertsBreakdown(db, c.req.valid('query').window)),
   );
 
-  // Consolidated single-request payload for the dashboard panel. Runs the
-  // aggregate groups SEQUENTIALLY (one group at a time) rather than letting the
-  // browser fire six parallel requests at a 5-connection pool — that contention
-  // was stalling the whole panel. Builder counts are computed once and shared
-  // by overview + milestones.
+  // Consolidated single-request payload for the dashboard panel. Builder
+  // counts are computed first (one fast query, shared by overview + milestones),
+  // then the four independent aggregate groups run concurrently via Promise.all.
+  //
+  // Wall time is now max(group) instead of sum(group): the earlier fully
+  // sequential version summed every group and routinely blew past the client's
+  // 60s fetch timeout (api-client.ts), aborting the whole panel. Peak DB
+  // concurrency here is builders(done) → overview(4 internal queries) + infra
+  // + builders-table + alerts = ~7 in-flight, under the pool's max of 10, so
+  // this does NOT reintroduce the pool contention the old comment warned about
+  // (that was about the *browser* firing six parallel HTTP requests, each
+  // opening its own query set).
   router.get('/summary', async (c) => {
     const builders = await fetchBuilderCounts(db);
-    const overview = await getOverview(db, builders);
+    const [overview, infra, buildersTable, alertsBreakdown] = await Promise.all([
+      getOverview(db, builders),
+      getInfra(db, logger),
+      getBuildersTable(db),
+      getAlertsBreakdown(db, '7d'),
+    ]);
     const milestonesPayload = getMilestonesPayload(builders, milestones);
-    const infra = await getInfra(db, logger);
-    const buildersTable = await getBuildersTable(db);
-    const alertsBreakdown = await getAlertsBreakdown(db, '7d');
     return c.json({
       overview,
       milestones: milestonesPayload,
