@@ -34,6 +34,19 @@ Marinade liquid-staking parser. Numbered above 0.5.2 but released a week earlier
 ### Added
 - **Orca Whirlpools swap parser** (A.5) — all four Whirlpool instructions parsed: `swap` (v1, 11 accounts), `swap_v2` (15+ accounts, Token-2022 compatible), `two_hop_swap`, `two_hop_swap_v2`. Emits `orca.swap` / `orca.two_hop_swap` with `inputMint`, `outputMint`, amounts, `aToB`, `poolId`, and `variant` discriminating v1 vs v2. Mint resolution: token-account balance map for single-pool swaps (both variants); `ownerSpentMints`/`ownerGainedMints` net-flow fallback for two-hop variants. 11 TDD tests, 5 mainnet fixtures. Brings DEX coverage to Jupiter + Raydium + Orca + Kamino — >90% of Solana DEX volume.
 
+## [0.6.4] - 2026-06-26
+
+Prometheus scrape endpoint — the self-hosters' must-have from Cluster B. Recorded retroactively: the code shipped on 2026-06-26 but never got its own CHANGELOG section. Numbered out of sequence relative to the surrounding 0.5.x parser releases (Cluster B owns the 0.6.x band in the roadmap); it carries no upgrade semantics over them.
+
+### Added
+- **`GET /metrics`** ([`apps/api/src/routes/metrics.ts`](./apps/api/src/routes/metrics.ts), 7 tests) — platform-wide counters plus a lag gauge in Prometheus text exposition format 0.0.4, so self-hosters can pipe AgentScope into their own Grafana instead of relying on the dashboard. Exposed series: `agentscope_tx_total{agent,user}` (counter), `agentscope_alerts_total{rule,severity}` (counter), `agentscope_reasoning_spans_total` (counter), `agentscope_ingest_lag_seconds` (gauge, seconds since the last transaction). ([`c64096b`](https://github.com/PavloDereniuk/AgentScope/commit/c64096b), B.5)
+
+### Fixed
+- `error.test.ts` no longer fails on the stub DB. The `/health` DB heartbeat added in [`fa3215f`](https://github.com/PavloDereniuk/AgentScope/commit/fa3215f) made the health handler throw against `stubDb`, which had no `execute()`; the stub now carries a no-op one.
+
+### Notes
+No auth on the route — it is designed for an internal scraper on the same private network, and mirrors the human-facing `/api/admin/*` aggregates rather than exposing anything new. Zero new dependencies (a plain string builder, no `prom-client`). No schema change.
+
 ## [0.5.0] - 2026-06-23
 
 Raydium parsers — the release that opened the Cluster A parser surge. Recorded retroactively: the code shipped on 2026-06-23 but never got its own CHANGELOG section.
@@ -189,6 +202,7 @@ First post-submission iteration. The 2026-05-11 Colosseum Frontier submission sh
 [0.5.1]: https://github.com/PavloDereniuk/AgentScope/releases/tag/v0.5.1
 [0.5.0]: https://github.com/PavloDereniuk/AgentScope/releases/tag/v0.5.0
 [0.5.4]: https://github.com/PavloDereniuk/AgentScope/releases/tag/v0.5.4
+[0.6.4]: https://github.com/PavloDereniuk/AgentScope/releases/tag/v0.6.4
 [0.4.10]: https://github.com/PavloDereniuk/AgentScope/compare/v0.4.1...v0.4.10
 [0.4.1]: https://github.com/PavloDereniuk/AgentScope/releases/tag/v0.4.1
 [0.4.0]: https://github.com/PavloDereniuk/AgentScope/releases/tag/v0.4.0
