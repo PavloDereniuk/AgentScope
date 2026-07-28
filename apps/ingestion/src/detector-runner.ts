@@ -30,6 +30,7 @@ import {
   sandwichRule,
   slippageRule,
   staleOracleRule,
+  unknownProgramRule,
 } from '@agentscope/detector';
 import type { EvalLogger, NeighbourFetcher } from '@agentscope/detector';
 import {
@@ -47,6 +48,7 @@ const TX_RULES: readonly TxRuleDef[] = [
   priorityFeeRule,
   decisionSwapMismatchRule,
   staleOracleRule,
+  unknownProgramRule,
 ];
 
 /**

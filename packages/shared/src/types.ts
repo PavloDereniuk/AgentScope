@@ -31,6 +31,7 @@ export const ALERT_RULE_NAMES = [
   'low_balance',
   'tx_rate_anomaly',
   'priority_fee_spike',
+  'unknown_program_interaction',
 ] as const;
 export type AlertRuleName = (typeof ALERT_RULE_NAMES)[number];
 
@@ -120,6 +121,16 @@ export interface AlertRuleThresholds {
    * critical fires at 5× threshold. Default 10×.
    */
   priorityFeeMultThreshold?: number | undefined;
+  /**
+   * How far back (in days) the `unknown_program_interaction` rule looks
+   * before calling a program "never seen". A program the agent has not
+   * touched within this window — and that is not on the parser's curated
+   * known-program whitelist — counts as first contact. Default 30 days.
+   *
+   * Longer windows mean fewer alerts (more programs count as familiar);
+   * shorter windows re-flag programs the agent uses only occasionally.
+   */
+  unknownProgramLookbackDaysThreshold?: number | undefined;
   /**
    * Per-rule alert silencing. Keyed by `AlertRuleName`; each value is an
    * ISO-8601 timestamp until which delivery for that specific rule is muted.

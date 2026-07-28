@@ -61,6 +61,11 @@ const DETECTOR_DEFAULTS: DefaultThresholds = {
   // multiplier avoids false positives while still catching extreme overpay
   // from a misconfigured ComputeBudget instruction. Critical at 5× (50×).
   priorityFeeMult: 10,
+  // 30-day first-contact window for unknown_program_interaction. Long enough
+  // that a monthly rebalance into the same protocol still counts as familiar,
+  // short enough that a program the agent abandoned a quarter ago is worth
+  // re-flagging when it suddenly comes back.
+  unknownProgramLookbackDays: 30,
 };
 
 async function main(): Promise<void> {

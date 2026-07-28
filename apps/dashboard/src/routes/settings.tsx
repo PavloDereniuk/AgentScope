@@ -234,6 +234,7 @@ export function SettingsPage() {
       'lowBalanceSolThreshold',
       'txRateMaxPerMinThreshold',
       'priorityFeeMultThreshold',
+      'unknownProgramLookbackDaysThreshold',
     ] as const;
     for (const field of fields) {
       const val = fd.get(field) as string;
@@ -385,6 +386,14 @@ export function SettingsPage() {
                   suffix="×"
                   step="1"
                   defaultValue={selected?.alertRules?.priorityFeeMultThreshold}
+                />
+                <ThresholdInput
+                  name="unknownProgramLookbackDaysThreshold"
+                  label="Unknown program"
+                  hint="days before a program counts as new · critical if funds move"
+                  suffix="days"
+                  step="1"
+                  defaultValue={selected?.alertRules?.unknownProgramLookbackDaysThreshold}
                 />
               </div>
             </Card>
@@ -888,6 +897,7 @@ const RULE_LABELS: Record<AlertRuleName, string> = {
   low_balance: 'Low balance',
   tx_rate_anomaly: 'Runaway loop',
   priority_fee_spike: 'Priority fee spike',
+  unknown_program_interaction: 'Unknown program',
 };
 
 function ThresholdInput({

@@ -70,6 +70,7 @@ const RULE_TITLES: Record<string, string> = {
   low_balance: 'Wallet Running Low',
   tx_rate_anomaly: 'Runaway Loop Suspected',
   priority_fee_spike: 'Priority Fee Spike',
+  unknown_program_interaction: 'Unknown Program Called',
   // Pseudo-rule emitted by POST /api/agents/:id/test-alert. Not part of
   // ALERT_RULE_NAMES (never persisted), but the formatters must handle it
   // because it travels through the same telegram/webhook senders that
@@ -226,6 +227,24 @@ export function formatAlertSummary(
       const medianStr = median != null ? ` (${fmtSol(median)})` : '';
       const progStr = programId ? ` on ${programId.slice(0, 8)}…` : '';
       return `Fee ${fmtSol(fee)}${ratioStr}${medianStr}${progStr}`;
+    }
+    case 'unknown_program_interaction': {
+      const programId = str(payload, 'programId');
+      const lookback = num(payload, 'lookbackDays');
+      const solOut = num(payload, 'solOutflow');
+      const tokenOut = num(payload, 'tokenOutflowCount');
+      const progStr = programId ? `${programId.slice(0, 8)}…` : 'a new program';
+      // Funds-moved variant leads with the money — that is the part the owner
+      // must act on. The lookback window is context, not headline.
+      if (solOut != null && solOut > 0) {
+        return `Bot called unknown program ${progStr} — ${solOut} SOL left the wallet in the same tx`;
+      }
+      if (tokenOut != null && tokenOut > 0) {
+        const plural = tokenOut === 1 ? 'token' : 'tokens';
+        return `Bot called unknown program ${progStr} — ${tokenOut} ${plural} left the wallet in the same tx`;
+      }
+      const windowStr = lookback != null ? ` (not seen in ${lookback}d)` : '';
+      return `Bot called unknown program ${progStr} for the first time${windowStr}`;
     }
     case 'test_alert':
       return 'If you can read this, alert delivery is working.';
@@ -389,6 +408,30 @@ export function formatAlertDetails(
         { label: 'Program', value: str(payload, 'programId') ?? '—' },
       ];
     }
+    case 'unknown_program_interaction': {
+      const lookback = num(payload, 'lookbackDays');
+      const solOut = num(payload, 'solOutflow');
+      const tokenOut = num(payload, 'tokenOutflowCount');
+      const others = Array.isArray(payload.newProgramIds)
+        ? (payload.newProgramIds as unknown[]).filter((v): v is string => typeof v === 'string')
+        : [];
+      const rows: AlertDetailRow[] = [
+        { label: 'Program', value: str(payload, 'programId') ?? '—' },
+        { label: 'Instruction', value: str(payload, 'instructionName') ?? '—' },
+        { label: 'Lookback', value: lookback != null ? `${lookback} days` : '—' },
+        { label: 'SOL moved out', value: solOut != null && solOut > 0 ? `${solOut} SOL` : 'none' },
+        {
+          label: 'Tokens moved out',
+          value: tokenOut != null && tokenOut > 0 ? String(tokenOut) : 'none',
+        },
+      ];
+      // Only worth a row when the tx touched more than one new program —
+      // otherwise it just repeats the "Program" row above.
+      if (others.length > 1) {
+        rows.push({ label: 'Other new programs', value: others.slice(1).join(', ') });
+      }
+      return rows;
+    }
     // The smoke-test payload (`isTest`, `source`) is plumbing-only metadata —
     // dumping it as bullet rows adds noise without telling the user anything
     // they don't already know from the title and impact line.
@@ -439,6 +482,8 @@ export function formatAlertImpact(
       return 'The bot is firing transactions far faster than expected. Most likely it is stuck in a retry loop or the LLM keeps re-deciding — every tx burns priority fees until you intervene.';
     case 'priority_fee_spike':
       return 'The bot paid far more in priority fees than its historical baseline for this program. A misconfigured ComputeBudget instruction is the most common cause — fix it before it quietly drains the wallet.';
+    case 'unknown_program_interaction':
+      return "Your bot signed a transaction with a program it has never used before and that AgentScope can't identify. If funds moved in the same transaction, treat it as a possible drain until you've verified the program yourself.";
     case 'test_alert':
       return 'This is a smoke test triggered from your dashboard. No real anomaly was detected — no action needed.';
     default:
@@ -515,6 +560,11 @@ export function formatAlertAction(
       return [
         'Review the ComputeBudget instruction set for this program.',
         'Pause the bot if overpay is draining the wallet faster than expected.',
+      ];
+    case 'unknown_program_interaction':
+      return [
+        'Look up the program address on a block explorer before doing anything else.',
+        "Pause the bot and move funds out if you didn't add this integration yourself.",
       ];
     default:
       return [];

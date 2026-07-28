@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.5] - 2026-07-28
+
+First security-vector detector rule. The other 12 rules all answer "did something break?" (slippage, fees, error rate, staleness, balance); none covered the way agent wallets actually die — a program the owner never wired up, moving funds in a transaction the agent signed itself.
+
+### Added
+- **`unknown_program_interaction` detector rule** (A.9) — tx-triggered. Fires the first time an agent touches a program that is both absent from the parser's curated known-program whitelist **and** absent from the agent's own history for the lookback window (default 30 days, per-agent override `unknownProgramLookbackDaysThreshold`). Severity is `warning` for plain first contact and escalates to `critical` when SOL (beyond the transaction fee) or SPL tokens leave the wallet in that same transaction. 17 TDD integration tests + 1 end-to-end test through `runTxDetector`. DB migration `0016` adds the enum value.
+- **`@agentscope/parser/known-programs` subpath export** — `KNOWN_PROGRAMS` moved out of `dispatcher.ts` into its own module so the detector can import the whitelist (and the new `isKnownProgram` predicate) without pulling `@solana/web3.js` + Anchor in through the parser barrel. The map itself is unchanged; the dispatcher now imports it.
+
+### Notes
+Three deliberate design choices, each of which changes what the rule catches:
+- **All instructions, not just the primary one.** `pickPrimaryInstruction` prefers *decoded* instructions, so a drainer CPI'd alongside a real Jupiter swap would never become the transaction's `programId`. The rule reads the compact `_all` outline (E.5) out of `parsedArgs` and falls back to the snapshot's `programId` when the outline is absent — malformed outline entries are skipped rather than thrown on.
+- **Cold-start abstain.** An agent with no history inside the window has no baseline, so every program would look like first contact. The rule stays silent instead of greeting each new user with a wall of alerts — the same abstain-without-baseline stance as `priority_fee_spike`.
+- **Dedupe keyed on program *and* severity** (`unknown_program:<programId>:<severity>`). Keying on the program alone would let a harmless first contact permanently swallow the critical alert for the later transaction that actually moves funds.
+
+Cost is two indexed queries per unknown-program transaction (a distinct-program lookup, then the cold-start check only when there is something to report); transactions that touch only known programs cost nothing beyond the whitelist lookup. SOL outflow is computed in lamports via `BigInt`, not `parseFloat`. No new runtime dependencies (the detector's new `@agentscope/parser` entry is a workspace link). **Deploy action:** run `pnpm --filter @agentscope/db db:push` against Supabase prod *before* deploying ingestion — the new enum value must exist before the first alert row is inserted.
+
 ## [0.5.2] - 2026-07-14
 
 Drift v2 perpetuals parser — the last item of the Cluster A parser surge (Phase 2). Perp-trading agents are now observable end-to-end alongside the DEX parsers (Jupiter, Raydium, Orca) and Kamino/Marinade.

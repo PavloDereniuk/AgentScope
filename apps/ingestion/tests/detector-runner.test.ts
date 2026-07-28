@@ -9,7 +9,7 @@ import { readFile, readdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { AlertMessage, ChannelSender, DeliveryResult } from '@agentscope/alerter';
-import { type Database, agents, alerts, users } from '@agentscope/db';
+import { type Database, agentTransactions, agents, alerts, users } from '@agentscope/db';
 import type { DefaultThresholds, TxSnapshot } from '@agentscope/detector';
 import { PGlite } from '@electric-sql/pglite';
 import { eq } from 'drizzle-orm';
@@ -30,6 +30,7 @@ const defaults: DefaultThresholds = {
   lowBalanceSol: 0.005,
   txRateMaxPerMin: 30,
   priorityFeeMult: 10,
+  unknownProgramLookbackDays: 30,
 };
 
 const silentLogger = {
@@ -124,6 +125,54 @@ describe('runTxDetector', () => {
 
     const rows = await db.select().from(alerts).where(eq(alerts.agentId, agentId));
     expect(rows).toHaveLength(0);
+  });
+
+  // Guards two things the rule's own unit tests can't see: that
+  // `unknown_program_interaction` is registered in TX_RULES, and that the
+  // alert_rule_name enum accepts it (migration 0016) when the row is inserted.
+  it('persists an unknown_program_interaction alert end-to-end (A.9)', async () => {
+    await db.delete(alerts).where(eq(alerts.agentId, agentId));
+
+    // Prior history so the rule isn't in its cold-start abstain.
+    await db.insert(agentTransactions).values({
+      agentId,
+      signature: 'sig_history_jup',
+      slot: 300_000_090,
+      programId: 'JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4',
+      instructionName: 'jupiter.swap',
+      parsedArgs: {},
+      solDelta: '0',
+      feeLamports: 5000,
+      success: true,
+      blockTime: new Date(Date.now() - 86_400_000).toISOString(),
+    });
+
+    const tx: TxSnapshot = {
+      signature: 'sig_unknown_program',
+      slot: 300_000_102,
+      instructionName: 'drai.unknown',
+      parsedArgs: {},
+      // -0.5 SOL beyond the 5000-lamport fee → funds moved → critical.
+      solDelta: '-0.500005000',
+      tokenDeltas: [],
+      feeLamports: 5000,
+      success: true,
+      blockTime: new Date().toISOString(),
+      programId: 'Drainer1nteractionProgram11111111111111111',
+    };
+
+    const count = await runTxDetector({ db, logger: silentLogger, defaults }, agentId, tx);
+    expect(count).toBe(1);
+
+    const rows = await db.select().from(alerts).where(eq(alerts.agentId, agentId));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.ruleName).toBe('unknown_program_interaction');
+    expect(rows[0]?.severity).toBe('critical');
+    expect(rows[0]?.payload).toMatchObject({
+      programId: 'Drainer1nteractionProgram11111111111111111',
+      lookbackDays: 30,
+      fundsMoved: true,
+    });
   });
 });
 

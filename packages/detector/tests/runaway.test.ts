@@ -29,6 +29,7 @@ const defaults = {
   // 30 tx/min default ⇒ a 5-min window must hold ≤150 tx before the rule fires.
   txRateMaxPerMin: 30,
   priorityFeeMult: 10,
+  unknownProgramLookbackDays: 30,
 };
 
 let testDb: TestDatabase;

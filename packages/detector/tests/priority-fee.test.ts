@@ -24,6 +24,7 @@ const defaults = {
   lowBalanceSol: 0.005,
   txRateMaxPerMin: 30,
   priorityFeeMult: 10,
+  unknownProgramLookbackDays: 30,
 };
 
 interface Ctx {

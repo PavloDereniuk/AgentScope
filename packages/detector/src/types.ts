@@ -96,6 +96,13 @@ export interface DefaultThresholds {
    * avoids false positives on programs with naturally high variance.
    */
   priorityFeeMult: number;
+  /**
+   * How far back the `unknown_program_interaction` rule looks before calling a
+   * program "never seen", in days. Default 30 — long enough that a weekly
+   * rebalance into the same protocol stays familiar, short enough that a
+   * program the agent dropped months ago is worth re-flagging.
+   */
+  unknownProgramLookbackDays: number;
 }
 
 // ── Slot-neighbour lookup (A.1 Phase 2) ──────────────────────────────────────

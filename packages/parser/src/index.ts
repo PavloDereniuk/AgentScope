@@ -18,6 +18,10 @@ import './drift/parser';
 import './system/parser';
 
 export { parseTransaction, registerParser } from './dispatcher';
+// Also reachable as `@agentscope/parser/known-programs` — that subpath exists
+// so consumers who only need the whitelist (detector A.9) skip the barrel's
+// web3.js + Anchor side-effect imports.
+export { KNOWN_PROGRAMS, isKnownProgram } from './known-programs';
 export { jupiterParser } from './jupiter/parser';
 export { kaminoParser, getKaminoLoadWarnings } from './kamino/parser';
 export { orcaParser } from './orca/parser';

@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@agentscope/db": "workspace:*",
+    "@agentscope/parser": "workspace:*",
     "@agentscope/shared": "workspace:*",
     "drizzle-orm": "^0.36.4"
   },

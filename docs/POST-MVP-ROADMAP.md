@@ -161,10 +161,16 @@
   **Файли:** `packages/detector/src/rules/priority-fee.ts` + tests · Reuse `gas_spike` median-query pattern
 
 ### A.9 — Unknown program interaction rule
-- [ ] **A.9** (додано 2026-07-28) `unknown_program_interaction` rule — агент вперше викликає програму, якої нема ні в `KNOWN_PROGRAMS`, ні в його власній історії за N днів (default 30). Severity=warning, escalate=critical якщо у тій самій tx є SOL/SPL outflow. Дешево: історія вже у `agent_transactions`, whitelist уже у парсері
+- [x] **A.9** (2026-07-28, released) `unknown_program_interaction` rule — агент вперше викликає програму, якої нема ні в `KNOWN_PROGRAMS`, ні в його власній історії за N днів (default 30). Severity=warning, escalate=critical якщо у тій самій tx є SOL/SPL outflow. Дешево: історія вже у `agent_transactions`, whitelist уже у парсері
   ⏱ 1 день · 📦 v0.5.5 · 🎯 *"Your agent just called a program it has never touched before — and moved funds in the same transaction. AgentScope now flags first-contact with unknown programs. The #1 way agent wallets get drained, caught at the first hop."*
-  **Файли:** `packages/detector/src/rules/unknown-program.ts` + tests · reuse `KNOWN_PROGRAMS` з [packages/parser/src/dispatcher.ts](../packages/parser/src/dispatcher.ts) · `packages/shared/{types,schemas,format-alert}.ts`
+  **Файли:** [packages/detector/src/rules/unknown-program.ts](../packages/detector/src/rules/unknown-program.ts) + [17 тестів](../packages/detector/tests/unknown-program.test.ts) · новий [packages/parser/src/known-programs.ts](../packages/parser/src/known-programs.ts) (`KNOWN_PROGRAMS` винесено з dispatcher + `isKnownProgram`) · `packages/shared/{types,schemas,format-alert}.ts` · DB migration 0016 · +1 e2e тест у [apps/ingestion/tests/detector-runner.test.ts](../apps/ingestion/tests/detector-runner.test.ts)
   **Обґрунтування (аналіз 2026-07-28):** усі 13 наявних правил ловлять «технічно щось зламалось» (slippage, gas, stale, rate, balance). **Жодне не покриває security-вектори** — а саме через них агентські гаманці реально помирають. A.9-A.11 закривають цю категорію.
+  **🔴 Дизайн-відхилення від roadmap-опису (важливо):**
+  1. **Скануємо ВСІ інструкції tx, не лише primary.** `pickPrimaryInstruction` віддає перевагу *розпарсеним* інструкціям — дренажер, що приїхав CPI поруч зі справжнім Jupiter-свопом, ніколи не став би `programId` цієї tx. Правило читає компактний `_all` outline (E.5) з `parsedArgs`, fallback — `transaction.programId`. Без цього правило ловило б лише найпримітивніший випадок.
+  2. **Cold-start abstain:** агент без історії у вікні не має бази для порівняння — мовчимо, замість вітати нового юзера стіною алертів. Той самий підхід, що у `priority_fee_spike`.
+  3. **Dedupe по програмі І severity** (`unknown_program:<pid>:<severity>`), не лише по програмі: інакше нешкідливий перший контакт назавжди проковтнув би critical-алерт наступної tx, що реально виводить кошти.
+  **Вартість:** 2 індексовані запити на tx з невідомою програмою (distinct-програми, потім cold-start — тільки коли є що репортити); tx лише з відомими програмами не платять нічого понад lookup у whitelist. SOL-outflow рахується у lamports через `BigInt`, не `parseFloat`. Нових runtime-депів нема (`@agentscope/parser` у detector — workspace-лінк на subpath без web3.js/Anchor).
+  **⚠ Prod action:** `pnpm --filter @agentscope/db db:push` на Supabase ПЕРЕД деплоєм ingestion — enum-значення має існувати до першої вставки алерта.
 
 ### A.10 — Token approval / delegate anomaly
 - [ ] **A.10** (додано 2026-07-28) `token_approval_anomaly` rule — SPL Token `approve` / `approve_checked` на delegate, якого нема в історії агента, або з `amount == u64::MAX` (unlimited approval). Потребує decode SPL Token program у парсері (зараз декодуємо System, але не Token instructions)
@@ -182,7 +188,7 @@
   ⏱ TBD (оцінка ~3 дні за аналогією з A.4/A.5, не валідована) · 📦 v0.5.8 · 🎯 *"Memecoin agents are where the wild things are. AgentScope now parses pump.fun buys and sells with real semantics — mint, SOL in, tokens out, bonding-curve state. Your degen agent is finally legible."*
   **Відкриті питання перед стартом:** (a) чи це наша цільова аудиторія, чи відволікання від «серйозних» yield/arb агентів; (b) чи є мейнтейнс-ризик — pump.fun міняє програму частіше за DEX-и.
 
-**Cluster A total:** ~19 днів (+A.12 TBD), 12 micro-releases (v0.4.0 → v0.5.8). **A.1-A.8 закриті; A.9-A.11 — новий security-зріз (додано 2026-07-28).**
+**Cluster A total:** ~19 днів (+A.12 TBD), 12 micro-releases (v0.4.0 → v0.5.8). **A.1-A.9 закриті; A.10-A.11 — залишок security-зрізу (додано 2026-07-28).**
 
 ---
 
@@ -503,8 +509,9 @@
 **Phase 4 (Growth surface):** C.9 → C.7 → C.8 → E.10
 - Marketing-driven. C.9 (share-card) поперед C.7 — дешевша і дає recurring user-generated поверхню, тоді як widget одноразовий. C.7 залежить від C.0b (public read routes).
 
-**Phase 4.5 (Security rules):** A.9 → A.11 → A.10
+**Phase 4.5 (Security rules):** A.9 ✅ → A.11 → A.10
 - Порядок за співвідношенням цінність/вартість: A.9 і A.11 переважно reuse наявних даних, A.10 потребує нового SPL Token парсера. Разом закривають категорію «агента дренять», якої в детекторі не було зовсім.
+- **A.9 закрито 2026-07-28** (v0.5.5) — витягнуто вперед на прохання власника, поза чергою Phase 2.5. A.11 успадковує від нього готовий патерн «читати всі програми tx з `_all` outline» + cold-start abstain.
 
 **Phase 5 (AI moat):** C.10 → D.1 → D.2 → D.3 → D.4
 - **C.10 навмисно поперед D.1:** auto-tuning на реальних «useful/noise» лейблах суттєво сильніший за чисту статистику, а лейблам треба час назбиратись. Решта — найдорожчі за часом і потребують Claude API integration.
@@ -552,6 +559,7 @@
 | v0.5.1 | 2026-07-01 | A.5 (Orca Whirlpools parser) | ✅ released |
 | v0.5.3 | 2026-07-07 | A.7 (Marinade liquid staking parser) | ✅ released |
 | v0.5.2 | 2026-07-14 | A.6 (Drift v2 perps parser) | ✅ released |
+| v0.5.5 | 2026-07-28 | A.9 (unknown_program_interaction rule) | ✅ released |
 | … | … | … | … |
 
 ---
