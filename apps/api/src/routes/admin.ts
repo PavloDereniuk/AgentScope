@@ -255,23 +255,37 @@ async function getBuildersTable(db: Database) {
   const since30d = new Date(Date.now() - WINDOW_MS['30d']).toISOString();
   const since7d = new Date(Date.now() - WINDOW_MS['7d']).toISOString();
   const raw = await db.execute(sql`
+    -- Pre-aggregate transactions PER AGENT first, then join that (one row per
+    -- agent) onto users. The earlier version joined agent_transactions rows
+    -- directly, so the users↔agents↔tx join fanned out to one row per
+    -- transaction in the 30d window — tens/hundreds of thousands of rows —
+    -- before the per-user GROUP BY + count(distinct) collapsed them. That
+    -- fanout is what pushed /summary past the client's 60s timeout. Folding tx
+    -- to per-agent counts up front (via the tx_agent_time_idx index) keeps the
+    -- outer join at users×agents scale. Window is still bounded to 30d, so
+    -- tx_30d / last_tx carry the same 30d semantics as before.
+    with tx_agg as (
+      select
+        agent_id,
+        cast(count(*) filter (where block_time >= ${since7d}) as int) as tx_7d,
+        cast(count(*) as int) as tx_30d,
+        max(block_time) as last_tx
+      from agent_transactions
+      where block_time >= ${since30d}
+      group by agent_id
+    )
     select
       u.id as user_id,
       u.privy_did,
       u.email,
       to_char(u.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
       cast(count(distinct ag.id) as int) as agents,
-      cast(count(t.id) filter (where t.block_time >= ${since7d}) as int) as tx_7d,
-      cast(count(t.id) as int) as tx_30d,
-      to_char(max(t.block_time) at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_tx
+      cast(coalesce(sum(txa.tx_7d), 0) as int) as tx_7d,
+      cast(coalesce(sum(txa.tx_30d), 0) as int) as tx_30d,
+      to_char(max(txa.last_tx) at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_tx
     from users u
     left join agents ag on ag.user_id = u.id
-    -- Bound the join to the 30d window directly (not just in a filter): an
-    -- unbounded join scans every partition of a growing tx table and holds
-    -- a pooled connection for seconds. We only report tx7d/tx30d/dormant, so
-    -- rows older than 30d are irrelevant. tx_30d is then the full join count.
-    left join agent_transactions t
-      on t.agent_id = ag.id and t.block_time >= ${since30d}
+    left join tx_agg txa on txa.agent_id = ag.id
     group by u.id, u.privy_did, u.email, u.created_at
     order by tx_7d desc, agents desc, u.created_at asc
   `);
@@ -354,13 +368,26 @@ export function createAdminRouter(deps: AdminRouterDeps) {
   // (that was about the *browser* firing six parallel HTTP requests, each
   // opening its own query set).
   router.get('/summary', async (c) => {
-    const builders = await fetchBuilderCounts(db);
+    // Time each group so a future slow-down is diagnosable from the logs alone
+    // (we can't attach a profiler to prod). `timed` records wall-ms per group.
+    const timings: Record<string, number> = {};
+    const timed = async <T>(name: string, work: () => Promise<T>): Promise<T> => {
+      const start = performance.now();
+      try {
+        return await work();
+      } finally {
+        timings[name] = Math.round(performance.now() - start);
+      }
+    };
+
+    const builders = await timed('builderCounts', () => fetchBuilderCounts(db));
     const [overview, infra, buildersTable, alertsBreakdown] = await Promise.all([
-      getOverview(db, builders),
-      getInfra(db, logger),
-      getBuildersTable(db),
-      getAlertsBreakdown(db, '7d'),
+      timed('overview', () => getOverview(db, builders)),
+      timed('infra', () => getInfra(db, logger)),
+      timed('buildersTable', () => getBuildersTable(db)),
+      timed('alertsBreakdown', () => getAlertsBreakdown(db, '7d')),
     ]);
+    logger.info({ timings }, 'admin/summary group timings (ms)');
     const milestonesPayload = getMilestonesPayload(builders, milestones);
     return c.json({
       overview,
