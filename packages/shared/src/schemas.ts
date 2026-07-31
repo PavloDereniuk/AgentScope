@@ -112,6 +112,10 @@ export const alertRuleThresholdsSchema = z.object({
   // First-contact lookback for unknown_program_interaction, in whole days.
   // Positive only — 0 would make every program look new on every tx.
   unknownProgramLookbackDaysThreshold: z.number().int().positive().optional(),
+  // Drain threshold as a share of the window-start balance, in %. Positive and
+  // ≤100 — a value above 100 could never be reached, which reads as "rule off"
+  // but looks configured, so reject it at the boundary instead.
+  outboundDrainPctThreshold: z.number().positive().max(100).optional(),
   // Per-rule pause map. `z.record(enum, ...)` validates that every key is a
   // known rule name; values are ISO-8601 datetimes (offset accepted). Past
   // values auto-resume — gate compares with `now` at delivery time.

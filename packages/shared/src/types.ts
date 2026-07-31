@@ -32,6 +32,7 @@ export const ALERT_RULE_NAMES = [
   'tx_rate_anomaly',
   'priority_fee_spike',
   'unknown_program_interaction',
+  'outbound_transfer_drain',
 ] as const;
 export type AlertRuleName = (typeof ALERT_RULE_NAMES)[number];
 
@@ -131,6 +132,18 @@ export interface AlertRuleThresholds {
    * shorter windows re-flag programs the agent uses only occasionally.
    */
   unknownProgramLookbackDaysThreshold?: number | undefined;
+  /**
+   * Share of the wallet's balance, in %, that may leave for unfamiliar
+   * addresses inside a 15-minute window before `outbound_transfer_drain`
+   * fires. Measured against the balance reconstructed for the start of the
+   * window, not the current one. Warning above the threshold, critical at
+   * 2×. Default 25%.
+   *
+   * This is the only knob the rule exposes; the counterparty-history window
+   * it uses to decide "unfamiliar" is fixed at 30 days, matching
+   * `unknownProgramLookbackDaysThreshold`'s default.
+   */
+  outboundDrainPctThreshold?: number | undefined;
   /**
    * Per-rule alert silencing. Keyed by `AlertRuleName`; each value is an
    * ISO-8601 timestamp until which delivery for that specific rule is muted.

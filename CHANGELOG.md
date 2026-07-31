@@ -13,6 +13,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **`ADMIN_MILESTONE_DEADLINE` default `2026-08-01` → `2026-10-01`** — the grant sponsor moved the whole M1/M2/M3 milestone chain two months later (reported 2026-07-31). Without this the admin panel's countdown would read as overdue from 2026-08-01 onward on any deployment that never set the env var. Deployments that set it explicitly are unaffected. Grant windows in [`docs/GRANT-SF-UKRAINE-AWARDED.md`](docs/GRANT-SF-UKRAINE-AWARDED.md) updated to match.
 
+## [0.5.7] - 2026-07-31
+
+Second security-vector rule, and the first one that judges an aggregate instead of a transaction. `unknown_program_interaction` (0.5.5) catches the loud drain — first contact with a strange program while funds move. This catches the quiet one, where the program is `SystemProgram`, every transfer is small, and only the total says the wallet is being emptied.
+
+### Added
+- **`outbound_transfer_drain` detector rule** (A.11) — cron-triggered, evaluated on the same 60-second cycle as `low_balance` / `tx_rate_anomaly`. Sums the SOL leaving the wallet for addresses the agent has **not** paid in the last 30 days over a 15-minute sliding window, and fires when that sum exceeds a share of the balance the wallet held when the window opened — default 25%, per-agent override `outboundDrainPctThreshold`, `critical` at 2× the threshold. The alert payload names the recipients and their amounts, so the first thing the owner sees is where the money went. 21 TDD integration tests + 1 end-to-end test through `runCronCycle`. DB migration `0017` adds the enum value.
+- **Wallet-drain threshold field** in dashboard Settings → alert thresholds, and drain copy (title, summary, detail rows, impact, actions) in the shared alert formatters — so the rule reads the same in the dashboard, Telegram and webhooks.
+
+### Notes
+Four design choices, each of which changes what the rule catches:
+- **The window-start balance is reconstructed, not stored.** There is no historical balance table, so the rule computes `start = current − Σ sol_delta(window)`. Summing the *signed* deltas (not just the outflows) is what makes a mid-window top-up net out — a wallet that received 1 SOL and then sent 0.3 must be measured against what it actually held when the window opened, or a freshly funded agent looks safe while it drains. A non-positive result means the inputs disagree (missed transaction, stale balance reading) and the rule abstains rather than divide by a fiction.
+- **SOL only, `system.transfer` only.** Persistence keeps decoded args for the primary instruction alone (E.5 storage diet), so a destination address exists exactly when the transaction's primary instruction is a System-Program transfer. SOL leaving through a swap has no counterparty to judge, and SPL transfers are not decoded at all yet — **the token leg lands with A.10's SPL Token parser**, which is a deliberate deferral, not an oversight. The same check that skips outbound self-transfers also skips *inbound* ones (they persist as `system.transfer` with the agent's wallet as `to`), which is what keeps every top-up from reading as a drain.
+- **"Familiar" means paid before the window opened,** over a fixed 30-day history — transfers inside the window never make their own destination familiar, or a drain's first hop would whitelist every hop after it. The history window is deliberately *not* configurable: the knob owners actually reason about is how much of the wallet may leave, and a second knob measured in days would generate more support questions than signal. 30 days matches `unknown_program_interaction`'s default so both security rules agree on what "familiar" means.
+- **Cold-start abstain,** matching A.9 and `priority_fee_spike`: an agent with no history before the window has no counterparty baseline, so every address it pays would read as fresh.
+
+Cost is one indexed query per agent per cron cycle in the common case (no transfers in the last 15 minutes → return). The counterparty lookup, the cold-start probe, the delta sum and the balance read only run once there is something unfamiliar to report, and the balance read hits the cache the cron already primes for every wallet at the top of each cycle (E.1) — so the rule adds no RPC calls. All lamport arithmetic goes through `BigInt` (the shared `solStringToLamports` helper moved out of `unknown-program.ts` into `packages/detector/src/lamports.ts`, unchanged). Dedupe is keyed on a 15-minute bucket, the same shape as `tx_rate_anomaly`: one alert per window, and a fresh alert once the window rolls over, because an ongoing drain must keep paging rather than go quiet after the first hit. No new dependencies. **Deploy action:** run `pnpm --filter @agentscope/db db:push` against Supabase prod *before* deploying ingestion — the new enum value must exist before the first alert row is inserted.
+
 ## [0.5.5] - 2026-07-28
 
 First security-vector detector rule. The other 12 rules all answer "did something break?" (slippage, fees, error rate, staleness, balance); none covered the way agent wallets actually die — a program the owner never wired up, moving funds in a transaction the agent signed itself.
@@ -219,6 +236,8 @@ First post-submission iteration. The 2026-05-11 Colosseum Frontier submission sh
 - RLS enabled on every child partition of `agent_transactions` (`2026_04` through `2026_09` plus `_default`). Postgres does not inherit RLS from a partitioned parent, and PostgREST exposes each partition as its own `/rest/v1/<name>` endpoint — without per-partition `ENABLE ROW LEVEL SECURITY`, an anon/authenticated caller could hit a partition directly and bypass the parent's `tx_owner_access` policy. New migration `0010_rls_on_partitions.sql`; service-role ingestion (BYPASSRLS) untouched. ([`1ac359d`](https://github.com/PavloDereniuk/AgentScope/commit/1ac359d), P.11)
 
 [Unreleased]: https://github.com/PavloDereniuk/AgentScope/compare/v0.5.2...HEAD
+[0.5.7]: https://github.com/PavloDereniuk/AgentScope/releases/tag/v0.5.7
+[0.5.5]: https://github.com/PavloDereniuk/AgentScope/releases/tag/v0.5.5
 [0.5.2]: https://github.com/PavloDereniuk/AgentScope/releases/tag/v0.5.2
 [0.5.3]: https://github.com/PavloDereniuk/AgentScope/releases/tag/v0.5.3
 [0.5.1]: https://github.com/PavloDereniuk/AgentScope/releases/tag/v0.5.1

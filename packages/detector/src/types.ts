@@ -103,6 +103,14 @@ export interface DefaultThresholds {
    * program the agent dropped months ago is worth re-flagging.
    */
   unknownProgramLookbackDays: number;
+  /**
+   * Share of the window-start balance, in %, that may leave for unfamiliar
+   * addresses inside a 15-minute window before `outbound_transfer_drain`
+   * fires. Default 25% — a quarter of the wallet moving to addresses it has
+   * never paid is well outside any rebalancing pattern, while still leaving
+   * room for an agent that routinely pays out. Critical at 2×.
+   */
+  outboundDrainPct: number;
 }
 
 // ── Slot-neighbour lookup (A.1 Phase 2) ──────────────────────────────────────

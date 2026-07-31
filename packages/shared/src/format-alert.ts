@@ -71,6 +71,7 @@ const RULE_TITLES: Record<string, string> = {
   tx_rate_anomaly: 'Runaway Loop Suspected',
   priority_fee_spike: 'Priority Fee Spike',
   unknown_program_interaction: 'Unknown Program Called',
+  outbound_transfer_drain: 'Wallet Draining',
   // Pseudo-rule emitted by POST /api/agents/:id/test-alert. Not part of
   // ALERT_RULE_NAMES (never persisted), but the formatters must handle it
   // because it travels through the same telegram/webhook senders that
@@ -245,6 +246,20 @@ export function formatAlertSummary(
       }
       const windowStr = lookback != null ? ` (not seen in ${lookback}d)` : '';
       return `Bot called unknown program ${progStr} for the first time${windowStr}`;
+    }
+    case 'outbound_transfer_drain': {
+      const drainSol = num(payload, 'drainSol');
+      const drainPct = num(payload, 'drainPct');
+      const minutes = num(payload, 'windowMinutes');
+      const transfers = num(payload, 'transferCount');
+      const destinations = num(payload, 'destinationCount');
+      if (drainSol == null || drainPct == null) return 'Funds leaving to unfamiliar addresses';
+      const countStr =
+        transfers != null && destinations != null
+          ? `${transfers} transfer${transfers === 1 ? '' : 's'} to ${destinations} new address${destinations === 1 ? '' : 'es'}`
+          : 'transfers to new addresses';
+      const windowStr = minutes != null ? ` in ${fmtMinutes(minutes)}` : '';
+      return `${countStr}${windowStr} — ${drainSol} SOL, ${drainPct}% of the wallet`;
     }
     case 'test_alert':
       return 'If you can read this, alert delivery is working.';
@@ -432,6 +447,39 @@ export function formatAlertDetails(
       }
       return rows;
     }
+    case 'outbound_transfer_drain': {
+      const drainSol = num(payload, 'drainSol');
+      const drainPct = num(payload, 'drainPct');
+      const startBalance = num(payload, 'windowStartBalanceSol');
+      const lookback = num(payload, 'counterpartyLookbackDays');
+      // Each destination gets its own row — "who received it" is the first
+      // thing the owner needs, and a joined blob of base58 is unreadable.
+      const destinations = Array.isArray(payload.destinations)
+        ? (payload.destinations as unknown[]).filter(
+            (d): d is { address: string; sol: number } =>
+              typeof d === 'object' &&
+              d !== null &&
+              typeof (d as { address?: unknown }).address === 'string',
+          )
+        : [];
+      const rows: AlertDetailRow[] = [
+        { label: 'Moved out', value: drainSol != null ? `${drainSol} SOL` : '—' },
+        { label: 'Share of wallet', value: fmtPct(drainPct) },
+        {
+          label: 'Balance at window start',
+          value: startBalance != null ? `${startBalance} SOL` : '—',
+        },
+        { label: 'Window', value: fmtMinutes(num(payload, 'windowMinutes')) },
+        { label: 'Transfers', value: String(num(payload, 'transferCount') ?? '—') },
+      ];
+      for (const d of destinations) {
+        rows.push({ label: 'Recipient', value: `${d.address} · ${d.sol} SOL` });
+      }
+      if (lookback != null) {
+        rows.push({ label: 'Unpaid in', value: `${lookback} days` });
+      }
+      return rows;
+    }
     // The smoke-test payload (`isTest`, `source`) is plumbing-only metadata —
     // dumping it as bullet rows adds noise without telling the user anything
     // they don't already know from the title and impact line.
@@ -484,6 +532,8 @@ export function formatAlertImpact(
       return 'The bot paid far more in priority fees than its historical baseline for this program. A misconfigured ComputeBudget instruction is the most common cause — fix it before it quietly drains the wallet.';
     case 'unknown_program_interaction':
       return "Your bot signed a transaction with a program it has never used before and that AgentScope can't identify. If funds moved in the same transaction, treat it as a possible drain until you've verified the program yourself.";
+    case 'outbound_transfer_drain':
+      return 'A run of small transfers is moving a meaningful slice of the wallet to addresses your bot has never paid before. No single transaction looks wrong — the total does. This is what a wallet being emptied piece by piece looks like.';
     case 'test_alert':
       return 'This is a smoke test triggered from your dashboard. No real anomaly was detected — no action needed.';
     default:
@@ -565,6 +615,11 @@ export function formatAlertAction(
       return [
         'Look up the program address on a block explorer before doing anything else.',
         "Pause the bot and move funds out if you didn't add this integration yourself.",
+      ];
+    case 'outbound_transfer_drain':
+      return [
+        'Pause the bot now — the transfers keep landing while you investigate.',
+        "Check the recipient addresses against your own payout list; rotate the agent key if you don't recognise them.",
       ];
     default:
       return [];

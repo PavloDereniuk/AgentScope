@@ -44,6 +44,7 @@ const defaults = {
   txRateMaxPerMin: 30,
   priorityFeeMult: 10,
   unknownProgramLookbackDays: 30,
+  outboundDrainPct: 25,
 };
 
 interface Ctx {

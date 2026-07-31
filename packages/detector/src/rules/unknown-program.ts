@@ -30,31 +30,10 @@
 import { agentTransactions } from '@agentscope/db';
 import { isKnownProgram } from '@agentscope/parser/known-programs';
 import { and, eq, gte, inArray, ne } from 'drizzle-orm';
+import { lamportsToSol, solStringToLamports } from '../lamports';
 import type { RuleResult, TxRuleContext, TxRuleDef } from '../types';
 
 const MS_PER_DAY = 86_400_000;
-const LAMPORTS_PER_SOL = 1_000_000_000n;
-
-/**
- * Parse a 9-decimal SOL string ("-0.420005000") into lamports without going
- * through a float — `solDelta` can carry the full lamport range and
- * `Number.parseFloat` starts losing units well before that.
- */
-function solStringToLamports(sol: string): bigint {
-  const trimmed = sol.trim();
-  const negative = trimmed.startsWith('-');
-  const unsigned = negative ? trimmed.slice(1) : trimmed;
-  const [whole = '0', frac = ''] = unsigned.split('.');
-  const fracPadded = `${frac}000000000`.slice(0, 9);
-  try {
-    const lamports = BigInt(whole || '0') * LAMPORTS_PER_SOL + BigInt(fracPadded || '0');
-    return negative ? -lamports : lamports;
-  } catch {
-    // Malformed string (shouldn't happen — the parser formats it) — treat as
-    // "no signal" rather than throwing away the whole alert.
-    return 0n;
-  }
-}
 
 /**
  * Program ids touched by this transaction, most interesting first.
@@ -133,7 +112,7 @@ export const unknownProgramRule: TxRuleDef = {
     // but the fee, so it lands on `warning` without a special case.
     const netLamports = solStringToLamports(transaction.solDelta) + BigInt(transaction.feeLamports);
     const solOutflowLamports = netLamports < 0n ? -netLamports : 0n;
-    const solOutflow = Number(solOutflowLamports) / Number(LAMPORTS_PER_SOL);
+    const solOutflow = lamportsToSol(solOutflowLamports);
     const tokenOutflowCount = transaction.tokenDeltas.filter((d) => d.delta.startsWith('-')).length;
     const fundsMoved = solOutflowLamports > 0n || tokenOutflowCount > 0;
     const severity = fundsMoved ? 'critical' : 'warning';

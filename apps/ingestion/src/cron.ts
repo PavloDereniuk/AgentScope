@@ -29,6 +29,7 @@ import {
   lowBalanceRule,
   runawayRule,
   staleRule,
+  transferDrainRule,
 } from '@agentscope/detector';
 import type { EvalLogger } from '@agentscope/detector';
 import {
@@ -65,6 +66,7 @@ const CRON_RULES: readonly CronRuleDef[] = [
   ghostExecutionRule,
   lowBalanceRule,
   runawayRule,
+  transferDrainRule,
 ];
 
 /**

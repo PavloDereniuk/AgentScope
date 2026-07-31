@@ -34,3 +34,4 @@ export { staleOracleRule } from './rules/stale-oracle';
 export { staleRule } from './rules/stale';
 export { priorityFeeRule } from './rules/priority-fee';
 export { unknownProgramRule } from './rules/unknown-program';
+export { transferDrainRule } from './rules/transfer-drain';

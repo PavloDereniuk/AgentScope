@@ -235,6 +235,7 @@ export function SettingsPage() {
       'txRateMaxPerMinThreshold',
       'priorityFeeMultThreshold',
       'unknownProgramLookbackDaysThreshold',
+      'outboundDrainPctThreshold',
     ] as const;
     for (const field of fields) {
       const val = fd.get(field) as string;
@@ -394,6 +395,14 @@ export function SettingsPage() {
                   suffix="days"
                   step="1"
                   defaultValue={selected?.alertRules?.unknownProgramLookbackDaysThreshold}
+                />
+                <ThresholdInput
+                  name="outboundDrainPctThreshold"
+                  label="Wallet drain"
+                  hint="% of balance sent to new addresses in 15 min · critical at 2×"
+                  suffix="%"
+                  step="1"
+                  defaultValue={selected?.alertRules?.outboundDrainPctThreshold}
                 />
               </div>
             </Card>
@@ -898,6 +907,7 @@ const RULE_LABELS: Record<AlertRuleName, string> = {
   tx_rate_anomaly: 'Runaway loop',
   priority_fee_spike: 'Priority fee spike',
   unknown_program_interaction: 'Unknown program',
+  outbound_transfer_drain: 'Wallet drain',
 };
 
 function ThresholdInput({

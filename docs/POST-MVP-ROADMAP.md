@@ -183,18 +183,28 @@
   ⏱ 1.5 дня · 📦 v0.5.6 · 🎯 *"Unlimited token approval to an address your agent has never seen? That's how wallets get emptied while you sleep. AgentScope now decodes SPL approve instructions and alerts on the delegate — not just on the transfer that comes after."*
   **Файли:** `packages/parser/src/spl-token/` (новий, `approve`/`approve_checked`/`revoke`) · `packages/detector/src/rules/token-approval.ts` + tests
   **Залежність:** потребує SPL Token parser — це єдиний з A.9-A.11, що не «безкоштовний». Робити після A.9/A.11 якщо час тисне.
+  **🔺 Пріоритет піднято (2026-07-31, після A.11):** той самий SPL Token парсер закриває і **токенову частину A.11** (`outbound_transfer_drain` наразі бачить лише SOL — у SPL transfer-ах нема декодованого отримувача). Тобто A.10 тепер = дві дірки за одну ціну, а не одна.
 
 ### A.11 — Outbound transfer drain
-- [ ] **A.11** (додано 2026-07-28) `outbound_transfer_drain` rule — серія SOL/SPL transfer-ів на адресу(и) поза відомим набором counterparty агента у межах вікна (default 15 хв), сумарно > X% від балансу на початок вікна. Ловить повільний дренаж дрібними сумами, який per-tx правила пропускають
+- [x] **A.11** (2026-07-31) `outbound_transfer_drain` rule — серія SOL transfer-ів на адреси поза відомим набором counterparty агента у межах 15-хв вікна, сумарно > X% (default 25%) від балансу на початок вікна. Cron-triggered, escalate=critical при 2× порогу. Ловить повільний дренаж дрібними сумами, який per-tx правила пропускають. 21 TDD тест + 1 e2e через `runCronCycle`, міграція `0017`
   ⏱ 1 день · 📦 v0.5.7 · 🎯 *"Drains don't always come as one big transfer. AgentScope now watches the aggregate: a run of small outbound transfers to fresh addresses that adds up to a meaningful slice of the wallet fires an alert — even when no single tx looks wrong."*
-  **Файли:** `packages/detector/src/rules/transfer-drain.ts` + tests · reuse sliding-window паттерн з [packages/detector/src/rules/runaway.ts](../packages/detector/src/rules/runaway.ts) · balance snapshot з `balance-fetcher` prime-cache (E.1)
+  **Файли:** [packages/detector/src/rules/transfer-drain.ts](../packages/detector/src/rules/transfer-drain.ts) · [packages/detector/tests/transfer-drain.test.ts](../packages/detector/tests/transfer-drain.test.ts) · [packages/detector/src/lamports.ts](../packages/detector/src/lamports.ts) (винесено з `unknown-program.ts`) · [packages/db/src/migrations/0017_outbound_transfer_drain.sql](../packages/db/src/migrations/0017_outbound_transfer_drain.sql) · cron/shared/dashboard wiring
+  **🔴 Скоуп-відхилення від roadmap-опису (важливо):** roadmap казав «SOL/**SPL** transfer-ів». **SPL-леґ не реалізовано** — persist зберігає decoded args лише для primary-інструкції (E.5 storage diet), а SPL Token взагалі не декодується. Адреса-отримувач існує рівно тоді, коли primary = `system.transfer`. Токенову частину закриє **A.10** разом з SPL Token парсером. SOL, що виходить через swap, теж не рахуємо — там нема counterparty, якого можна судити.
+  **Дизайн-рішення:**
+  1. **Баланс на початок вікна реконструюється, не зберігається:** `start = current − Σ sol_delta(window)`. Саме *знакова* сума (а не лише outflow) обнуляє поповнення всередині вікна — інакше щойно профінансований агент виглядає безпечним, поки його дренять. `start <= 0` → abstain (дані суперечать одні одним).
+  2. **Той самий self-check ловить inbound:** вхідні перекази лежать як `system.transfer` з гаманцем агента у `to` — без цієї перевірки кожне поповнення читалось би як дренаж.
+  3. **«Знайомий» = платили ДО відкриття вікна** (фіксовані 30 днів, не конфігуровані). Перекази всередині вікна не роблять свій же destination знайомим — інакше перший хоп дренажу вибілив би всі наступні. Другий тюнер «у днях» дав би більше support-питань, ніж сигналу.
+  4. **Cold-start abstain** — як A.9 і `priority_fee_spike`.
+  5. **Dedupe по 15-хв бакету** (як `tx_rate_anomaly`): один алерт на вікно, новий — після перекочування, бо активний дренаж має пейджити далі, а не замовкнути після першого хіта.
+  **Вартість:** 1 індексований запит на агента за цикл у типовому випадку (нема transfer-ів за 15 хв → вихід). Решта (counterparty-lookup, cold-start, сума дельт, баланс) — лише коли є що репортити; баланс бере прогріте prime-кеш (E.1), тобто **0 нових RPC**.
+  **⚠ Prod action:** `pnpm --filter @agentscope/db db:push` на Supabase ПЕРЕД деплоєм ingestion — enum-значення має існувати до першої вставки алерта.
 
 ### A.12 — pump.fun / memecoin launchpad parser ⚠️ ПОТРЕБУЄ ПОГОДЖЕННЯ ВЛАСНИКА
 - [ ] **A.12** (додано 2026-07-28) Парсер для pump.fun (`buy`/`sell`/`create`) — саме там найбільше agent-активності і найбільше катастроф. **⚠️ Поза whitelisted-списком протоколів у CLAUDE.md** (Jupiter/Kamino + roadmap-відкриті Raydium/Orca/Drift/Marinade) → **не починати без явного «так» власника**
   ⏱ TBD (оцінка ~3 дні за аналогією з A.4/A.5, не валідована) · 📦 v0.5.8 · 🎯 *"Memecoin agents are where the wild things are. AgentScope now parses pump.fun buys and sells with real semantics — mint, SOL in, tokens out, bonding-curve state. Your degen agent is finally legible."*
   **Відкриті питання перед стартом:** (a) чи це наша цільова аудиторія, чи відволікання від «серйозних» yield/arb агентів; (b) чи є мейнтейнс-ризик — pump.fun міняє програму частіше за DEX-и.
 
-**Cluster A total:** ~19 днів (+A.12 TBD), 12 micro-releases (v0.4.0 → v0.5.8). **A.1-A.9 закриті; A.10-A.11 — залишок security-зрізу (додано 2026-07-28).**
+**Cluster A total:** ~19 днів (+A.12 TBD), 12 micro-releases (v0.4.0 → v0.5.8). **A.1-A.9 + A.11 закриті; A.10 — залишок security-зрізу (потребує SPL Token парсера, він же закриє токенову частину A.11).**
 
 ---
 
@@ -518,9 +528,10 @@
 **Phase 4 (Growth surface):** C.9 → C.7 → C.8 → E.10
 - Marketing-driven. C.9 (share-card) поперед C.7 — дешевша і дає recurring user-generated поверхню, тоді як widget одноразовий. C.7 залежить від C.0b (public read routes).
 
-**Phase 4.5 (Security rules):** A.9 ✅ → A.11 → A.10
+**Phase 4.5 (Security rules):** A.9 ✅ → A.11 ✅ → A.10
 - Порядок за співвідношенням цінність/вартість: A.9 і A.11 переважно reuse наявних даних, A.10 потребує нового SPL Token парсера. Разом закривають категорію «агента дренять», якої в детекторі не було зовсім.
-- **A.9 закрито 2026-07-28** (v0.5.5) — витягнуто вперед на прохання власника, поза чергою Phase 2.5. A.11 успадковує від нього готовий патерн «читати всі програми tx з `_all` outline» + cold-start abstain.
+- **A.9 закрито 2026-07-28** (v0.5.5) — витягнуто вперед на прохання власника, поза чергою Phase 2.5. A.11 успадкувала від нього cold-start abstain + винесений lamport-хелпер.
+- **A.11 закрито 2026-07-31** (v0.5.7) — але **лише SOL-леґ**: SPL-частина впирається у той самий SPL Token парсер, що й A.10. Тобто A.10 тепер закриває дві дірки одразу (approve-вектор + токенові дренажі), що піднімає її пріоритет у Phase 4.5 відносно первинної оцінки.
 
 **Phase 5 (AI moat):** C.10 → D.1 → D.2 → D.3 → D.4
 - **C.10 навмисно поперед D.1:** auto-tuning на реальних «useful/noise» лейблах суттєво сильніший за чисту статистику, а лейблам треба час назбиратись. Решта — найдорожчі за часом і потребують Claude API integration.
@@ -569,6 +580,7 @@
 | v0.5.3 | 2026-07-07 | A.7 (Marinade liquid staking parser) | ✅ released |
 | v0.5.2 | 2026-07-14 | A.6 (Drift v2 perps parser) | ✅ released |
 | v0.5.5 | 2026-07-28 | A.9 (unknown_program_interaction rule) | ✅ released |
+| v0.5.7 | 2026-07-31 | A.11 (outbound_transfer_drain rule) | 🟡 CHANGELOG cut, тег не поставлено |
 | … | … | … | … |
 
 ---

@@ -66,6 +66,12 @@ const DETECTOR_DEFAULTS: DefaultThresholds = {
   // short enough that a program the agent abandoned a quarter ago is worth
   // re-flagging when it suddenly comes back.
   unknownProgramLookbackDays: 30,
+  // 25% of the window-start balance leaving to addresses the agent has never
+  // paid, inside 15 minutes, is the outbound_transfer_drain trip point.
+  // A quarter of the wallet is far outside any rebalancing or payout pattern
+  // we've seen on real agents, while leaving room for one chunky legitimate
+  // move. Critical at 2× (half the wallet).
+  outboundDrainPct: 25,
 };
 
 async function main(): Promise<void> {

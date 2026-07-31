@@ -31,6 +31,7 @@ const defaults: DefaultThresholds = {
   txRateMaxPerMin: 30,
   priorityFeeMult: 10,
   unknownProgramLookbackDays: 30,
+  outboundDrainPct: 25,
 };
 
 const silentLogger = { error: () => {}, info: () => {}, warn: () => {} };
@@ -529,6 +530,100 @@ describe('cron balance batching (E.1)', () => {
         .where(eq(agentTransactions.agentId, staleAgentId));
       await db.delete(alerts).where(eq(alerts.agentId, staleAgentId));
       await db.delete(alerts).where(eq(alerts.agentId, activeAgentId));
+    }
+  });
+});
+
+describe('cron outbound_transfer_drain (A.11)', () => {
+  // End-to-end through runCronCycle rather than the rule in isolation: this is
+  // what proves the rule is registered in CRON_RULES *and* that migration 0017
+  // shipped the enum value — without it the insert below fails, which is the
+  // failure mode we most want a test to catch before a deploy.
+  it('persists a drain alert for transfers to addresses the agent never paid', async () => {
+    const fakeNow = new Date('2026-04-09T12:00:00Z');
+    const wallet = '33333333333333333333333333333333';
+    const [drainer] = await db
+      .insert(agents)
+      .values({
+        userId: (await db.select().from(users))[0]?.id as string,
+        walletPubkey: wallet,
+        name: 'Draining Cron Agent',
+        framework: 'custom',
+        agentType: 'other',
+        ingestToken: 'tok_cron_drain',
+      })
+      .returning();
+    if (!drainer) throw new Error('seed drain agent failed');
+
+    // History (5 days back) gives the rule a baseline, so the cold-start
+    // abstain does not swallow the alert.
+    await db.insert(agentTransactions).values({
+      agentId: drainer.id,
+      signature: 'sig_cron_drain_hist',
+      slot: 100,
+      programId: 'JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4',
+      instructionName: 'jupiter.swap',
+      parsedArgs: {},
+      solDelta: '0',
+      feeLamports: 5000,
+      success: true,
+      blockTime: '2026-04-04T12:00:00Z',
+    });
+
+    // 3 × 0.1 SOL to three fresh addresses inside the 15-minute window.
+    await db.insert(agentTransactions).values(
+      [10, 6, 2].map((minutesAgo, i) => ({
+        agentId: drainer.id,
+        signature: `sig_cron_drain_${i}`,
+        slot: 100,
+        programId: '11111111111111111111111111111111',
+        instructionName: 'system.transfer',
+        parsedArgs: {
+          from: wallet,
+          to: `FreshCron${i}111111111111111111111`,
+          lamports: '100000000',
+        },
+        solDelta: '-0.100005000',
+        feeLamports: 5000,
+        success: true,
+        blockTime: new Date(fakeNow.getTime() - minutesAgo * 60_000).toISOString(),
+      })),
+    );
+
+    const realDate = globalThis.Date;
+    globalThis.Date = class extends realDate {
+      constructor(...args: unknown[]) {
+        if (args.length === 0) {
+          super(fakeNow.getTime());
+        } else {
+          // @ts-expect-error — spread into Date ctor
+          super(...args);
+        }
+      }
+      static override now() {
+        return fakeNow.getTime();
+      }
+    } as DateConstructor;
+
+    try {
+      // 0.4 SOL left ⇒ window start 0.700015 ⇒ 42.86% drained ⇒ warning.
+      await runCronCycle({
+        db,
+        logger: silentLogger,
+        defaults,
+        fetchAgentBalance: async () => 0.4,
+      });
+
+      const drainAlert = (
+        await db.select().from(alerts).where(eq(alerts.agentId, drainer.id))
+      ).find((a) => a.ruleName === 'outbound_transfer_drain');
+      expect(drainAlert).toBeDefined();
+      expect(drainAlert?.severity).toBe('warning');
+      expect(drainAlert?.payload).toMatchObject({ transferCount: 3, destinationCount: 3 });
+    } finally {
+      globalThis.Date = realDate;
+      await db.delete(alerts).where(eq(alerts.agentId, drainer.id));
+      await db.delete(agents).where(eq(agents.id, drainer.id));
     }
   });
 });
