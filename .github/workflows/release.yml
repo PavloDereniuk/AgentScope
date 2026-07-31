@@ -1,0 +1,54 @@
+name: Release
+
+# Pushing a `v*` tag publishes a GitHub Release whose notes are the matching
+# CHANGELOG.md section — so release notes and the changelog cannot drift.
+#
+# If the tag has no CHANGELOG section the job fails loudly and publishes
+# nothing: that is the exact discipline gap this workflow exists to catch
+# (v0.4.4 / v0.4.6 / v0.4.7 were all tagged before their sections were
+# written, and had to be backfilled later).
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Extract CHANGELOG section for ${{ github.ref_name }}
+        run: |
+          pnpm --filter @agentscope/scripts exec \
+            tsx extract-changelog-section.ts "${{ github.ref_name }}" ../CHANGELOG.md \
+            > "${RUNNER_TEMP}/release-notes.md"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --title "${{ github.ref_name }}" \
+            --notes-file "${RUNNER_TEMP}/release-notes.md" \
+            --verify-tag

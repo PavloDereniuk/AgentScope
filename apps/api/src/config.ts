@@ -87,9 +87,11 @@ const envSchema = z.object({
   /**
    * Grant deadline (ISO date) shown alongside the milestone progress so
    * the panel can render a countdown. Optional — when unset the panel
-   * simply omits the deadline. Defaults to the grant's 2026-08-01 date.
+   * simply omits the deadline. Defaults to the grant's 2026-10-01 date
+   * (the sponsor moved the whole M1/M2/M3 chain two months later on
+   * 2026-07-31; it was 2026-08-01 before that).
    */
-  ADMIN_MILESTONE_DEADLINE: z.string().optional().default('2026-08-01'),
+  ADMIN_MILESTONE_DEADLINE: z.string().optional().default('2026-10-01'),
   /**
    * Agent UUID to expose via the public read-only demo endpoints (C.0b).
    * When set, `GET /public/demo` returns `{agentId}` and the

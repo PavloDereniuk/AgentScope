@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Tag → GitHub Release automation** (E.9) — pushing a `v*` tag now runs `.github/workflows/release.yml`, which extracts the matching `CHANGELOG.md` section and publishes it as the release notes via `gh release create --notes-file`. Release notes and the changelog can no longer drift, because there is only one source. When the tag has no changelog section the job **fails and publishes nothing**, listing the sections that do exist — that is the gap being closed: `v0.4.4`, `v0.4.6` and `v0.4.7` were all tagged before their sections were written and had to be backfilled afterwards. The extraction logic lives in `scripts/extract-changelog-section.ts` as a pure function behind a thin CLI, covered by 16 tests (`scripts/` had no test task before this; turbo's `test` run goes 18 → 19 tasks). Sections are matched by exact version rather than document position — the changelog is not in monotonic order (0.5.2 shipped after 0.5.3 and sits above it) — and trailing link-reference definitions are stripped so they do not leak into the oldest section's notes. No new dependencies: `vitest` resolves from the root bin, `tsx` was already a `scripts` devDependency, and `gh` ships on GitHub runners.
+
+### Changed
+- **`ADMIN_MILESTONE_DEADLINE` default `2026-08-01` → `2026-10-01`** — the grant sponsor moved the whole M1/M2/M3 milestone chain two months later (reported 2026-07-31). Without this the admin panel's countdown would read as overdue from 2026-08-01 onward on any deployment that never set the env var. Deployments that set it explicitly are unaffected. Grant windows in [`docs/GRANT-SF-UKRAINE-AWARDED.md`](docs/GRANT-SF-UKRAINE-AWARDED.md) updated to match.
+
 ## [0.5.5] - 2026-07-28
 
 First security-vector detector rule. The other 12 rules all answer "did something break?" (slippage, fees, error rate, staleness, balance); none covered the way agent wallets actually die — a program the owner never wired up, moving funds in a transaction the agent signed itself.
