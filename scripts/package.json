@@ -6,6 +6,7 @@
   "scripts": {
     "test": "vitest run",
     "extract-changelog-section": "tsx extract-changelog-section.ts",
+    "check-schema-drift": "tsx --env-file=../.env check-schema-drift.ts",
     "setup-wallets": "tsx --env-file=../.env setup-wallets.ts",
     "demo-trader": "tsx --env-file=../.env demo-trader.ts",
     "demo-yield": "tsx --env-file=../.env demo-yield.ts",

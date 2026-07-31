@@ -108,7 +108,20 @@
   **Файли:** `.github/workflows/backup.yml` (новий, cron daily) · `docs/DEPLOY.md` §9 «Backup & restore»
   **Обґрунтування (аналіз 2026-07-28):** єдиний ризик у списку, що **не має ліміту збитку**. Усе інше в Cluster E — про вартість і швидкість; це про існування проєкту. Grant proof-артефакти живуть у тій самій БД.
 
-**Cluster E total:** ~7 днів, 10 micro-releases (v0.4.3 → v0.5.4-infra). **E.1 + E.2 — must-have для M3 на free-tier; E.7 — deploy-safety; E.11 — єдиний пункт з необмеженим збитком при відмові.**
+### E.12 — Schema-drift checker (🔴 інцидент 2026-07-31)
+- [x] **E.12** (2026-07-31) `scripts/check-schema-drift.ts` — звіряє живу БД з `packages/db/src/schema.ts` і повертає ненульовий exit-код при розходженні. Очікування виводяться з самих drizzle-об'єктів через `getTableConfig`/`isPgEnum`, не зі списку, який треба підтримувати руками. Перевіряє: значення enum-ів, наявність таблиць і колонок, наявність індексів **та їхню унікальність**, RLS на всіх таблицях і партиціях. 16 тестів
+  ⏱ 0.5 дня · 📦 unreleased · 🎯 *(internal/ops — без твіту)*
+  **Файли:** [scripts/check-schema-drift.ts](../scripts/check-schema-drift.ts) · [scripts/tests/check-schema-drift.test.ts](../scripts/tests/check-schema-drift.test.ts) · `check-schema-drift` скрипт у `scripts/package.json`
+  **🔴 Інцидент, який це породив (2026-07-31).** Під час накочування `0017` (A.11) аудит показав, що у проді **ніколи не застосовувались шість міграцій**: `0007` (таблиця `telegram_bindings`), `0008`, `0011`, `0012`, `0013`, `0016` (сім значень `alert_rule_name`) і `0009` (`agents.alerts_paused_until` + `delivery_status='skipped'`). Наслідки, які жили в проді непоміченими:
+  - Сім правил детектора спрацьовували, але вставка алерта відхилялась Postgres'ом через невідоме значення enum.
+  - У **cron**-шляху вставка не обгорнута в try/catch — виняток вилітав з `runCronCycle` і вбивав **весь цикл**, тобто агенти після проблемного не отримували того тіку взагалі нічого, включно з правилами, у яких з enum усе гаразд. І так кожні 60 секунд.
+  - У **tx**-шляху `persist.ts` ловив виняток і писав `detector runner failed` — губився лише алерт.
+  - Непоміченим лишалось тому, що збій виникає **лише коли одне з семи правил реально спрацьовує**: на спокійних агентах усе виглядало нормально.
+  **Чому дисципліна не спрацювала:** журнал drizzle обривається на `0009`, тож `db:migrate` міграції `0010`+ не бачить, а `db:push` для цього репо небезпечний (диф усієї схеми без знання про партиції, RLS і enum-ALTER'и → пропонує їх знести). Реальний процес був «накотити руками через SQL-редактор» — і він тихо провалився шість разів. **Це вже другий випадок того самого класу:** міграція `0014` (v0.4.x) з'явилась рівно тому, що `0010` не доїхала у прод тим самим шляхом. Перший раз полагодили наслідок, не процес.
+  **Обмеження:** чотири SQL-запити, якими CLI читає стан, у CI не виконуються (потрібна жива БД) — покрита тестами лише чиста порівняльна логіка. Самі запити прогнані вручну проти прода 2026-07-31 і дали коректний результат.
+  **Наступний крок (не зроблено):** повісити чекер у CI перед деплоєм — зараз його треба запускати руками.
+
+**Cluster E total:** ~7.5 днів, 11 micro-releases (v0.4.3 → v0.5.4-infra). **E.1 + E.2 — must-have для M3 на free-tier; E.7 — deploy-safety; E.11 — єдиний пункт з необмеженим збитком при відмові; E.12 — наслідок інциденту 2026-07-31.**
 
 ---
 
@@ -176,7 +189,7 @@
   2. **Cold-start abstain:** агент без історії у вікні не має бази для порівняння — мовчимо, замість вітати нового юзера стіною алертів. Той самий підхід, що у `priority_fee_spike`.
   3. **Dedupe по програмі І severity** (`unknown_program:<pid>:<severity>`), не лише по програмі: інакше нешкідливий перший контакт назавжди проковтнув би critical-алерт наступної tx, що реально виводить кошти.
   **Вартість:** 2 індексовані запити на tx з невідомою програмою (distinct-програми, потім cold-start — тільки коли є що репортити); tx лише з відомими програмами не платять нічого понад lookup у whitelist. SOL-outflow рахується у lamports через `BigInt`, не `parseFloat`. Нових runtime-депів нема (`@agentscope/parser` у detector — workspace-лінк на subpath без web3.js/Anchor).
-  **⚠ Prod action:** `pnpm --filter @agentscope/db db:push` на Supabase ПЕРЕД деплоєм ingestion — enum-значення має існувати до першої вставки алерта.
+  **⚠ Prod action:** накотити SQL міграції у Supabase SQL-редакторі ПЕРЕД деплоєм ingestion — enum-значення має існувати до першої вставки алерта. НЕ через `db:push` (див. E.12). Після — `pnpm --filter @agentscope/scripts check-schema-drift`.
 
 ### A.10 — Token approval / delegate anomaly
 - [ ] **A.10** (додано 2026-07-28) `token_approval_anomaly` rule — SPL Token `approve` / `approve_checked` на delegate, якого нема в історії агента, або з `amount == u64::MAX` (unlimited approval). Потребує decode SPL Token program у парсері (зараз декодуємо System, але не Token instructions)
@@ -197,7 +210,7 @@
   4. **Cold-start abstain** — як A.9 і `priority_fee_spike`.
   5. **Dedupe по 15-хв бакету** (як `tx_rate_anomaly`): один алерт на вікно, новий — після перекочування, бо активний дренаж має пейджити далі, а не замовкнути після першого хіта.
   **Вартість:** 1 індексований запит на агента за цикл у типовому випадку (нема transfer-ів за 15 хв → вихід). Решта (counterparty-lookup, cold-start, сума дельт, баланс) — лише коли є що репортити; баланс бере прогріте prime-кеш (E.1), тобто **0 нових RPC**.
-  **⚠ Prod action:** `pnpm --filter @agentscope/db db:push` на Supabase ПЕРЕД деплоєм ingestion — enum-значення має існувати до першої вставки алерта.
+  **⚠ Prod action:** накотити SQL міграції у Supabase SQL-редакторі ПЕРЕД деплоєм ingestion — enum-значення має існувати до першої вставки алерта. НЕ через `db:push` (див. E.12). Після — `pnpm --filter @agentscope/scripts check-schema-drift`.
 
 ### A.12 — pump.fun / memecoin launchpad parser ⚠️ ПОТРЕБУЄ ПОГОДЖЕННЯ ВЛАСНИКА
 - [ ] **A.12** (додано 2026-07-28) Парсер для pump.fun (`buy`/`sell`/`create`) — саме там найбільше agent-активності і найбільше катастроф. **⚠️ Поза whitelisted-списком протоколів у CLAUDE.md** (Jupiter/Kamino + roadmap-відкриті Raydium/Orca/Drift/Marinade) → **не починати без явного «так» власника**
@@ -591,7 +604,10 @@
 - **Helius free tier RPC limits** — Helius free = 10 RPS / 1M credits/mo. Гарячий кредитний насос = `getBlock` у slot-neighbour (A.1 sandwich). **Alchemy free — drop-in fallback** (25 RPS / 30M CU): код provider-agnostic (стандартний WS + JSON-RPC, Helius-gRPC unused), тож перехід = свап `SOLANA_RPC_URL`+`SOLANA_WS_URL`. Опція zero-cost: streaming на Helius + getBlock на Alchemy = подвоєний free-headroom. Pro ($199/mo) лише коли обидва free впруться. **УВАГА (2026-06-01): справжня поточна стеля — НЕ rate, а credits, і впирається на ~23 агентах через getBalance-cron (E.1 fix критичний). Деталі — [`INFRA-CAPACITY.md`](INFRA-CAPACITY.md) + Cluster E.** До фіксів — стеля ~23 агенти, не «не оптимізуємо передчасно».
 - **Railway free credits ($5/mo)** — поточне споживання ~$2/mo (api + ingestion sidecar). Запас до 10× users.
 - **npm package versions** — `@agentscopehq/elizaos-plugin@0.1.0-alpha.0` і `@agentscopehq/agent-kit-sdk@0.1.0-alpha.0` живуть як alpha. Перший stable `1.0.0` — коли A.1-A.3 (нові правила) і B.1-B.2 (Discord/Slack) виходять, тобто десь біля v0.6.x release.
-- **Prod migrations** — будь-яка нова DB migration (а у roadmap їх 5+: A.2 balance cache, B.1/B.2 channels, B.3 webhook secret, B.8 token rotation, D.3 quality score) потребує `pnpm --filter @agentscope/db db:push` на Supabase prod ПЕРЕД деплоєм нової версії api/ingestion.
+- **Prod migrations** — будь-яка нова DB migration потребує накочування на Supabase prod ПЕРЕД деплоєм нової версії api/ingestion. **Порядок (переписано після інциденту 2026-07-31, див. E.12):**
+  1. Виконати SQL-файл міграції у Supabase SQL-редакторі. **НЕ `db:push`** — журнал drizzle обривається на `0009`, тож push не знає про партиції, RLS-політики та enum-ALTER'и з `0010`+ і пропонує їх знести. `db:migrate` їх теж не бачить.
+  2. `pnpm --filter @agentscope/scripts check-schema-drift` — має вийти з кодом 0. Це єдина перевірка, що міграція справді доїхала; покладатись на пам'ять не можна, бо саме так шість міграцій і загубились.
+  3. Тільки після зеленого чекера — деплой api, потім ingestion.
 
 ---
 
