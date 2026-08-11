@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.6] - 2026-07-31
+
+Release plumbing, cut after the incident that showed the plumbing was missing. Neither item changes what an agent owner sees — both change whether what they see can be trusted: release notes that cannot drift from the changelog, and a checker that refuses to let a migration exist in the repo but not in production.
+
 ### Added
 - **Tag → GitHub Release automation** (E.9) — pushing a `v*` tag now runs `.github/workflows/release.yml`, which extracts the matching `CHANGELOG.md` section and publishes it as the release notes via `gh release create --notes-file`. Release notes and the changelog can no longer drift, because there is only one source. When the tag has no changelog section the job **fails and publishes nothing**, listing the sections that do exist — that is the gap being closed: `v0.4.4`, `v0.4.6` and `v0.4.7` were all tagged before their sections were written and had to be backfilled afterwards. The extraction logic lives in `scripts/extract-changelog-section.ts` as a pure function behind a thin CLI, covered by 16 tests (`scripts/` had no test task before this; turbo's `test` run goes 18 → 19 tasks). Sections are matched by exact version rather than document position — the changelog is not in monotonic order (0.5.2 shipped after 0.5.3 and sits above it) — and trailing link-reference definitions are stripped so they do not leak into the oldest section's notes. No new dependencies: `vitest` resolves from the root bin, `tsx` was already a `scripts` devDependency, and `gh` ships on GitHub runners.
 
@@ -268,8 +272,10 @@ First post-submission iteration. The 2026-05-11 Colosseum Frontier submission sh
 ### Security
 - RLS enabled on every child partition of `agent_transactions` (`2026_04` through `2026_09` plus `_default`). Postgres does not inherit RLS from a partitioned parent, and PostgREST exposes each partition as its own `/rest/v1/<name>` endpoint — without per-partition `ENABLE ROW LEVEL SECURITY`, an anon/authenticated caller could hit a partition directly and bypass the parent's `tx_owner_access` policy. New migration `0010_rls_on_partitions.sql`; service-role ingestion (BYPASSRLS) untouched. ([`1ac359d`](https://github.com/PavloDereniuk/AgentScope/commit/1ac359d), P.11)
 
-[Unreleased]: https://github.com/PavloDereniuk/AgentScope/compare/v0.5.2...HEAD
+[Unreleased]: https://github.com/PavloDereniuk/AgentScope/compare/v0.5.8...HEAD
+[0.5.8]: https://github.com/PavloDereniuk/AgentScope/releases/tag/v0.5.8
 [0.5.7]: https://github.com/PavloDereniuk/AgentScope/releases/tag/v0.5.7
+[0.5.6]: https://github.com/PavloDereniuk/AgentScope/releases/tag/v0.5.6
 [0.5.5]: https://github.com/PavloDereniuk/AgentScope/releases/tag/v0.5.5
 [0.5.2]: https://github.com/PavloDereniuk/AgentScope/releases/tag/v0.5.2
 [0.5.3]: https://github.com/PavloDereniuk/AgentScope/releases/tag/v0.5.3

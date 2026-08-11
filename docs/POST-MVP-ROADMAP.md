@@ -601,8 +601,9 @@
 | v0.5.3 | 2026-07-07 | A.7 (Marinade liquid staking parser) | ✅ released |
 | v0.5.2 | 2026-07-14 | A.6 (Drift v2 perps parser) | ✅ released |
 | v0.5.5 | 2026-07-28 | A.9 (unknown_program_interaction rule) | ✅ released |
-| v0.5.7 | 2026-07-31 | A.11 (outbound_transfer_drain rule) | 🟡 CHANGELOG cut, тег не поставлено |
-| v0.5.8 | 2026-08-11 | A.10 (SPL Token parser + token_approval_anomaly) | 🟡 CHANGELOG cut, тег не поставлено |
+| v0.5.6 | 2026-07-31 | E.9 (tag → Release automation) + E.12 (schema-drift checker) | ✅ released |
+| v0.5.7 | 2026-07-31 | A.11 (outbound_transfer_drain rule) | ✅ released |
+| v0.5.8 | 2026-08-11 | A.10 (SPL Token parser + token_approval_anomaly) | ✅ released |
 | … | … | … | … |
 
 ---
