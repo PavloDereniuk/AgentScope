@@ -30,6 +30,7 @@ import {
   sandwichRule,
   slippageRule,
   staleOracleRule,
+  tokenApprovalRule,
   unknownProgramRule,
 } from '@agentscope/detector';
 import type { EvalLogger, NeighbourFetcher } from '@agentscope/detector';
@@ -49,6 +50,7 @@ const TX_RULES: readonly TxRuleDef[] = [
   decisionSwapMismatchRule,
   staleOracleRule,
   unknownProgramRule,
+  tokenApprovalRule,
 ];
 
 /**
@@ -130,6 +132,7 @@ export async function runTxDetector(
     .select({
       alertRules: agents.alertRules,
       name: agents.name,
+      walletPubkey: agents.walletPubkey,
       userId: agents.userId,
       telegramChatId: agents.telegramChatId,
       webhookUrl: agents.webhookUrl,
@@ -149,7 +152,14 @@ export async function runTxDetector(
   const results = await evaluateTx(
     TX_RULES,
     {
-      agent: { id: agentId, alertRules },
+      // walletPubkey lets `token_approval_anomaly` recognise a self-delegation
+      // (A.10). Conditional spread keeps the field absent rather than
+      // `undefined` under exactOptionalPropertyTypes.
+      agent: {
+        id: agentId,
+        alertRules,
+        ...(agent?.walletPubkey ? { walletPubkey: agent.walletPubkey } : {}),
+      },
       defaults: deps.defaults,
       db: deps.db,
       now: new Date(),

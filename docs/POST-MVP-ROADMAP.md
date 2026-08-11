@@ -192,11 +192,18 @@
   **⚠ Prod action:** накотити SQL міграції у Supabase SQL-редакторі ПЕРЕД деплоєм ingestion — enum-значення має існувати до першої вставки алерта. НЕ через `db:push` (див. E.12). Після — `pnpm --filter @agentscope/scripts check-schema-drift`.
 
 ### A.10 — Token approval / delegate anomaly
-- [ ] **A.10** (додано 2026-07-28) `token_approval_anomaly` rule — SPL Token `approve` / `approve_checked` на delegate, якого нема в історії агента, або з `amount == u64::MAX` (unlimited approval). Потребує decode SPL Token program у парсері (зараз декодуємо System, але не Token instructions)
-  ⏱ 1.5 дня · 📦 v0.5.6 · 🎯 *"Unlimited token approval to an address your agent has never seen? That's how wallets get emptied while you sleep. AgentScope now decodes SPL approve instructions and alerts on the delegate — not just on the transfer that comes after."*
-  **Файли:** `packages/parser/src/spl-token/` (новий, `approve`/`approve_checked`/`revoke`) · `packages/detector/src/rules/token-approval.ts` + tests
-  **Залежність:** потребує SPL Token parser — це єдиний з A.9-A.11, що не «безкоштовний». Робити після A.9/A.11 якщо час тисне.
-  **🔺 Пріоритет піднято (2026-07-31, після A.11):** той самий SPL Token парсер закриває і **токенову частину A.11** (`outbound_transfer_drain` наразі бачить лише SOL — у SPL transfer-ах нема декодованого отримувача). Тобто A.10 тепер = дві дірки за одну ціну, а не одна.
+- [x] **A.10** (2026-08-11) `token_approval_anomaly` rule + SPL Token парсер — `approve`/`approve_checked` на delegate поза історією агента (30 днів), або `amount == u64::MAX`. Critical коли unlimited І delegate незнайомий, інакше warning. 14 TDD тестів парсера + 19 тестів правила + 1 e2e через `runTxDetector`, міграція `0018`
+  ⏱ 1.5 дня · 📦 v0.5.8 · 🎯 *"Unlimited token approval to an address your agent has never seen? That's how wallets get emptied while you sleep. AgentScope now decodes SPL approve instructions and alerts on the delegate — not just on the transfer that comes after."*
+  **Файли:** [packages/parser/src/spl-token/parser.ts](../packages/parser/src/spl-token/parser.ts) · [packages/parser/src/binary.ts](../packages/parser/src/binary.ts) (винесено з `system/parser.ts`) · [packages/detector/src/rules/token-approval.ts](../packages/detector/src/rules/token-approval.ts) · [packages/db/src/migrations/0018_token_approval_anomaly.sql](../packages/db/src/migrations/0018_token_approval_anomaly.sql) · persist/detector-runner/shared/dashboard wiring
+  **Скоуп парсера:** `transfer`, `transfer_checked`, `approve`, `approve_checked`, `revoke` — фіксовані layout-и, які рухають або делегують кошти. Token і Token-2022 мають байт-ідентичні layout-и для всіх п'яти → один декодер, один namespace `spl_token`, два зареєстровані programId. Mint/burn/lifecycle і extension-діапазон Token-2022 (disc ≥ 43) → `spl_token.unknown`.
+  **🔴 Токенова частина A.11 НЕ закрита.** Парсер був необхідною, але не достатньою умовою: у SPL transfer-і `destination` — це **токен-акаунт, а не гаманець**, тож щоб судити counterparty, потрібен мепінг account → owner, якого persist не зберігає. Окремий follow-up, не побічний ефект A.10.
+  **Дизайн-рішення:**
+  1. **Unlimited спрацьовує без baseline** — `u64::MAX` це властивість самого гранту, а не судження про історію. Cold-start abstain лишається лише для «незнайомий delegate» (слабший сигнал); дренаж на першу добу життя агента інакше пройшов би повз.
+  2. **«Знайомий» = раніше **approve**-нутий** за фіксовані 30 днів (як A.9/A.11, без другого тюнера). Попередні *перекази* на адресу не роблять її знайомим delegate — заплатити комусь і дозволити брати самому це різні дії.
+  3. **Правило читає `_approvals`, не primary args** — `spl_token.*` навмисно демотовано у utility-tier `pickPrimaryInstruction` (інакше кожен swap із token-transfer'ом перелейбився б у `spl_token.transfer` і зламав slippage-правилам args). Тому approve за swap-ом невидимий на верхньому рівні `parsed_args` — саме та форма, якою користується дренер.
+  4. **Dedupe по delegate + mint + severity** — один delegate на двох мінтах це дві різні експозиції.
+  **Вартість:** 2 запити на tx, що містить approve (jsonb-containment по історії + cold-start пробa лише коли є що репортити), **0** на решті. Нових депів нема.
+  **⚠ Prod action:** накотити `0018` у Supabase SQL-редакторі ПЕРЕД деплоєм ingestion, потім `pnpm --filter @agentscope/scripts check-schema-drift`. НЕ через `db:push` (E.12).
 
 ### A.11 — Outbound transfer drain
 - [x] **A.11** (2026-07-31) `outbound_transfer_drain` rule — серія SOL transfer-ів на адреси поза відомим набором counterparty агента у межах 15-хв вікна, сумарно > X% (default 25%) від балансу на початок вікна. Cron-triggered, escalate=critical при 2× порогу. Ловить повільний дренаж дрібними сумами, який per-tx правила пропускають. 21 TDD тест + 1 e2e через `runCronCycle`, міграція `0017`
@@ -217,7 +224,7 @@
   ⏱ TBD (оцінка ~3 дні за аналогією з A.4/A.5, не валідована) · 📦 v0.5.8 · 🎯 *"Memecoin agents are where the wild things are. AgentScope now parses pump.fun buys and sells with real semantics — mint, SOL in, tokens out, bonding-curve state. Your degen agent is finally legible."*
   **Відкриті питання перед стартом:** (a) чи це наша цільова аудиторія, чи відволікання від «серйозних» yield/arb агентів; (b) чи є мейнтейнс-ризик — pump.fun міняє програму частіше за DEX-и.
 
-**Cluster A total:** ~19 днів (+A.12 TBD), 12 micro-releases (v0.4.0 → v0.5.8). **A.1-A.9 + A.11 закриті; A.10 — залишок security-зрізу (потребує SPL Token парсера, він же закриє токенову частину A.11).**
+**Cluster A total:** ~19 днів (+A.12 TBD), 12 micro-releases (v0.4.0 → v0.5.8). **A.1-A.11 закриті — весь security-зріз (A.9 + A.10 + A.11) у проді-коді. Лишилась тільки A.12 (потребує погодження власника).** Відкритий хвіст: SPL-леґ `outbound_transfer_drain` (потрібен мепінг token-account → owner у persist).
 
 ---
 
@@ -541,10 +548,11 @@
 **Phase 4 (Growth surface):** C.9 → C.7 → C.8 → E.10
 - Marketing-driven. C.9 (share-card) поперед C.7 — дешевша і дає recurring user-generated поверхню, тоді як widget одноразовий. C.7 залежить від C.0b (public read routes).
 
-**Phase 4.5 (Security rules):** A.9 ✅ → A.11 ✅ → A.10
+**Phase 4.5 (Security rules):** A.9 ✅ → A.11 ✅ → A.10 ✅
 - Порядок за співвідношенням цінність/вартість: A.9 і A.11 переважно reuse наявних даних, A.10 потребує нового SPL Token парсера. Разом закривають категорію «агента дренять», якої в детекторі не було зовсім.
 - **A.9 закрито 2026-07-28** (v0.5.5) — витягнуто вперед на прохання власника, поза чергою Phase 2.5. A.11 успадкувала від нього cold-start abstain + винесений lamport-хелпер.
-- **A.11 закрито 2026-07-31** (v0.5.7) — але **лише SOL-леґ**: SPL-частина впирається у той самий SPL Token парсер, що й A.10. Тобто A.10 тепер закриває дві дірки одразу (approve-вектор + токенові дренажі), що піднімає її пріоритет у Phase 4.5 відносно первинної оцінки.
+- **A.11 закрито 2026-07-31** (v0.5.7) — але **лише SOL-леґ**: SPL-частина впиралась у SPL Token парсер, що й A.10.
+- **A.10 закрито 2026-08-11** (v0.5.8) — парсер + правило. Очікування «дві дірки за одну ціну» справдилось лише наполовину: approve-вектор закрито, а SPL-леґ A.11 — ні. Парсер дає `destination`, але це **токен-акаунт**, і без мепінгу account → owner (persist його не зберігає) немає counterparty, якого можна судити. Залишається окремим follow-up у хвості кластера.
 
 **Phase 5 (AI moat):** C.10 → D.1 → D.2 → D.3 → D.4
 - **C.10 навмисно поперед D.1:** auto-tuning на реальних «useful/noise» лейблах суттєво сильніший за чисту статистику, а лейблам треба час назбиратись. Решта — найдорожчі за часом і потребують Claude API integration.
@@ -594,6 +602,7 @@
 | v0.5.2 | 2026-07-14 | A.6 (Drift v2 perps parser) | ✅ released |
 | v0.5.5 | 2026-07-28 | A.9 (unknown_program_interaction rule) | ✅ released |
 | v0.5.7 | 2026-07-31 | A.11 (outbound_transfer_drain rule) | 🟡 CHANGELOG cut, тег не поставлено |
+| v0.5.8 | 2026-08-11 | A.10 (SPL Token parser + token_approval_anomaly) | 🟡 CHANGELOG cut, тег не поставлено |
 | … | … | … | … |
 
 ---

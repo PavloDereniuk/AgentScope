@@ -18,29 +18,11 @@
  */
 
 import type { ParsedArgs, SolanaPubkey } from '@agentscope/shared';
+import { readU32LE, readU64LE } from '../binary';
 import { registerParser } from '../dispatcher';
 import type { ProgramParser } from '../types';
 
 const SYSTEM_PROGRAM_ID = '11111111111111111111111111111111' as SolanaPubkey;
-
-function readU32LE(data: Uint8Array, offset: number): number | null {
-  if (offset + 4 > data.length) return null;
-  return (
-    (data[offset] ?? 0) +
-    ((data[offset + 1] ?? 0) << 8) +
-    ((data[offset + 2] ?? 0) << 16) +
-    (data[offset + 3] ?? 0) * 0x1000000
-  );
-}
-
-function readU64LE(data: Uint8Array, offset: number): string | null {
-  if (offset + 8 > data.length) return null;
-  let value = 0n;
-  for (let i = 7; i >= 0; i--) {
-    value = (value << 8n) | BigInt(data[offset + i] ?? 0);
-  }
-  return value.toString();
-}
 
 export const systemParser: ProgramParser = {
   programId: SYSTEM_PROGRAM_ID,

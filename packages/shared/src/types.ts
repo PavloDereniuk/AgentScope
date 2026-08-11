@@ -33,6 +33,7 @@ export const ALERT_RULE_NAMES = [
   'priority_fee_spike',
   'unknown_program_interaction',
   'outbound_transfer_drain',
+  'token_approval_anomaly',
 ] as const;
 export type AlertRuleName = (typeof ALERT_RULE_NAMES)[number];
 

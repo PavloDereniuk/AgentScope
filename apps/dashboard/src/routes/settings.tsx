@@ -908,6 +908,7 @@ const RULE_LABELS: Record<AlertRuleName, string> = {
   priority_fee_spike: 'Priority fee spike',
   unknown_program_interaction: 'Unknown program',
   outbound_transfer_drain: 'Wallet drain',
+  token_approval_anomaly: 'Token approval',
 };
 
 function ThresholdInput({

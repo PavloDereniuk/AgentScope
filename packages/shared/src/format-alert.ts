@@ -72,6 +72,7 @@ const RULE_TITLES: Record<string, string> = {
   priority_fee_spike: 'Priority Fee Spike',
   unknown_program_interaction: 'Unknown Program Called',
   outbound_transfer_drain: 'Wallet Draining',
+  token_approval_anomaly: 'Token Approval Granted',
   // Pseudo-rule emitted by POST /api/agents/:id/test-alert. Not part of
   // ALERT_RULE_NAMES (never persisted), but the formatters must handle it
   // because it travels through the same telegram/webhook senders that
@@ -260,6 +261,17 @@ export function formatAlertSummary(
           : 'transfers to new addresses';
       const windowStr = minutes != null ? ` in ${fmtMinutes(minutes)}` : '';
       return `${countStr}${windowStr} — ${drainSol} SOL, ${drainPct}% of the wallet`;
+    }
+    case 'token_approval_anomaly': {
+      const delegate = str(payload, 'delegate');
+      const unlimited = payload.unlimited === true;
+      const unfamiliar = payload.unfamiliarDelegate === true;
+      const who = delegate ? `${delegate.slice(0, 8)}…` : 'an address';
+      // The allowance size leads: "unlimited" is the part that decides whether
+      // the owner has minutes or days to react.
+      const grant = unlimited ? 'Unlimited token approval' : 'Token approval';
+      const trust = unfamiliar ? 'never approved before' : 'a known delegate';
+      return `${grant} granted to ${who} — ${trust}`;
     }
     case 'test_alert':
       return 'If you can read this, alert delivery is working.';
@@ -480,6 +492,35 @@ export function formatAlertDetails(
       }
       return rows;
     }
+    case 'token_approval_anomaly': {
+      const unlimited = payload.unlimited === true;
+      const amount = str(payload, 'amount');
+      const lookback = num(payload, 'lookbackDays');
+      const rows: AlertDetailRow[] = [
+        { label: 'Delegate', value: str(payload, 'delegate') ?? '—' },
+        // Raw u64 — no decimals to divide by when the mint is unknown, and the
+        // exact figure is what the owner will compare against the explorer.
+        { label: 'Allowance', value: unlimited ? 'unlimited (u64::MAX)' : (amount ?? '—') },
+        { label: 'Mint', value: str(payload, 'mint') ?? 'unknown' },
+        { label: 'Token account', value: str(payload, 'tokenAccount') ?? '—' },
+        {
+          label: 'Delegate seen before',
+          value:
+            payload.coldStart === true
+              ? 'no history yet'
+              : payload.unfamiliarDelegate === true
+                ? 'no'
+                : 'yes',
+        },
+        { label: 'Lookback', value: lookback != null ? `${lookback} days` : '—' },
+      ];
+      const count = num(payload, 'approvalCount');
+      // Only worth a row when the tx granted more than the one being reported.
+      if (count != null && count > 1) {
+        rows.push({ label: 'Approvals in tx', value: String(count) });
+      }
+      return rows;
+    }
     // The smoke-test payload (`isTest`, `source`) is plumbing-only metadata —
     // dumping it as bullet rows adds noise without telling the user anything
     // they don't already know from the title and impact line.
@@ -534,6 +575,8 @@ export function formatAlertImpact(
       return "Your bot signed a transaction with a program it has never used before and that AgentScope can't identify. If funds moved in the same transaction, treat it as a possible drain until you've verified the program yourself.";
     case 'outbound_transfer_drain':
       return 'A run of small transfers is moving a meaningful slice of the wallet to addresses your bot has never paid before. No single transaction looks wrong — the total does. This is what a wallet being emptied piece by piece looks like.';
+    case 'token_approval_anomaly':
+      return 'Your bot authorised another account to move its tokens. Nothing left the wallet yet — an approval is a standing permission, so the withdrawal can happen at any time, from a transaction your bot never signs. If you did not set up this integration, treat it as a pending drain.';
     case 'test_alert':
       return 'This is a smoke test triggered from your dashboard. No real anomaly was detected — no action needed.';
     default:
@@ -620,6 +663,11 @@ export function formatAlertAction(
       return [
         'Pause the bot now — the transfers keep landing while you investigate.',
         "Check the recipient addresses against your own payout list; rotate the agent key if you don't recognise them.",
+      ];
+    case 'token_approval_anomaly':
+      return [
+        'Revoke the approval on that token account (`spl-token revoke <account>`) if you did not authorise it.',
+        'Look the delegate up on a block explorer before assuming it is a protocol you use.',
       ];
     default:
       return [];

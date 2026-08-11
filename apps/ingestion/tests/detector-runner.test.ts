@@ -175,6 +175,66 @@ describe('runTxDetector', () => {
       fundsMoved: true,
     });
   });
+
+  // Same guard for A.10: rule registered in TX_RULES, `_approvals` read from a
+  // tx whose primary instruction is something else entirely, and the
+  // alert_rule_name enum accepting `token_approval_anomaly` (migration 0018).
+  it('persists a token_approval_anomaly alert end-to-end (A.10)', async () => {
+    await db.delete(alerts).where(eq(alerts.agentId, agentId));
+
+    const tx: TxSnapshot = {
+      signature: 'sig_token_approval',
+      slot: 300_000_103,
+      // The approval is NOT the primary instruction — it rides behind a swap.
+      instructionName: 'jupiter.swap',
+      parsedArgs: {
+        inAmount: '1000000',
+        _all: [
+          {
+            index: 0,
+            programId: 'JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4',
+            name: 'jupiter.swap',
+          },
+          {
+            index: 1,
+            programId: 'TokenkegQfZFAhUJMRNbSL2vM5qTgaK5TxwQnEKL7aP',
+            name: 'spl_token.approve',
+          },
+        ],
+        _approvals: [
+          {
+            index: 1,
+            delegate: 'Draine4De1egate1111111111111111111111111',
+            amount: '18446744073709551615',
+            source: 'SourceAta11111111111111111111111111111111',
+            owner: '11111111111111111111111111111111',
+            mint: 'MintUSDC1111111111111111111111111111111',
+            programId: 'TokenkegQfZFAhUJMRNbSL2vM5qTgaK5TxwQnEKL7aP',
+          },
+        ],
+      },
+      // An approval moves nothing — no balance-derived rule can see this tx.
+      solDelta: '-0.000005000',
+      tokenDeltas: [],
+      feeLamports: 5000,
+      success: true,
+      blockTime: new Date().toISOString(),
+      programId: 'JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4',
+    };
+
+    const count = await runTxDetector({ db, logger: silentLogger, defaults }, agentId, tx);
+    expect(count).toBe(1);
+
+    const rows = await db.select().from(alerts).where(eq(alerts.agentId, agentId));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.ruleName).toBe('token_approval_anomaly');
+    expect(rows[0]?.severity).toBe('critical');
+    expect(rows[0]?.payload).toMatchObject({
+      delegate: 'Draine4De1egate1111111111111111111111111',
+      unlimited: true,
+      unfamiliarDelegate: true,
+    });
+  });
 });
 
 describe('runTxDetector вЂ” Epic 14 per-agent routing', () => {

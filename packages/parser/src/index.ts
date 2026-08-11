@@ -16,6 +16,7 @@ import './raydium/parser';
 import './marinade/parser';
 import './drift/parser';
 import './system/parser';
+import './spl-token/parser';
 
 export { parseTransaction, registerParser } from './dispatcher';
 // Also reachable as `@agentscope/parser/known-programs` — that subpath exists
@@ -29,6 +30,7 @@ export { raydiumAmmParser, raydiumClmmParser } from './raydium/parser';
 export { marinadeParser } from './marinade/parser';
 export { driftParser } from './drift/parser';
 export { systemParser } from './system/parser';
+export { splTokenParser, token2022Parser } from './spl-token/parser';
 export type {
   ParseInput,
   ParsedInstruction,

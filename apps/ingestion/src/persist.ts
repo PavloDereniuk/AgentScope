@@ -9,7 +9,7 @@
 
 import { type Database, agentTransactions, agents } from '@agentscope/db';
 import { type ParseInput, type ParsedTx, parseTransaction } from '@agentscope/parser';
-import type { ISOTimestamp, SolanaPubkey, SolanaSignature } from '@agentscope/shared';
+import type { ISOTimestamp, ParsedArgs, SolanaPubkey, SolanaSignature } from '@agentscope/shared';
 import { eq, sql } from 'drizzle-orm';
 import { type DetectorDeps, runTxDetector } from './detector-runner';
 import type { TxUpdate } from './grpc-client';
@@ -98,25 +98,98 @@ export function compactInstructionOutline(
   return instructions.map((ix) => ({ index: ix.index, programId: ix.programId, name: ix.name }));
 }
 
+/** A single approval in the `_approvals` payload (A.10). */
+export interface ApprovalOutlineEntry {
+  index: number;
+  /** Account granted the right to move the token balance. */
+  delegate: string;
+  /** Raw u64 amount as a decimal string — `18446744073709551615` = unlimited. */
+  amount: string;
+  /** Token account the delegation is written on (what a revoke targets). */
+  source: string;
+  /** Authority that signed the delegation — the agent's own account. */
+  owner: string;
+  /** Absent when the tx meta carried no balance entry for `source`. */
+  mint?: string;
+  /** Program that owns the instruction — Token vs Token-2022. */
+  programId: string;
+}
+
+/**
+ * Extract every SPL Token approval in the transaction (A.10).
+ *
+ * A deliberate, narrow exception to the E.5 storage diet: `parsed_args` keeps
+ * decoded args for the *primary* instruction only, but an `Approve` is exactly
+ * the instruction a drainer hides in position two behind something ordinary —
+ * and unlike a transfer it moves nothing, so no balance-derived field can
+ * reconstruct it after the fact. The delegate has to be persisted at write time
+ * or it is gone.
+ *
+ * Cost stays near zero because approvals are rare: the key is omitted entirely
+ * from the jsonb for the overwhelming majority of transactions, and an approval
+ * that does land costs ~150 bytes.
+ */
+export function collectApprovals(
+  instructions: readonly { index: number; programId: string; name: string; args: ParsedArgs }[],
+): ApprovalOutlineEntry[] {
+  const out: ApprovalOutlineEntry[] = [];
+  for (const ix of instructions) {
+    if (ix.name !== 'spl_token.approve' && ix.name !== 'spl_token.approve_checked') continue;
+    const { delegate, amount, source, owner, mint } = ix.args;
+    // The parser only emits these names with all four fields present; the
+    // guard keeps a future parser change from writing half an approval.
+    if (
+      typeof delegate !== 'string' ||
+      typeof amount !== 'string' ||
+      typeof source !== 'string' ||
+      typeof owner !== 'string'
+    ) {
+      continue;
+    }
+    out.push({
+      index: ix.index,
+      delegate,
+      amount,
+      source,
+      owner,
+      ...(typeof mint === 'string' ? { mint } : {}),
+      programId: ix.programId,
+    });
+  }
+  return out;
+}
+
 /**
  * Pick the most "interesting" parsed instruction in the tx — the
  * primary user-visible operation. Priority order:
  *   1. Decoded protocol op on a non-infra program (jupiter.swap,
  *      kamino.deposit, system.transfer)
  *   2. Recognized non-infra (includes kamino.refresh_*, kamino.init_*,
- *      and bare friendly names like "Bubblegum (cNFT)")
+ *      SPL Token ops, and bare friendly names like "Bubblegum (cNFT)")
  *   3. Any non-infra instruction (even <prefix>.unknown — at least we
  *      know which protocol triggered it)
  *   4. First instruction overall (pure-infra tx — shows "Compute Budget")
  */
-function pickPrimaryInstruction(parsed: ParsedTx) {
+export function pickPrimaryInstruction<T extends { programId: string; name: string }>(parsed: {
+  instructions: readonly T[];
+}): T | null {
   const ixs = parsed.instructions;
   if (ixs.length === 0) return null;
 
   const isInfra = (ix: { programId: string }) => INFRA_PROGRAM_IDS.has(ix.programId);
   const isUnknown = (ix: { name: string }) => ix.name === 'unknown' || ix.name.endsWith('.unknown');
+  // `spl_token.*` joins the utility tier for the same reason kamino's refresh
+  // ops did: a swap or a deposit routinely carries token transfers/approvals
+  // alongside it, and before A.10 decoded them they scored as the unnamed
+  // "Token" (tier 2) and lost. Decoding them promoted them to tier 1, which
+  // would have re-labelled Jupiter swaps as "spl_token.transfer" and — worse —
+  // fed the wrong args to slippage rules. Demoted here they still win tier 2
+  // when they are the whole transaction, which is the standalone-approve case
+  // token_approval_anomaly cares about.
   const isUtility = (ix: { name: string }) =>
-    ix.name.startsWith('kamino.refresh_') || ix.name.startsWith('kamino.init_');
+    ix.name.startsWith('kamino.refresh_') ||
+    ix.name.startsWith('kamino.init_') ||
+    ix.name.startsWith('spl_token.');
 
   const meaningful = ixs.filter((ix) => !isInfra(ix) && !isUnknown(ix) && !isUtility(ix));
   if (meaningful[0]) return meaningful[0];
@@ -192,9 +265,18 @@ export async function persistTx(ctx: PersistContext, tx: TxUpdate): Promise<numb
   // per-hop args. See compactInstructionOutline above.
   const instructionOutline = compactInstructionOutline(parsed?.instructions ?? []);
 
+  // SPL Token approvals from anywhere in the tx (A.10) — see collectApprovals.
+  const approvals = collectApprovals(parsed?.instructions ?? []);
+
   // Build the parsedArgs payload once and reuse it for both the DB insert
   // and the detector runner — avoids allocating the `_all` list twice per tx.
-  const parsedArgsPayload = primary ? { ...primary.args, _all: instructionOutline } : null;
+  const parsedArgsPayload = primary
+    ? {
+        ...primary.args,
+        _all: instructionOutline,
+        ...(approvals.length > 0 ? { _approvals: approvals } : {}),
+      }
+    : null;
 
   // Cap persisted rawLogs (E.2) — slim on success, fuller on failure.
   // See capRawLogs / RAW_LOGS_LIMIT_* above. When the tx wasn't parsed we
