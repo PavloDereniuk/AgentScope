@@ -28,6 +28,7 @@ import { type AdminMilestoneConfig, createAdminRouter } from './routes/admin';
 import { createAgentsRouter } from './routes/agents';
 import { createAlertsRouter } from './routes/alerts';
 import { createCliStreamRouter } from './routes/cli-stream';
+import { createHealthRouter } from './routes/health';
 import { createIngestRouter } from './routes/ingest';
 import { createMetricsRouter } from './routes/metrics';
 import { createOtlpRouter } from './routes/otlp';
@@ -174,6 +175,12 @@ export function buildApp(deps: AppDeps) {
     }
     return c.json({ ok: true });
   });
+
+  // Public: liveness of the *ingestion worker*, read from its heartbeat row
+  // (E.13). Separate process, separate failure mode — `/health` above stays
+  // green while ingestion is dead, which is exactly how a twelve-day outage
+  // went unnoticed in July 2026.
+  app.route('', createHealthRouter({ db: deps.db }));
 
   // Prometheus metrics scrape endpoint (B.5) — no auth, plain-text.
   // Designed for an internal scraper on the same private network.

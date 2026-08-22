@@ -1,19 +1,123 @@
-name: Keep Railway alive
+name: Uptime check
+
+# Pings both halves of the platform and pages the owner in Telegram when one
+# of them stops answering. Also keeps Railway warm, which is all this workflow
+# used to do — under the name "Keep Railway alive", once a day, against the API
+# only, and failing silently into the Actions tab.
+#
+# That gap had a cost. On 2026-07-30 the ingestion worker died on an INSERT
+# with an unknown enum value; no transactions were parsed and no alerts fired
+# for twelve days. The daily ping stayed green for most of it, because the API
+# it pings was genuinely healthy — the process that had died was the other one.
+# An alerting product was down and nobody was alerted.
+#
+# So: check the API *and* the ingestion worker (via /health/ingestion, which
+# reads the worker's heartbeat row — E.13), every 15 minutes, and send Telegram
+# on the edges. Edge-triggered, not level-triggered: the notification fires on
+# the transition into and out of the outage, so a twelve-day outage is two
+# messages rather than 1152. The job still fails on every red run, which is
+# both the visible signal in the Actions tab and the state this workflow reads
+# back to detect the edge.
 
 on:
   schedule:
-    # Daily at 10:00 UTC — well within Railway's 7-day inactivity threshold.
-    # /health now runs SELECT 1 so this also keeps the Postgres pool warm.
-    - cron: '0 10 * * *'
+    - cron: '*/15 * * * *'
   workflow_dispatch:
 
+# Needed by `gh run list` below to read this workflow's previous conclusion.
+permissions:
+  actions: read
+  contents: read
+
 jobs:
-  ping:
+  check:
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    timeout-minutes: 5
     steps:
-      - name: Ping API health endpoint
+      - name: Probe API and ingestion health
+        id: probe
+        env:
+          API_HEALTH_URL: https://api.agentscopehq.dev/health
+          INGESTION_HEALTH_URL: https://api.agentscopehq.dev/health/ingestion
         run: |
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://api.agentscopehq.dev/health)
-          echo "HTTP $STATUS"
-          [ "$STATUS" = "200" ] || exit 1
+          set -uo pipefail
+          failures=""
+
+          # /health — the API process plus a SELECT 1 through the pool.
+          api_body=$(curl -sS -m 20 -w '\n%{http_code}' "$API_HEALTH_URL" || printf '\n000')
+          api_code=$(printf '%s' "$api_body" | tail -n1)
+          echo "api: HTTP $api_code"
+          if [ "$api_code" != "200" ]; then
+            failures="${failures}api (HTTP ${api_code}); "
+          fi
+
+          # /health/ingestion — the worker's heartbeat, read out of the
+          # database by the API. 503 carries a `reason`, which is the single
+          # most useful thing to put in front of a woken-up human.
+          ing_body=$(curl -sS -m 20 -w '\n%{http_code}' "$INGESTION_HEALTH_URL" || printf '\n000')
+          ing_code=$(printf '%s' "$ing_body" | tail -n1)
+          ing_json=$(printf '%s' "$ing_body" | sed '$d')
+          echo "ingestion: HTTP $ing_code $ing_json"
+          if [ "$ing_code" != "200" ]; then
+            reason=$(printf '%s' "$ing_json" | jq -r '.reason // "unknown"' 2>/dev/null || echo unknown)
+            failures="${failures}ingestion (HTTP ${ing_code}, ${reason}); "
+          fi
+
+          if [ -n "$failures" ]; then
+            echo "status=down" >> "$GITHUB_OUTPUT"
+            echo "detail=${failures%; }" >> "$GITHUB_OUTPUT"
+          else
+            echo "status=up" >> "$GITHUB_OUTPUT"
+            echo "detail=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Notify Telegram on state change
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.TELEGRAM_ADMIN_CHAT_ID }}
+          STATUS: ${{ steps.probe.outputs.status }}
+          DETAIL: ${{ steps.probe.outputs.detail }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -uo pipefail
+
+          if [ -z "${BOT_TOKEN}" ] || [ -z "${CHAT_ID}" ]; then
+            echo "Telegram secrets not configured — skipping notification."
+            exit 0
+          fi
+
+          # Conclusion of the previous *completed* run of this workflow. The
+          # run in progress is excluded by --status completed, so this is
+          # genuinely the last observation, and comparing against it is what
+          # makes the alert edge-triggered. An empty value (first ever run,
+          # or history trimmed) is treated as "was up" so a first red run
+          # still pages.
+          prev=$(gh run list --workflow=keep-alive.yml --branch "${GITHUB_REF_NAME}" \
+                   --status completed --limit 1 --json conclusion \
+                   --jq '.[0].conclusion' 2>/dev/null || echo "")
+          echo "previous conclusion: '${prev}' · current: ${STATUS}"
+
+          send() {
+            curl -sS -m 20 -X POST \
+              "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+              -d "chat_id=${CHAT_ID}" \
+              -d "disable_web_page_preview=true" \
+              --data-urlencode "text=$1" > /dev/null
+          }
+
+          if [ "${STATUS}" = "down" ] && [ "${prev}" != "failure" ]; then
+            send "$(printf '%s\n%s\n%s' '🔴 AgentScope is DOWN' "${DETAIL}" "${RUN_URL}")"
+            echo "outage notification sent"
+          elif [ "${STATUS}" = "up" ] && [ "${prev}" = "failure" ]; then
+            send "$(printf '%s\n%s\n%s' '🟢 AgentScope is back UP' 'api + ingestion answering again' "${RUN_URL}")"
+            echo "recovery notification sent"
+          else
+            echo "no state change — no notification"
+          fi
+
+      - name: Fail the run when anything is down
+        if: steps.probe.outputs.status == 'down'
+        run: |
+          echo "::error::${{ steps.probe.outputs.detail }}"
+          exit 1

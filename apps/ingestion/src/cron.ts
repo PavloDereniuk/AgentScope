@@ -114,6 +114,16 @@ export interface CronDeps {
    * `fetchAgentBalance` — both come from the same `createBalanceFetcher`.
    */
   primeBalances?: (walletPubkeys: readonly string[]) => Promise<void>;
+  /**
+   * Called after a cycle that completed without throwing (E.13). Wired to the
+   * liveness heartbeat, so a cron that keeps throwing — the July 2026 failure
+   * mode, where every cycle died on an INSERT with an unknown enum value —
+   * surfaces as `cron-stalled` on `/health/ingestion` instead of only in logs
+   * nobody reads. Deliberately not called on the failure path: a cycle that
+   * threw evaluated nothing, and counting it as a tick would hide exactly the
+   * outage this signal exists to catch.
+   */
+  onCycleComplete?: () => void;
 }
 
 /**
@@ -379,6 +389,13 @@ export function startCron(deps: CronDeps): { stop: () => void } {
     // surface as an uncaughtException and kill the process.
     try {
       runCronCycle(deps)
+        .then(() => {
+          try {
+            deps.onCycleComplete?.();
+          } catch {
+            // swallow — a broken liveness callback must not fail the cycle
+          }
+        })
         .catch((err) => {
           try {
             deps.logger.error({ err }, 'cron cycle failed');

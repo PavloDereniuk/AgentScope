@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.9] - 2026-08-22
+
+Monitoring for the monitor. The ingestion worker died on 2026-07-30 and was found on 2026-08-11: twelve days with no transactions parsed and no alerts fired, while the uptime check stayed green because the thing it pinged — the API — was genuinely healthy. Two processes, two independent failure modes, one of them watched. An alerting product was down for two days without alerting anyone.
+
+### Added
+- **Ingestion heartbeat** (E.13) — the worker upserts a `service_heartbeats` row every 30s carrying process start, the last WebSocket slot, the last transaction received, the last **successfully completed** cron cycle, and the number of subscribed wallets. Migration `0019` adds the table (RLS enabled, no policy: it is not user data and only the BYPASSRLS service roles read it). It is a written row rather than a query over `agent_transactions` because a quiet fleet and a dead worker are indistinguishable in the transaction stream — the beat is written whether or not there is traffic, so its absence means exactly one thing. Writes never propagate a failure: the monitoring path must not be able to kill the process it monitors, and a missed beat is already the signal the reader wants.
+
+- **`GET /health/ingestion`** (E.13) — anonymous endpoint on the API that reads that row and answers 200 or 503 with a `reason`: `never-reported`, `stale-heartbeat` (no beat in 180s — 6× the write cadence), `stream-stalled` (no slot in 300s, on a chain that produces one every ~400ms), or `cron-stalled` (no completed cycle in 300s, 5× the cadence). Transaction age is reported and **never judged** — twelve days of silence from a fleet of idle agents is normal, and paging on it would train the owner to ignore the page. A signal that has never fired ages from process start rather than counting as instantly stale, so a worker three seconds into its boot reads as healthy. `cron-stalled` exists because `onCycleComplete` fires only after a cycle that did not throw: a cron that fails every tick — the July failure mode, had it not killed the process outright — now surfaces as a distinct reason instead of a log line nobody reads. 15 tests, most of them against the pure reading function.
+
+### Changed
+- **`Keep Railway alive` → `Uptime check`** — the workflow now pings the API *and* `/health/ingestion` every 15 minutes (was: the API only, once a day) and sends Telegram to the owner's admin chat on **state changes**. Edge-triggered, by reading its own previous run's conclusion via `gh run list`: a twelve-day outage is two messages (down, then back up) rather than 1152, so the alert stays worth reading. The job still fails on every red run — that is both the visible signal in the Actions tab and the state the next run reads back. Without `TELEGRAM_BOT_TOKEN` / `TELEGRAM_ADMIN_CHAT_ID` repo secrets the notification step logs and skips, leaving the previous behaviour (a red run and nothing else).
+
+### Notes
+- **Deployment order matters.** Apply `0019` in the Supabase SQL editor and confirm `check-schema-drift` is green *before* deploying, per the procedure written after the E.12 incident. Until the API is redeployed, `/health/ingestion` 404s and the workflow reads that as an outage — which is correct, if noisy for one deploy window.
+- No new environment variables and no new dependencies. Thresholds are derived from the cadences they watch and are deliberately not configurable.
+
 ## [0.5.6] - 2026-07-31
 
 Release plumbing, cut after the incident that showed the plumbing was missing. Neither item changes what an agent owner sees — both change whether what they see can be trusted: release notes that cannot drift from the changelog, and a checker that refuses to let a migration exist in the repo but not in production.
@@ -272,7 +288,8 @@ First post-submission iteration. The 2026-05-11 Colosseum Frontier submission sh
 ### Security
 - RLS enabled on every child partition of `agent_transactions` (`2026_04` through `2026_09` plus `_default`). Postgres does not inherit RLS from a partitioned parent, and PostgREST exposes each partition as its own `/rest/v1/<name>` endpoint — without per-partition `ENABLE ROW LEVEL SECURITY`, an anon/authenticated caller could hit a partition directly and bypass the parent's `tx_owner_access` policy. New migration `0010_rls_on_partitions.sql`; service-role ingestion (BYPASSRLS) untouched. ([`1ac359d`](https://github.com/PavloDereniuk/AgentScope/commit/1ac359d), P.11)
 
-[Unreleased]: https://github.com/PavloDereniuk/AgentScope/compare/v0.5.8...HEAD
+[Unreleased]: https://github.com/PavloDereniuk/AgentScope/compare/v0.5.9...HEAD
+[0.5.9]: https://github.com/PavloDereniuk/AgentScope/releases/tag/v0.5.9
 [0.5.8]: https://github.com/PavloDereniuk/AgentScope/releases/tag/v0.5.8
 [0.5.7]: https://github.com/PavloDereniuk/AgentScope/releases/tag/v0.5.7
 [0.5.6]: https://github.com/PavloDereniuk/AgentScope/releases/tag/v0.5.6

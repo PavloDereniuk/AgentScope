@@ -285,6 +285,39 @@ export const telegramBindings = pgTable(
   }),
 );
 
+/**
+ * Liveness heartbeats, one row per long-running service (E.13).
+ *
+ * The ingestion worker upserts `service = 'ingestion'` on a short timer; the
+ * API reads that row to answer `GET /health/ingestion`. It exists because the
+ * only external health signal we had was the API's own `/health`, and the two
+ * processes fail independently: on 2026-07-30 ingestion died on an INSERT with
+ * an unknown enum value and stayed dead for twelve days while `/health` kept
+ * returning 200, because the API was fine.
+ *
+ * Deliberately not derived from `agent_transactions` — a quiet fleet and a
+ * dead worker look identical in the transaction stream. A heartbeat is written
+ * whether or not there is traffic, so its absence means exactly one thing.
+ *
+ * Not user data: keyed by service name, no `user_id`, never exposed per-tenant.
+ * RLS is enabled with no policy (migration 0019), so only the BYPASSRLS
+ * service roles the api/ingestion connect as can see it.
+ */
+export const serviceHeartbeats = pgTable('service_heartbeats', {
+  /** Service identifier, e.g. `ingestion`. One row per service. */
+  service: text('service').primaryKey(),
+  /** Wall-clock time of the most recent beat. */
+  beatAt: timestamp('beat_at', { withTimezone: true, mode: 'string' }).notNull().defaultNow(),
+  /**
+   * Free-form liveness signals owned by the writing service — for ingestion:
+   * process start, last slot seen on the WebSocket, last persisted tx, last
+   * completed cron cycle, registered agent count. Kept as jsonb so a new
+   * signal does not need a migration; the reader treats every field as
+   * optional.
+   */
+  detail: jsonb('detail').$type<Record<string, unknown>>().notNull().default(sql`'{}'::jsonb`),
+});
+
 // ─── Relations (for type-safe joins) ───────────────────────────────────────
 
 export const usersRelations = relations(users, ({ many }) => ({
@@ -317,6 +350,8 @@ export const alertsRelations = relations(alerts, ({ one }) => ({
 
 // ─── Inferred row types ────────────────────────────────────────────────────
 
+export type ServiceHeartbeatRow = typeof serviceHeartbeats.$inferSelect;
+export type NewServiceHeartbeatRow = typeof serviceHeartbeats.$inferInsert;
 export type UserRow = typeof users.$inferSelect;
 export type NewUserRow = typeof users.$inferInsert;
 export type AgentRow = typeof agents.$inferSelect;

@@ -27,6 +27,7 @@ import { getDb } from './db';
 import { startDemoSeeder } from './demo-seeder';
 import type { DetectorDeps } from './detector-runner';
 import { createEventPublisher } from './event-publisher';
+import { startHeartbeat } from './heartbeat';
 import { logger } from './logger';
 import { startPartitionMaintenance } from './partition-maintenance';
 import { persistTx } from './persist';
@@ -95,6 +96,13 @@ async function main(): Promise<void> {
 
   const db = getDb(config);
   const registry = await createWalletRegistry(db, logger);
+
+  // Liveness heartbeat (E.13). Writes one `service_heartbeats` row every 30s
+  // carrying process start, last slot, last tx and last completed cron cycle;
+  // the API serves it at GET /health/ingestion and the keep-alive workflow
+  // pages on it. Started before the stream so a worker that dies during
+  // subscribe still leaves a row behind saying how far it got.
+  const heartbeat = startHeartbeat({ db, logger });
 
   // Set up optional SSE event publisher (requires API_INTERNAL_URL + INTERNAL_SECRET).
   const publishEvent =
@@ -166,12 +174,14 @@ async function main(): Promise<void> {
     },
     {
       onSlot: (slot) => {
+        heartbeat.markSlot();
         if (slot !== lastLoggedSlot) {
           logger.trace({ slot }, 'slot');
           lastLoggedSlot = slot;
         }
       },
       onTransaction: (tx) => {
+        heartbeat.markTx();
         persistsInFlight++;
         void persistTx(persistContext, tx).finally(() => {
           persistsInFlight--;
@@ -187,6 +197,7 @@ async function main(): Promise<void> {
   // Subscribe to logs for every registered wallet, and refresh whenever
   // the registry refreshes (every 30s — see registry.ts).
   await stream.reconcileWallets(registry.wallets());
+  heartbeat.setRegisteredAgents(registry.size());
   logger.info({ registeredAgents: registry.size() }, 'subscribed to logs for registered wallets');
 
   // Track wallets that have already been backfilled so we don't re-run
@@ -224,7 +235,10 @@ async function main(): Promise<void> {
     if (reconciling) return;
     reconciling = stream
       .reconcileWallets(registry.wallets())
-      .then(() => backfillNewWallets())
+      .then(() => {
+        heartbeat.setRegisteredAgents(registry.size());
+        return backfillNewWallets();
+      })
       .catch((err) => logger.error({ err }, 'wallet reconcile failed'))
       .finally(() => {
         reconciling = null;
@@ -253,6 +267,7 @@ async function main(): Promise<void> {
     defaults: DETECTOR_DEFAULTS,
     fetchAgentBalance: balanceFetcher.fetch,
     primeBalances: balanceFetcher.primeBalances,
+    onCycleComplete: () => heartbeat.markCronTick(),
     ...(telegramSender ? { alerter: { telegram: telegramSender } } : {}),
     ...(publishEvent ? { publishEvent } : {}),
   });
@@ -324,6 +339,7 @@ async function main(): Promise<void> {
   const shutdown = (signal: string) => {
     logger.info({ signal }, 'shutting down');
     clearInterval(reconcileTimer);
+    heartbeat.stop();
     demoSeeder?.stop();
     cron.stop();
     partitionMaintenance.stop();
