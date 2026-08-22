@@ -74,6 +74,9 @@ jobs:
       - name: Notify Telegram on state change
         env:
           GH_TOKEN: ${{ github.token }}
+          # This job never checks the repo out, so `gh` has no git remote to
+          # infer the repository from and every call fails. It reads GH_REPO.
+          GH_REPO: ${{ github.repository }}
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           CHAT_ID: ${{ secrets.TELEGRAM_ADMIN_CHAT_ID }}
           STATUS: ${{ steps.probe.outputs.status }}
@@ -93,9 +96,13 @@ jobs:
           # makes the alert edge-triggered. An empty value (first ever run,
           # or history trimmed) is treated as "was up" so a first red run
           # still pages.
+          # stderr is deliberately NOT silenced: an empty result reads as
+          # "no previous observation" and makes an outage page every run,
+          # which is the level-triggered behaviour this step exists to avoid.
+          # If the lookup breaks, the log has to say so.
           prev=$(gh run list --workflow=keep-alive.yml --branch "${GITHUB_REF_NAME}" \
                    --status completed --limit 1 --json conclusion \
-                   --jq '.[0].conclusion' 2>/dev/null || echo "")
+                   --jq '.[0].conclusion') || prev=""
           echo "previous conclusion: '${prev}' · current: ${STATUS}"
 
           send() {
