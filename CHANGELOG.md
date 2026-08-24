@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Unconsumed `fetch` response bodies** — six call sites checked `res.ok` (or ignored the response entirely) and never touched the body. Node's `fetch` does not free a body just because nobody read it: undici holds the buffer on the heap and keeps the socket out of the pool until the `Response` is garbage-collected. On the cold paths that is invisible; `event-publisher.ts` fires one request per persisted transaction **and** per alert, which made it the largest single contributor to the ingestion worker's ~200 MB/day heap ratchet between deploys. The Railway bill for 23 Jul – 23 Aug 2026 was $18.04 against ~$5 in prior months, ~$17.79 of it memory (1.72 GB average across api + ingestion, against ~0.5 GB before).
+
+  New `drainBody()` in `@agentscope/shared` reads the body to completion and discards it. Deliberately *consume* rather than `body.cancel()`: cancelling aborts the stream and makes undici destroy the connection, while reading to the end frees the buffer and leaves the socket reusable. Every body drained here is a small JSON ack, so the read costs nothing — the helper is not for large payloads. It is tolerant by construction (a `bodyUsed` guard, a duck-typed `arrayBuffer` check for test doubles, and a swallowed throw) because failing to release memory must never become failing to deliver an alert.
+
+  Drained at: `apps/ingestion/src/event-publisher.ts`, `apps/ingestion/src/telegram-bot.ts` (reply + boot-time `deleteWebhook`), `apps/ingestion/src/abuse-monitor.ts` (before the status check, so a bad token does not leak one body per tick), `packages/alerter/src/webhook.ts` (success **and** the 5xx retry path, where a flapping endpoint leaked one response per attempt), `packages/alerter/src/telegram.ts` (success, plus the error path where `res.json()` may throw before consuming the stream).
+
+### Notes
+- A `--max-old-space-size` cap is set on both Railway services as a companion mitigation, via **Settings → Deploy → Custom Start Command** rather than a service variable: Railway exposes variables to the build container too, and a 384 MB cap there kills the dashboard's vite build with `Reached heap limit`.
+- **Still open:** production starts via `tsx src/index.ts` in both apps even though both build with `tsc`. Switching to `node dist/src/index.js` would drop the esbuild service from the runtime, but every workspace package resolves `@agentscope/*` to `./src/index.ts` and those sources use extensionless relative imports, which NodeNext ESM rejects. Verified by running the compiled output directly: `ERR_MODULE_NOT_FOUND` on `packages/alerter/src/deliver`. Reworking the package `exports` is its own change, not a line in this one.
+
 ## [0.5.9] - 2026-08-22
 
 Monitoring for the monitor. The ingestion worker died on 2026-07-30 and was found on 2026-08-11: twelve days with no transactions parsed and no alerts fired, while the uptime check stayed green because the thing it pinged — the API — was genuinely healthy. Two processes, two independent failure modes, one of them watched. An alerting product was down for two days without alerting anyone.

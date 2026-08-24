@@ -23,6 +23,7 @@
  */
 
 import { type Database, users } from '@agentscope/db';
+import { drainBody } from '@agentscope/shared';
 import { gte, sql } from 'drizzle-orm';
 
 export interface AbuseMonitorLogger {
@@ -209,6 +210,9 @@ export function createAdminTelegramSender(
       body: JSON.stringify({ chat_id: chatId, text: safeText }),
       signal: AbortSignal.timeout(10_000),
     });
+    // Drain before the status check: the throw below must not skip the
+    // release, or a bot token that has gone bad leaks one body per tick.
+    await drainBody(res);
     if (!res.ok) {
       throw new Error(`telegram admin send failed: HTTP ${res.status}`);
     }

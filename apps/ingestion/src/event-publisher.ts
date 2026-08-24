@@ -12,6 +12,7 @@
  * REST, so dropping is safer than leaking memory or file descriptors.
  */
 
+import { drainBody } from '@agentscope/shared';
 import type { Logger } from './logger';
 
 /** Hard ceiling on concurrent outbound publishes. */
@@ -62,6 +63,10 @@ export function createEventPublisher(apiUrl: string, internalSecret: string, log
         if (!res.ok) {
           logger.warn({ status: res.status, eventType: event.type }, 'SSE publish returned non-OK');
         }
+        // The ack body is never read. Release it explicitly — this call site
+        // runs once per persisted tx and once per alert, so an unconsumed
+        // body here is the single biggest source of heap growth in the worker.
+        await drainBody(res);
       } catch (err) {
         logger.warn({ err, eventType: event.type }, 'failed to publish SSE event');
       } finally {

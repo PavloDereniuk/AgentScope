@@ -7,6 +7,7 @@
 
 import type { AlertSeverity } from '@agentscope/shared';
 import {
+  drainBody,
   formatAlertAction,
   formatAlertDetails,
   formatAlertImpact,
@@ -219,9 +220,15 @@ export function createTelegramSender(config: TelegramConfig) {
             } catch {
               errMsg = `HTTP ${res.status}`;
             }
+            // `res.json()` may have thrown before consuming the stream (a
+            // non-JSON error page); drainBody is a no-op when it didn't.
+            await drainBody(res);
             return { success: false, channel: 'telegram', error: errMsg.slice(0, 200) };
           }
 
+          // Telegram answers 200 with `{"ok":true,"result":{...}}`. We don't
+          // read it, so release it rather than waiting on GC.
+          await drainBody(res);
           return { success: true, channel: 'telegram' };
         } catch (err) {
           if (attempt < MAX_RETRIES - 1) continue;

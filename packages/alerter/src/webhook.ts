@@ -15,6 +15,7 @@
  *   - truncate error messages to 200 chars (matches alerts.delivery_error shape)
  */
 
+import { drainBody } from '@agentscope/shared';
 import type { AlertMessage, DeliveryResult } from './types';
 
 const MAX_RETRIES = 3;
@@ -98,6 +99,9 @@ export function createWebhookSender(config: WebhookConfig, fetchImpl?: FetchLike
           });
 
           if (res.ok) {
+            // Success carries no payload we care about, but the body still
+            // has to be released or undici holds it until GC.
+            await drainBody(res);
             return { success: true, channel: 'webhook' };
           }
 
@@ -110,6 +114,10 @@ export function createWebhookSender(config: WebhookConfig, fetchImpl?: FetchLike
           }
 
           lastError = `HTTP ${res.status}`;
+          // 5xx retry path: we keep only the status code, so drop the body
+          // before looping — otherwise a flapping endpoint leaks one buffered
+          // response per attempt.
+          await drainBody(res);
           // Fall through to next attempt.
         } catch (err) {
           lastError = err instanceof Error ? err.message : String(err);

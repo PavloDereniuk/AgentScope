@@ -26,6 +26,7 @@
  */
 
 import { type Database, telegramBindings } from '@agentscope/db';
+import { drainBody } from '@agentscope/shared';
 import { and, eq, isNull, lt, sql } from 'drizzle-orm';
 import type { Logger } from './logger';
 
@@ -217,6 +218,8 @@ async function sendReply(
     if (!res.ok) {
       const body = await res.text().catch(() => '');
       logger.warn({ status: res.status, body: body.slice(0, 200) }, 'telegram bot: reply failed');
+    } else {
+      await drainBody(res);
     }
   } catch (err) {
     logger.warn({ err }, 'telegram bot: reply fetch threw');
@@ -243,7 +246,9 @@ export function startTelegramBot(deps: TelegramBotDeps): TelegramBot {
   void fetch(`https://api.telegram.org/bot${deps.botToken}/deleteWebhook`, {
     method: 'POST',
     signal: AbortSignal.timeout(5_000),
-  }).catch((err) => deps.logger.warn({ err }, 'telegram bot: deleteWebhook failed'));
+  })
+    .then(drainBody)
+    .catch((err) => deps.logger.warn({ err }, 'telegram bot: deleteWebhook failed'));
 
   async function pollOnce(): Promise<void> {
     currentAbort = new AbortController();

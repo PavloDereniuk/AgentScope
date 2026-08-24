@@ -4,3 +4,4 @@ export * from './schemas';
 export * from './signature';
 export * from './format-alert';
 export * from './pause';
+export * from './drain-body';
