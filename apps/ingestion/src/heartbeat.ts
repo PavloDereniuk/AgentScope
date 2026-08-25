@@ -24,11 +24,13 @@
  *     needs.
  */
 
+import { getHeapStatistics } from 'node:v8';
 import { type Database, serviceHeartbeats } from '@agentscope/db';
 
 /** Minimal structural logger (pino satisfies this). */
 export interface HeartbeatLogger {
   warn: (obj: Record<string, unknown> | string, msg?: string) => void;
+  info?: (obj: Record<string, unknown> | string, msg?: string) => void;
 }
 
 /** Default service key written by the ingestion worker. */
@@ -40,6 +42,9 @@ export const INGESTION_SERVICE = 'ingestion';
  */
 const DEFAULT_INTERVAL_MS = 30_000;
 
+/** One memory log line per 10 beats — 5 minutes at the default cadence. */
+const DEFAULT_MEMORY_LOG_EVERY_N_BEATS = 10;
+
 /**
  * Liveness signals persisted in `service_heartbeats.detail`.
  *
@@ -50,6 +55,56 @@ const DEFAULT_INTERVAL_MS = 30_000;
 // A type alias, not an interface: drizzle's jsonb column takes
 // `Record<string, unknown>`, and only an alias picks up the implicit index
 // signature that makes it assignable.
+/**
+ * Process memory at beat time, in whole MB.
+ *
+ * Added Aug 2026 to settle a question the Railway RAM graph cannot answer.
+ * That graph plots one number per project, and a slow climb inside it has two
+ * completely different explanations:
+ *
+ *   - `heapUsed` climbing toward `heapLimit` — V8 lazily filling the budget it
+ *     was given. Benign: it plateaus at the cap and stays there.
+ *   - `external` / `arrayBuffers` climbing — Buffers, TLS sockets and undici
+ *     pools, which live OUTSIDE the heap and which `--max-old-space-size` does
+ *     not bound at all. That one is a real leak and the cap cannot stop it.
+ *
+ * `heapLimitMb` is here as its own check: it reports what V8 actually applied,
+ * so a `--max-old-space-size` that never reached the process (wrong start
+ * command, flag swallowed by a wrapper) is visible as a number in the thousands
+ * instead of being silently assumed to work.
+ */
+export interface MemorySignals {
+  /** Resident set size — the number Railway bills on. */
+  rssMb: number;
+  heapUsedMb: number;
+  heapTotalMb: number;
+  /** V8's own old-space ceiling. Reflects `--max-old-space-size` when applied. */
+  heapLimitMb: number;
+  /** Native allocations tied to JS objects. Not bounded by the heap cap. */
+  externalMb: number;
+  /** Subset of `external` held by ArrayBuffers/Buffers. */
+  arrayBuffersMb: number;
+}
+
+const BYTES_PER_MB = 1024 * 1024;
+
+function toMb(bytes: number): number {
+  return Math.round(bytes / BYTES_PER_MB);
+}
+
+/** Sample the current process. Cheap — both calls are synchronous reads. */
+export function readMemorySignals(): MemorySignals {
+  const mem = process.memoryUsage();
+  return {
+    rssMb: toMb(mem.rss),
+    heapUsedMb: toMb(mem.heapUsed),
+    heapTotalMb: toMb(mem.heapTotal),
+    heapLimitMb: toMb(getHeapStatistics().heap_size_limit),
+    externalMb: toMb(mem.external),
+    arrayBuffersMb: toMb(mem.arrayBuffers),
+  };
+}
+
 export type HeartbeatDetail = {
   /** ISO time the worker process started. */
   startedAt: string;
@@ -61,6 +116,8 @@ export type HeartbeatDetail = {
   lastCronTickAt: string | null;
   /** Wallets currently subscribed to, as of the last registry reconcile. */
   registeredAgents: number;
+  /** Process memory at beat time. See `MemorySignals`. */
+  memory: MemorySignals;
 };
 
 export interface HeartbeatDeps {
@@ -72,6 +129,17 @@ export interface HeartbeatDeps {
   now?: () => number;
   /** Service key. Default `ingestion`. */
   service?: string;
+  /** Injected memory sampler for deterministic tests. */
+  readMemory?: () => MemorySignals;
+  /**
+   * How many beats between memory log lines. The heartbeat row only ever holds
+   * the LATEST sample (it is a single upserted row per service), so the trend —
+   * the whole point of collecting this — has to live somewhere append-only.
+   * Railway's log search is that place. Default 10, i.e. one line per 5 min at
+   * the 30s beat cadence: dense enough to see a slope within a couple of hours,
+   * sparse enough not to drown the log.
+   */
+  memoryLogEveryNBeats?: number;
 }
 
 export interface Heartbeat {
@@ -104,11 +172,15 @@ export function startHeartbeat(deps: HeartbeatDeps): Heartbeat {
   const service = deps.service ?? INGESTION_SERVICE;
   const intervalMs = deps.intervalMs ?? DEFAULT_INTERVAL_MS;
 
+  const readMemory = deps.readMemory ?? readMemorySignals;
+  const memoryLogEvery = deps.memoryLogEveryNBeats ?? DEFAULT_MEMORY_LOG_EVERY_N_BEATS;
+
   const startedAt = now();
   let lastSlotAt: number | null = null;
   let lastTxAt: number | null = null;
   let lastCronTickAt: number | null = null;
   let registeredAgents = 0;
+  let beatCount = 0;
 
   function snapshot(): HeartbeatDetail {
     return {
@@ -117,12 +189,24 @@ export function startHeartbeat(deps: HeartbeatDeps): Heartbeat {
       lastTxAt: iso(lastTxAt),
       lastCronTickAt: iso(lastCronTickAt),
       registeredAgents,
+      memory: readMemory(),
     };
   }
 
   async function beat(): Promise<void> {
     const detail = snapshot();
     const beatAt = new Date(now()).toISOString();
+
+    // Emit the trend line before the write, not after: if the database is
+    // unreachable the memory series is exactly what we still want, and the
+    // write below deliberately swallows its own failure.
+    if (beatCount % memoryLogEvery === 0) {
+      deps.logger.info?.(
+        { ...detail.memory, uptimeSec: Math.round((now() - startedAt) / 1000) },
+        'memory',
+      );
+    }
+    beatCount++;
     try {
       await deps.db
         .insert(serviceHeartbeats)

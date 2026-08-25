@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Memory signals on the ingestion heartbeat** — every beat now carries `detail.memory`: `rssMb`, `heapUsedMb`, `heapTotalMb`, `heapLimitMb`, `externalMb`, `arrayBuffersMb`. Railway's RAM graph plots one number per project, and a slow climb inside it has two incompatible explanations that the graph cannot separate: V8 lazily filling the budget `--max-old-space-size` gave it (benign — it plateaus at the cap), or `external`/`arrayBuffers` growing (Buffers, TLS sockets, undici pools — which live outside the heap and which the cap does not bound at all). Splitting the number is the only way to tell which one is happening. `heapLimitMb` is its own check: it reports what V8 actually applied, so a heap cap that never reached the process is visible as a number in the thousands rather than silently assumed to work.
+
+  The `service_heartbeats` row is a single upserted row per service and holds only the latest sample, so the trend — the entire point of collecting this — also goes to the log, one line every 10th beat (5 min at the 30s cadence). Dense enough to read a slope within a couple of hours, sparse enough not to drown the log at 288 lines/day. The line is emitted *before* the database write, because if the database is unreachable the memory series is exactly what is still wanted and that write deliberately swallows its own failure. `HeartbeatLogger.info` is optional, so a logger without it degrades to row-only.
+
 ### Fixed
 - **Unconsumed `fetch` response bodies** — six call sites checked `res.ok` (or ignored the response entirely) and never touched the body. Node's `fetch` does not free a body just because nobody read it: undici holds the buffer on the heap and keeps the socket out of the pool until the `Response` is garbage-collected. On the cold paths that is invisible; `event-publisher.ts` fires one request per persisted transaction **and** per alert, which made it the largest single contributor to the ingestion worker's ~200 MB/day heap ratchet between deploys. The Railway bill for 23 Jul – 23 Aug 2026 was $18.04 against ~$5 in prior months, ~$17.79 of it memory (1.72 GB average across api + ingestion, against ~0.5 GB before).
 

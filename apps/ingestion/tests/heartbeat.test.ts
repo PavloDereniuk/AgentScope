@@ -13,7 +13,12 @@ import type { Database } from '@agentscope/db';
 import { PGlite } from '@electric-sql/pglite';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { type HeartbeatDetail, startHeartbeat } from '../src/heartbeat';
+import {
+  type HeartbeatDetail,
+  type MemorySignals,
+  readMemorySignals,
+  startHeartbeat,
+} from '../src/heartbeat';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS_DIR = join(__dirname, '..', '..', '..', 'packages', 'db', 'src', 'migrations');
@@ -160,5 +165,118 @@ describe('startHeartbeat', () => {
     expect(snap.lastSlotAt).toBe('2026-08-22T12:00:00.000Z');
     expect(snap.registeredAgents).toBe(4);
     expect(snap.lastTxAt).toBeNull();
+  });
+});
+
+describe('memory signals', () => {
+  const sample: MemorySignals = {
+    rssMb: 820,
+    heapUsedMb: 401,
+    heapTotalMb: 470,
+    heapLimitMb: 512,
+    externalMb: 96,
+    arrayBuffersMb: 64,
+  };
+
+  /** Logger that captures the structured payload of every info line. */
+  function capturingLogger() {
+    const infos: Array<{ obj: Record<string, unknown> | string; msg?: string | undefined }> = [];
+    return {
+      logger: {
+        warn: (obj: Record<string, unknown> | string) => {
+          warnings.push(obj);
+        },
+        info: (obj: Record<string, unknown> | string, msg?: string) => {
+          infos.push({ obj, msg });
+        },
+      },
+      infos,
+    };
+  }
+
+  it('persists the memory sample alongside the liveness signals', async () => {
+    const hb = startHeartbeat({
+      db,
+      logger,
+      now,
+      intervalMs: 60_000,
+      readMemory: () => sample,
+    });
+    await hb.beat();
+    hb.stop();
+
+    const [row] = await rows();
+    expect(row?.detail.memory).toEqual(sample);
+  });
+
+  it('logs the first beat and then every Nth, not every beat', async () => {
+    // The row holds only the latest sample, so the log carries the trend —
+    // but at the 30s beat cadence one line per beat would be 2880/day.
+    const { logger: cap, infos } = capturingLogger();
+    const hb = startHeartbeat({
+      db,
+      logger: cap,
+      now,
+      intervalMs: 60_000,
+      readMemory: () => sample,
+      memoryLogEveryNBeats: 3,
+    });
+
+    for (let i = 0; i < 7; i++) {
+      clock += 30_000;
+      await hb.beat();
+    }
+    hb.stop();
+
+    // Beats 0, 3 and 6 of the seven.
+    expect(infos).toHaveLength(3);
+    expect(infos[0]?.msg).toBe('memory');
+    expect(infos[0]?.obj).toMatchObject(sample);
+  });
+
+  it('reports uptime on the log line so a restart is not read as a drop', async () => {
+    const { logger: cap, infos } = capturingLogger();
+    const hb = startHeartbeat({
+      db,
+      logger: cap,
+      now,
+      intervalMs: 60_000,
+      readMemory: () => sample,
+      memoryLogEveryNBeats: 1,
+    });
+    clock += 120_000;
+    await hb.beat();
+    hb.stop();
+
+    // infos[0] is the boot beat startHeartbeat fires synchronously at uptime 0.
+    expect(infos[0]?.obj).toMatchObject({ uptimeSec: 0 });
+    expect(infos[1]?.obj).toMatchObject({ uptimeSec: 120 });
+  });
+
+  it('still beats when the logger has no info method', async () => {
+    // HeartbeatLogger.info is optional; a logger without it must not throw.
+    const hb = startHeartbeat({
+      db,
+      logger: { warn: () => {} },
+      now,
+      intervalMs: 60_000,
+      readMemory: () => sample,
+    });
+    await expect(hb.beat()).resolves.toBeUndefined();
+    hb.stop();
+  });
+});
+
+describe('readMemorySignals', () => {
+  it('reads real process numbers in whole MB', () => {
+    const mem = readMemorySignals();
+
+    expect(mem.rssMb).toBeGreaterThan(0);
+    expect(mem.heapUsedMb).toBeGreaterThan(0);
+    // The point of carrying this field: it shows what V8 actually applied, so
+    // a --max-old-space-size that never reached the process is visible.
+    expect(mem.heapLimitMb).toBeGreaterThan(0);
+    expect(mem.heapUsedMb).toBeLessThanOrEqual(mem.heapLimitMb);
+    for (const v of Object.values(mem)) expect(Number.isInteger(v)).toBe(true);
   });
 });
