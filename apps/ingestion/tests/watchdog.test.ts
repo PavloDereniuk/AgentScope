@@ -101,6 +101,32 @@ describe('evaluateWatchdog', () => {
     expect(evaluateWatchdog(pastLimit, now).wedged).toBe(true);
   });
 
+  it('spares a boot whose cron has not completed a first cycle yet', () => {
+    // The 2026-08-27 restart: backfill walks 53 wallets at 20-45s apiece, so
+    // the first completed cron cycle came more than half an hour after start.
+    // Judged against the 10-minute threshold that is a self-kill in the middle
+    // of every boot — the worker dies, restarts, backfills again, forever.
+    const now = START + 35 * MIN;
+    const verdict = evaluateWatchdog({ ...healthy(now), lastCronTickAtMs: null }, now);
+    expect(verdict.wedged).toBe(false);
+  });
+
+  it('judges a never-fired signal once the boot grace expires', () => {
+    const now = START + DEFAULT_THRESHOLDS.bootGraceMs + MIN;
+    const verdict = evaluateWatchdog({ ...healthy(now), lastCronTickAtMs: null }, now);
+    expect(verdict.wedged).toBe(true);
+    expect(verdict.reason).toBe('cron-stalled');
+  });
+
+  it('judges a signal that fired and then stopped even during the boot grace', () => {
+    // The grace covers "not yet", never "worked and then froze" — which is the
+    // 2026-08-25 signature and must be caught whenever it happens.
+    const now = START + 20 * MIN;
+    const verdict = evaluateWatchdog({ ...healthy(now), lastCronTickAtMs: START + 60_000 }, now);
+    expect(verdict.wedged).toBe(true);
+    expect(verdict.reason).toBe('cron-stalled');
+  });
+
   it('honours overridden thresholds', () => {
     const now = START + 60 * MIN;
     const marks = { ...healthy(now), lastSlotAtMs: now - 2 * MIN };

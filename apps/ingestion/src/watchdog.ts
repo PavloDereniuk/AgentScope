@@ -77,12 +77,33 @@ export interface WatchdogThresholds {
    * anything at all.
    */
   writeStalledMs: number;
+  /**
+   * Window after process start during which a signal that has NEVER fired is
+   * not judged. Default 60 min.
+   *
+   * This exists because boot is not a steady state. `backfillNewWallets` walks
+   * every registered wallet fetching up to 50 historical signatures apiece, and
+   * on the 2026-08-27 restart each wallet took 20-45s — over half an hour for
+   * 53 agents. The cron competes with that for the RPC and for a 5-connection
+   * pool, so the first *completed* cycle can legitimately be 30+ minutes after
+   * start. Judged against a 10-minute threshold, that is a self-kill in the
+   * middle of every boot: the worker dies, restarts, begins the backfill again,
+   * and never reaches a steady state at all.
+   *
+   * The distinction the watchdog actually wants is not "how old is this signal"
+   * but "did it ever work and then stop". A mark that has fired at least once
+   * is judged normally from the first second — that is the 2026-08-25 wedge,
+   * where every signal was healthy and then froze — while a mark still at
+   * `null` gets the benefit of the doubt until the grace expires.
+   */
+  bootGraceMs: number;
 }
 
 export const DEFAULT_THRESHOLDS: WatchdogThresholds = {
   streamStalledMs: 600_000,
   cronStalledMs: 600_000,
   writeStalledMs: 600_000,
+  bootGraceMs: 60 * 60_000,
 };
 
 /**
@@ -98,29 +119,33 @@ export function evaluateWatchdog(
   nowMs: number,
   thresholds: WatchdogThresholds = DEFAULT_THRESHOLDS,
 ): WatchdogVerdict {
-  const ageOf = (markMs: number | null): number => nowMs - (markMs ?? marks.startedAtMs);
+  const withinBootGrace = nowMs - marks.startedAtMs < thresholds.bootGraceMs;
 
-  const checks: ReadonlyArray<{ reason: WedgeReason; ageMs: number; limitMs: number }> = [
+  const checks: ReadonlyArray<{ reason: WedgeReason; mark: number | null; limitMs: number }> = [
     {
       reason: 'stream-stalled',
-      ageMs: ageOf(marks.lastSlotAtMs),
+      mark: marks.lastSlotAtMs,
       limitMs: thresholds.streamStalledMs,
     },
     {
       reason: 'cron-stalled',
-      ageMs: ageOf(marks.lastCronTickAtMs),
+      mark: marks.lastCronTickAtMs,
       limitMs: thresholds.cronStalledMs,
     },
     {
       reason: 'heartbeat-write-stalled',
-      ageMs: ageOf(marks.lastWriteOkAtMs),
+      mark: marks.lastWriteOkAtMs,
       limitMs: thresholds.writeStalledMs,
     },
   ];
 
   for (const check of checks) {
-    if (check.ageMs > check.limitMs) {
-      return { wedged: true, reason: check.reason, ageSec: Math.round(check.ageMs / 1000) };
+    // A signal that has never fired is only judged once the boot grace is over;
+    // before that, "not yet" is indistinguishable from "still warming up".
+    if (check.mark === null && withinBootGrace) continue;
+    const ageMs = nowMs - (check.mark ?? marks.startedAtMs);
+    if (ageMs > check.limitMs) {
+      return { wedged: true, reason: check.reason, ageSec: Math.round(ageMs / 1000) };
     }
   }
 
