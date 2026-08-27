@@ -82,13 +82,16 @@ export interface WatchdogThresholds {
    * not judged. Default 60 min.
    *
    * This exists because boot is not a steady state. `backfillNewWallets` walks
-   * every registered wallet fetching up to 50 historical signatures apiece, and
-   * on the 2026-08-27 restart each wallet took 20-45s — over half an hour for
-   * 53 agents. The cron competes with that for the RPC and for a 5-connection
-   * pool, so the first *completed* cycle can legitimately be 30+ minutes after
-   * start. Judged against a 10-minute threshold, that is a self-kill in the
-   * middle of every boot: the worker dies, restarts, begins the backfill again,
-   * and never reaches a steady state at all.
+   * every registered wallet fetching up to 50 historical signatures apiece, at
+   * 20-45s per wallet, and the cron competes with it for the RPC and for a
+   * 5-connection pool. On the 2026-08-27 restart the first two cycles were
+   * skipped outright and the first *completed* one landed 6.5 minutes in, with
+   * the backfill still running behind it — comfortably inside a 10-minute
+   * threshold, but only because the fleet is 53 agents. That margin shrinks as
+   * the fleet grows, and the failure it guards against is not a delayed alarm
+   * but a self-kill in the middle of every boot: the worker dies, restarts,
+   * begins the backfill again, and never reaches a steady state at all. The
+   * grace is sized for that asymmetry, not for today's measurement.
    *
    * The distinction the watchdog actually wants is not "how old is this signal"
    * but "did it ever work and then stop". A mark that has fired at least once
