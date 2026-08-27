@@ -15,7 +15,7 @@ import { PGlite } from '@electric-sql/pglite';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { runCronCycle } from '../src/cron';
+import { runCronCycle, startCron } from '../src/cron';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS_DIR = join(__dirname, '..', '..', '..', 'packages', 'db', 'src', 'migrations');
@@ -625,5 +625,68 @@ describe('cron outbound_transfer_drain (A.11)', () => {
       await db.delete(alerts).where(eq(alerts.agentId, drainer.id));
       await db.delete(agents).where(eq(agents.id, drainer.id));
     }
+  });
+});
+
+describe('cron cycle deadline', () => {
+  /**
+   * A db whose very first call never settles — the shape of the 2026-08-25
+   * wedge, where an await inside the cycle hung on a half-open socket.
+   */
+  const hangingDb = {
+    select: () => ({ from: () => new Promise(() => undefined) }),
+  } as unknown as Database;
+
+  it('releases the running flag when a cycle blows the deadline', async () => {
+    // Before the deadline existed, `running` was cleared only in .finally() —
+    // so a cycle that never settles pinned it forever and every later tick
+    // logged "cron cycle skipped" instead of trying again. Forty hours of that
+    // is what the outage looked like.
+    const errors: unknown[] = [];
+    const warns: unknown[] = [];
+    const logger = {
+      error: (obj: unknown) => errors.push(obj),
+      warn: (obj: unknown) => warns.push(obj),
+      info: () => {},
+    };
+
+    const cron = startCron({
+      db: hangingDb,
+      logger,
+      defaults,
+      intervalMs: 15,
+      cycleTimeoutMs: 25,
+    });
+
+    await new Promise((r) => setTimeout(r, 300));
+    cron.stop();
+
+    // Several cycles must have timed out and been retried, not one wedged
+    // cycle followed by silence.
+    expect(errors.length).toBeGreaterThan(1);
+    const first = errors[0] as { err?: Error };
+    expect(String(first.err?.message)).toMatch(/exceeded 25ms deadline/);
+  });
+
+  it('does not report a timed-out cycle as a completed tick', async () => {
+    // onCycleComplete drives the heartbeat signal the watchdog reads. If a
+    // deadline counted as a tick, a permanently wedged worker would look alive
+    // and nothing would ever restart it.
+    let ticks = 0;
+    const cron = startCron({
+      db: hangingDb,
+      logger: { error: () => {}, warn: () => {}, info: () => {} },
+      defaults,
+      intervalMs: 15,
+      cycleTimeoutMs: 25,
+      onCycleComplete: () => {
+        ticks++;
+      },
+    });
+
+    await new Promise((r) => setTimeout(r, 300));
+    cron.stop();
+
+    expect(ticks).toBe(0);
   });
 });

@@ -155,6 +155,20 @@ export interface Heartbeat {
   beat: () => Promise<void>;
   /** Current in-memory signals — exposed for tests and diagnostics. */
   snapshot: () => HeartbeatDetail;
+  /**
+   * Raw epoch-ms marks, for consumers that compare ages rather than display
+   * them — the watchdog. `lastWriteOkAtMs` is the one signal `snapshot()`
+   * cannot carry: it records the last beat that actually *reached* the
+   * database, which is exactly what a worker with a wedged network loses first
+   * and what the frozen row can no longer tell anyone from the outside.
+   */
+  marks: () => {
+    startedAtMs: number;
+    lastSlotAtMs: number | null;
+    lastTxAtMs: number | null;
+    lastCronTickAtMs: number | null;
+    lastWriteOkAtMs: number | null;
+  };
   stop: () => void;
 }
 
@@ -181,6 +195,7 @@ export function startHeartbeat(deps: HeartbeatDeps): Heartbeat {
   let lastCronTickAt: number | null = null;
   let registeredAgents = 0;
   let beatCount = 0;
+  let lastWriteOkAt: number | null = null;
 
   function snapshot(): HeartbeatDetail {
     return {
@@ -215,6 +230,11 @@ export function startHeartbeat(deps: HeartbeatDeps): Heartbeat {
           target: serviceHeartbeats.service,
           set: { beatAt, detail },
         });
+      // Only a write that returned marks the database path as alive. A write
+      // that threw — or one that never settles, which is what the 2026-08-25
+      // wedge looked like — leaves this mark where it was, and the watchdog
+      // ages it.
+      lastWriteOkAt = now();
     } catch (err) {
       // Never rethrow: the monitoring path must not be able to take down the
       // process it monitors. A missed write shows up as a stale row, which is
@@ -246,6 +266,13 @@ export function startHeartbeat(deps: HeartbeatDeps): Heartbeat {
     },
     beat,
     snapshot,
+    marks: () => ({
+      startedAtMs: startedAt,
+      lastSlotAtMs: lastSlotAt,
+      lastTxAtMs: lastTxAt,
+      lastCronTickAtMs: lastCronTickAt,
+      lastWriteOkAtMs: lastWriteOkAt,
+    }),
     stop: () => {
       clearInterval(timer);
     },

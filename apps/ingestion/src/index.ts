@@ -35,6 +35,7 @@ import type { PersistContext } from './persist';
 import { createWalletRegistry } from './registry';
 import { createSlotNeighbourFetcher } from './slot-neighbours';
 import { startTelegramBot } from './telegram-bot';
+import { startWatchdog } from './watchdog';
 import { createWsStream } from './ws-stream';
 
 /** Sensible production defaults — agents may override per-rule via alertRules. */
@@ -313,6 +314,15 @@ async function main(): Promise<void> {
     ? startTelegramBot({ db, logger, botToken: config.TELEGRAM_BOT_TOKEN })
     : null;
 
+  // Self-kill watchdog. Started last, so every signal it reads is already
+  // being produced — a watchdog that outlives its inputs would page on its own
+  // startup order. It reads the same marks the heartbeat writes and exits
+  // non-zero when the worker is alive but no longer doing anything, which
+  // `restartPolicyType: ON_FAILURE` turns into a fresh container. See
+  // watchdog.ts for why a restart is the only available recovery.
+  const watchdog = startWatchdog({ logger, marks: heartbeat.marks });
+  logger.info('watchdog started');
+
   // Graceful shutdown handlers. Wait for any in-flight reconcile so we
   // don't cut the stream mid-subscribe — otherwise the fresh process
   // may inherit dangling server-side state on restart. Also wait (up to
@@ -339,6 +349,10 @@ async function main(): Promise<void> {
   const shutdown = (signal: string) => {
     logger.info({ signal }, 'shutting down');
     clearInterval(reconcileTimer);
+    // Before the heartbeat: a shutdown deliberately stops producing the very
+    // signals the watchdog watches, and it must not race the drain below to
+    // call this a wedge.
+    watchdog.stop();
     heartbeat.stop();
     demoSeeder?.stop();
     cron.stop();

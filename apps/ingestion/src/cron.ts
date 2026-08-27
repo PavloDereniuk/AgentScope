@@ -59,6 +59,9 @@ function correlationKey(ruleName: string, dedupeKey: string | null): string {
   return `${ruleName}:${dedupeKey ?? ''}`;
 }
 
+/** Hard deadline for one cron cycle. See `CronDeps.cycleTimeoutMs`. */
+const DEFAULT_CYCLE_TIMEOUT_MS = 5 * 60_000;
+
 const CRON_RULES: readonly CronRuleDef[] = [
   drawdownRule,
   errorRateRule,
@@ -124,6 +127,23 @@ export interface CronDeps {
    * outage this signal exists to catch.
    */
   onCycleComplete?: () => void;
+  /**
+   * Hard deadline for one cycle. Default 5 min — 5× the interval, and orders of
+   * magnitude above the tens of ms a cycle actually takes.
+   *
+   * Without it, `running` is released only in `.finally()`, so a cycle whose
+   * promise never settles pins the flag forever and every later tick logs
+   * "cron cycle skipped". That is precisely the 2026-08-25 outage: an RPC call
+   * inside `primeBalances` hung on a half-open socket — `@solana/web3.js`
+   * applies no timeout of its own — and the cron stopped for forty hours while
+   * the process stayed up.
+   *
+   * The deadline cannot cancel the hung work (nothing in Node can), so a timed
+   * out cycle keeps running in the background. It only frees the next cycle to
+   * try. If the wedge is real rather than transient the cycles keep timing out,
+   * no tick ever completes, and the watchdog takes the process down.
+   */
+  cycleTimeoutMs?: number;
 }
 
 /**
@@ -370,6 +390,7 @@ export async function runCronCycle(deps: CronDeps): Promise<number> {
  */
 export function startCron(deps: CronDeps): { stop: () => void } {
   const intervalMs = deps.intervalMs ?? 60_000;
+  const cycleTimeoutMs = deps.cycleTimeoutMs ?? DEFAULT_CYCLE_TIMEOUT_MS;
 
   // Prevent overlapping cycles: if a cycle takes longer than intervalMs
   // (e.g. DB is slow), the next tick should skip rather than pile on DB
@@ -388,14 +409,27 @@ export function startCron(deps: CronDeps): { stop: () => void } {
     // catch() handlers themselves. Without this, one bad handler error would
     // surface as an uncaughtException and kill the process.
     try {
-      runCronCycle(deps)
-        .then(() => {
-          try {
-            deps.onCycleComplete?.();
-          } catch {
-            // swallow — a broken liveness callback must not fail the cycle
-          }
-        })
+      let deadline: ReturnType<typeof setTimeout> | undefined;
+      const timeout = new Promise<never>((_resolve, reject) => {
+        deadline = setTimeout(
+          () => reject(new Error(`cron cycle exceeded ${cycleTimeoutMs}ms deadline`)),
+          cycleTimeoutMs,
+        );
+        deadline.unref?.();
+      });
+
+      // onCycleComplete is attached to the cycle itself, not to the race, so a
+      // timeout can never be mistaken for a completed tick — the heartbeat
+      // signal the watchdog reads stays honest.
+      const cycle = runCronCycle(deps).then(() => {
+        try {
+          deps.onCycleComplete?.();
+        } catch {
+          // swallow — a broken liveness callback must not fail the cycle
+        }
+      });
+
+      Promise.race([cycle, timeout])
         .catch((err) => {
           try {
             deps.logger.error({ err }, 'cron cycle failed');
@@ -404,8 +438,15 @@ export function startCron(deps: CronDeps): { stop: () => void } {
           }
         })
         .finally(() => {
+          clearTimeout(deadline);
           running = false;
         });
+
+      // The losing side of a race still rejects. Without a no-op handler the
+      // timeout's rejection is unhandled once the cycle wins, and Node kills
+      // the process on unhandled rejections.
+      timeout.catch(() => undefined);
+      cycle.catch(() => undefined);
     } catch (err) {
       running = false;
       try {
