@@ -462,7 +462,7 @@
 > **Визначення «active» — з гранту, не наше:** ≥1 tx за останні 14 днів **АБО** ≥1 доставлений alert за останні 30 днів. Registered ≠ active; трекаємо обидві цифри окремо (рішення з Cluster F).
 
 ### G.1 — Milestone proof exporter ✅ (2026-09-22)
-- [x] **G.1** (2026-09-22) `GET /api/admin/milestone-export` + картка «Milestone proof · grant definition» на `/admin`: три лічильники (**registered** = зовнішні юзери з ≥1 агентом; **connected · M1** = ≥1 агент з ≥1 tx будь-коли; **active · M2/M3** = tx за 14д ∨ *delivered* alert за 30д), анонімізована таблиця (screenshot-ready) і «Download CSV». Owner DIDs виключено з усього. `builderHash` = перші 12 hex `sha256(privy_did)` — стабільний між M1/M2/M3, без DID/email/user_id у payload (тест перевіряє явно). 8 тестів API (PGlite) + 5 тестів CSV-серіалізатора. На проді 2026-09-22: **31 registered / 29 connected / 21 active**, запит 0.55 с (перша версія з `count(*) filter` у тому ж CTE, що й `min/max`, — 4.4 с; розділення на bounded і index-only скани дало 8×).
+- [x] **G.1** (2026-09-22 · 📦 v0.5.11 · `38b4eee`) `GET /api/admin/milestone-export` + картка «Milestone proof · grant definition» на `/admin`: три лічильники (**registered** = зовнішні юзери з ≥1 агентом; **connected · M1** = ≥1 агент з ≥1 tx будь-коли; **active · M2/M3** = tx за 14д ∨ *delivered* alert за 30д), анонімізована таблиця (screenshot-ready) і «Download CSV». Owner DIDs виключено з усього. `builderHash` = перші 12 hex `sha256(privy_did)` — стабільний між M1/M2/M3, без DID/email/user_id у payload (тест перевіряє явно). 8 тестів API (PGlite) + 5 тестів CSV-серіалізатора. На проді 2026-09-22: **31 registered / 29 connected / 21 active**, запит 0.55 с (перша версія з `count(*) filter` у тому ж CTE, що й `min/max`, — 4.4 с; розділення на bounded і index-only скани дало 8×).
   **Порядок змінено (2026-09-22):** G.1 витягнуто поперед G.2 за даними з проду — когорта G.2 (`lastSeenAt == null`, >7 днів) = **2 агенти**, з них 1 досяжний через Telegram, а `users.email` порожній у **всіх 33** юзерів (Privy wallet-login) — email-канал для G.2 не існує фізично. G.2 лишається, але після E.11.
   **Не зроблено свідомо:** наявні картки registered/active з *внутрішнім* визначенням (будь-яка tx або span) не змінено — F вирішив трекати обидва; test-акаунти поза owner DIDs не фільтруються (у схемі нема прапорця); server-side CSV не робили — серіалізація на клієнті дзеркалить E17 `tx-csv.ts`.
   **Файли:** [apps/api/src/routes/admin.ts](../apps/api/src/routes/admin.ts) (`getMilestoneExport`, експортований) · [apps/dashboard/src/lib/milestone-csv.ts](../apps/dashboard/src/lib/milestone-csv.ts) · [apps/dashboard/src/routes/admin.tsx](../apps/dashboard/src/routes/admin.tsx) (`MilestoneProofCard`)
@@ -650,6 +650,7 @@
 | v0.5.8 | 2026-08-11 | A.10 (SPL Token parser + token_approval_anomaly) | ✅ released |
 | v0.5.9 | 2026-08-22 | E.13 (ingestion heartbeat + edge-triggered uptime alert) | ✅ released |
 | v0.5.10 | 2026-09-22 | E.14 (fetch body drain + memory signals) + E.15 (self-kill watchdog + cron deadline) | ✅ released |
+| v0.5.11 | 2026-09-22 | G.1 (milestone proof export by grant definitions) | ✅ released |
 | … | … | … | … |
 
 ---

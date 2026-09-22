@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.11] - 2026-09-22
+
 ### Added
 - **Milestone proof export on the admin panel** — `GET /api/admin/milestone-export` (owner-only) and a "Milestone proof · grant definition" card on `/admin`. The grant is scored on definitions that differ from the panel's own: M1 counts a builder as *connected* on any transaction ever, M2/M3 count one as *active* on ≥1 tx in the last 14 days **or** ≥1 alert *delivered* in the last 30 days. Until now those numbers were assembled by hand — a SQL query, manual anonymization, a screenshot — for every milestone. The card shows all three counts with their definitions spelled out beside them, an anonymized per-builder table (screenshot-ready: no DID, email or user id anywhere on screen) and a "Download CSV" of the same rows.
 
@@ -333,7 +335,8 @@ First post-submission iteration. The 2026-05-11 Colosseum Frontier submission sh
 ### Security
 - RLS enabled on every child partition of `agent_transactions` (`2026_04` through `2026_09` plus `_default`). Postgres does not inherit RLS from a partitioned parent, and PostgREST exposes each partition as its own `/rest/v1/<name>` endpoint — without per-partition `ENABLE ROW LEVEL SECURITY`, an anon/authenticated caller could hit a partition directly and bypass the parent's `tx_owner_access` policy. New migration `0010_rls_on_partitions.sql`; service-role ingestion (BYPASSRLS) untouched. ([`1ac359d`](https://github.com/PavloDereniuk/AgentScope/commit/1ac359d), P.11)
 
-[Unreleased]: https://github.com/PavloDereniuk/AgentScope/compare/v0.5.10...HEAD
+[Unreleased]: https://github.com/PavloDereniuk/AgentScope/compare/v0.5.11...HEAD
+[0.5.11]: https://github.com/PavloDereniuk/AgentScope/releases/tag/v0.5.11
 [0.5.10]: https://github.com/PavloDereniuk/AgentScope/releases/tag/v0.5.10
 [0.5.9]: https://github.com/PavloDereniuk/AgentScope/releases/tag/v0.5.9
 [0.5.8]: https://github.com/PavloDereniuk/AgentScope/releases/tag/v0.5.8
