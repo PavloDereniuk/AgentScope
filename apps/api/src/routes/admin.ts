@@ -18,6 +18,7 @@
  * distinct users whose agent has produced ≥1 transaction OR reasoning span.
  */
 
+import { createHash } from 'node:crypto';
 import { type Database, agents, alerts } from '@agentscope/db';
 import { zValidator } from '@hono/zod-validator';
 import { sql } from 'drizzle-orm';
@@ -67,7 +68,34 @@ export interface AdminMilestoneConfig {
 export interface AdminRouterDeps {
   db: Database;
   milestones: AdminMilestoneConfig;
+  /**
+   * Owner identities, excluded from the milestone export. The grant counts
+   * *external* builders ("not me, not test accounts"), and the owner DIDs are
+   * the only test accounts the schema can name.
+   */
+  ownerDids: Set<string>;
   logger: Logger;
+}
+
+/**
+ * The grant's own definition of an active builder (GRANT-SF-UKRAINE-AWARDED.md
+ * §4): ≥1 tx ingested in the last 14 days OR ≥1 alert *delivered* in the
+ * last 30 days. Distinct from the panel's internal "active" (any tx or span,
+ * ever), which is what the overview cards keep reporting.
+ */
+const GRANT_TX_WINDOW_DAYS = 14;
+const GRANT_ALERT_WINDOW_DAYS = 30;
+
+/** Enough hex to keep a fleet of builders distinct while staying screenshot-sized. */
+const BUILDER_HASH_LENGTH = 12;
+
+/**
+ * Anonymize a builder for the sponsor: a truncated SHA-256 of the Privy DID.
+ * Stable across exports (the same builder hashes the same in M1 and M3), and
+ * not reversible without the DID list, which never leaves this side.
+ */
+function hashBuilder(privyDid: string): string {
+  return createHash('sha256').update(privyDid).digest('hex').slice(0, BUILDER_HASH_LENGTH);
 }
 
 /**
@@ -341,8 +369,129 @@ async function getAlertsBreakdown(db: DbHandle, window: '24h' | '7d' | '30d') {
   };
 }
 
+/** Exported for the empty-allowlist test — the router itself is unreachable without an owner. */
+export async function getMilestoneExport(db: DbHandle, ownerDids: Set<string>) {
+  const now = Date.now();
+  const txSince = new Date(now - GRANT_TX_WINDOW_DAYS * WINDOW_MS['24h']).toISOString();
+  const alertSince = new Date(now - GRANT_ALERT_WINDOW_DAYS * WINDOW_MS['24h']).toISOString();
+  // Neither driver serializes a JS array as a Postgres array parameter, so
+  // the owner list is spliced in as one parameter per DID. An empty allowlist
+  // excludes nobody — `not in ()` is invalid SQL and `not in (null)` is NULL,
+  // which would silently exclude everyone.
+  const ownerList = sql.join(
+    [...ownerDids].map((did) => sql`${did}`),
+    sql`, `,
+  );
+  const isExternal = ownerDids.size > 0 ? sql`u.privy_did not in (${ownerList})` : sql`true`;
+  const isOwnerUser = ownerDids.size > 0 ? sql`u.privy_did in (${ownerList})` : sql`false`;
+  const raw = await db.execute(sql`
+    -- Same shape as getBuildersTable: fold tx and alerts to one row per agent
+    -- BEFORE joining onto users, so the join never fans out to raw rows.
+    -- Unlike the panel table this one is unbounded in time — the M1 proof is
+    -- "≥1 tx ever", so first_tx must see the whole history. min/max ride
+    -- tx_agent_time_idx; the recent count is a separate, time-bounded scan so
+    -- the unbounded half never has to touch every row per agent.
+    with tx_bounds as (
+      select agent_id, min(block_time) as first_tx, max(block_time) as last_tx
+      from agent_transactions
+      group by agent_id
+    ),
+    tx_recent as (
+      select agent_id, cast(count(*) as int) as tx_recent
+      from agent_transactions
+      where block_time >= ${txSince}
+      group by agent_id
+    ),
+    alert_agg as (
+      select
+        agent_id,
+        max(delivered_at) as last_delivered,
+        cast(count(*) filter (where delivered_at >= ${alertSince}) as int) as delivered_recent
+      from alerts
+      where delivery_status = 'delivered'
+      group by agent_id
+    )
+    select
+      u.privy_did,
+      to_char(u.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as registered_at,
+      cast(count(ag.id) as int) as agents_count,
+      to_char(min(txb.first_tx) at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as first_tx_at,
+      to_char(max(txb.last_tx) at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_tx_at,
+      cast(coalesce(sum(txr.tx_recent), 0) as int) as tx_recent,
+      cast(coalesce(sum(ala.delivered_recent), 0) as int) as delivered_recent,
+      to_char(max(ala.last_delivered) at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_alert_delivered_at
+    from users u
+    join agents ag on ag.user_id = u.id
+    left join tx_bounds txb on txb.agent_id = ag.id
+    left join tx_recent txr on txr.agent_id = ag.id
+    left join alert_agg ala on ala.agent_id = ag.id
+    where ${isExternal}
+    group by u.id, u.privy_did, u.created_at
+  `);
+  const ownerRaw = await db.execute(sql`
+    select cast(count(distinct u.id) as int) as n
+    from users u
+    join agents ag on ag.user_id = u.id
+    where ${isOwnerUser}
+  `);
+
+  const builders = unwrapRows<{
+    privy_did: string;
+    registered_at: string;
+    agents_count: number | string;
+    first_tx_at: string | null;
+    last_tx_at: string | null;
+    tx_recent: number | string;
+    delivered_recent: number | string;
+    last_alert_delivered_at: string | null;
+  }>(raw).map((r) => {
+    const tx14d = Number(r.tx_recent);
+    const alertsDelivered30d = Number(r.delivered_recent);
+    // Whichever of the two windows fired most recently — the timestamp the
+    // sponsor reads as "last seen" for this builder.
+    const lastActiveAt =
+      [tx14d > 0 ? r.last_tx_at : null, alertsDelivered30d > 0 ? r.last_alert_delivered_at : null]
+        .filter((t): t is string => t != null)
+        .sort()
+        .at(-1) ?? null;
+    return {
+      builderHash: hashBuilder(r.privy_did),
+      registeredAt: r.registered_at,
+      agentsCount: Number(r.agents_count),
+      firstTxAt: r.first_tx_at,
+      lastTxAt: r.last_tx_at,
+      tx14d,
+      alertsDelivered30d,
+      lastAlertDeliveredAt: r.last_alert_delivered_at,
+      lastActiveAt,
+      connected: r.first_tx_at != null,
+      active: tx14d > 0 || alertsDelivered30d > 0,
+    };
+  });
+
+  // Active first, then connected, then most recently active — the screenshot
+  // leads with the rows that prove the milestone.
+  builders.sort((a, b) => {
+    if (a.active !== b.active) return a.active ? -1 : 1;
+    if (a.connected !== b.connected) return a.connected ? -1 : 1;
+    return (b.lastActiveAt ?? '').localeCompare(a.lastActiveAt ?? '');
+  });
+
+  return {
+    generatedAt: new Date(now).toISOString(),
+    definition: { txWindowDays: GRANT_TX_WINDOW_DAYS, alertWindowDays: GRANT_ALERT_WINDOW_DAYS },
+    excluded: { ownerUsers: Number(unwrapRows<{ n: number | string }>(ownerRaw)[0]?.n ?? 0) },
+    counts: {
+      registered: builders.length,
+      connected: builders.filter((b) => b.connected).length,
+      active: builders.filter((b) => b.active).length,
+    },
+    builders,
+  };
+}
+
 export function createAdminRouter(deps: AdminRouterDeps) {
-  const { db, milestones, logger } = deps;
+  const { db, milestones, ownerDids, logger } = deps;
   const router = new Hono<ApiEnv>();
 
   // Each endpoint delegates to a module-level fetcher (shared with /summary).
@@ -355,6 +504,10 @@ export function createAdminRouter(deps: AdminRouterDeps) {
   router.get('/infra', async (c) => c.json(await getInfra(db, logger)));
 
   router.get('/builders', async (c) => c.json(await getBuildersTable(db)));
+
+  // Grant proof bundle (G.1): anonymized per-builder rows + counts by the
+  // sponsor's definitions. Two queries on one connection, no fan-out.
+  router.get('/milestone-export', async (c) => c.json(await getMilestoneExport(db, ownerDids)));
 
   router.get(
     '/alerts-breakdown',

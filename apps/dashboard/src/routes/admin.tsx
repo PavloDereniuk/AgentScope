@@ -1,8 +1,15 @@
 import { Kpi, KpiRow } from '@/components/Kpi';
+import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
+import {
+  type MilestoneCsvRow,
+  buildMilestoneCsvFilename,
+  serializeMilestoneRowsToCsv,
+} from '@/lib/milestone-csv';
 import { useIsOwner } from '@/lib/use-is-owner';
 import { cn } from '@/lib/utils';
 import { useQuery } from '@tanstack/react-query';
+import { Download } from 'lucide-react';
 import { Navigate } from 'react-router-dom';
 
 // ─── Response shapes (mirror apps/api/src/routes/admin.ts) ──────────────────
@@ -44,6 +51,15 @@ interface Infra {
   };
   helius: { monitoredAgents: number; agentCeiling: number };
   ingestLagSeconds: number | null;
+}
+
+/** Grant proof bundle — anonymized rows, counts by the sponsor's definitions. */
+interface MilestoneExport {
+  generatedAt: string;
+  definition: { txWindowDays: number; alertWindowDays: number };
+  excluded: { ownerUsers: number };
+  counts: { registered: number; connected: number; active: number };
+  builders: MilestoneCsvRow[];
 }
 
 interface BuilderRow {
@@ -93,6 +109,14 @@ export function AdminPage() {
     queryFn: () => apiClient.get<AdminSummary>('/api/admin/summary'),
     enabled: isOwner,
   });
+  // Separate request on purpose: /summary is pinned to one pooled connection
+  // and this endpoint is two sequential queries, so the pair never needs more
+  // than two of the five slots even under StrictMode's double-mount.
+  const proof = useQuery({
+    queryKey: ['admin', 'milestone-export'],
+    queryFn: () => apiClient.get<MilestoneExport>('/api/admin/milestone-export'),
+    enabled: isOwner,
+  });
 
   if (!ownerLoading && !isOwner) {
     return <Navigate to="/" replace />;
@@ -135,6 +159,11 @@ export function AdminPage() {
           leg={m?.active}
           deadline={m?.deadline ?? null}
         />
+      </div>
+
+      {/* Grant proof — the numbers the sponsor actually reads (G.1) */}
+      <div className="mb-5">
+        <MilestoneProofCard data={proof.data} loading={proof.isLoading} />
       </div>
 
       {/* Platform KPI strip */}
@@ -353,6 +382,154 @@ function CapacityBar({
       <div className="mt-1 font-mono text-[10px] text-fg-3">{sub}</div>
     </div>
   );
+}
+
+// ─── Milestone proof (grant definition) ─────────────────────────────────────
+
+/**
+ * Screenshot-ready proof view: no PII anywhere on screen, definitions spelled
+ * out next to the numbers so the screenshot is self-explanatory to the
+ * sponsor, and the same rows downloadable as CSV.
+ */
+function MilestoneProofCard({
+  data,
+  loading,
+}: {
+  data: MilestoneExport | undefined;
+  loading: boolean;
+}) {
+  const rows = data?.builders ?? [];
+  const meta = data
+    ? `generated ${data.generatedAt.slice(0, 16).replace('T', ' ')} UTC · owner accounts excluded: ${data.excluded.ownerUsers}`
+    : '';
+  return (
+    <Card title="Milestone proof · grant definition" meta={meta}>
+      <div className="flex flex-wrap items-end justify-between gap-4 border-b border-line px-4 py-3">
+        <div className="flex flex-wrap gap-6">
+          <ProofStat
+            label="Registered"
+            hint="external builders with ≥1 agent"
+            value={data?.counts.registered}
+          />
+          <ProofStat
+            label="Connected · M1"
+            hint="≥1 agent with ≥1 tx, ever"
+            value={data?.counts.connected}
+          />
+          <ProofStat
+            label="Active · M2/M3"
+            hint={
+              data
+                ? `≥1 tx in ${data.definition.txWindowDays}d or ≥1 alert delivered in ${data.definition.alertWindowDays}d`
+                : '…'
+            }
+            value={data?.counts.active}
+            accent
+          />
+        </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={rows.length === 0}
+          onClick={() => downloadMilestoneCsv(rows)}
+          aria-label="Download milestone proof as CSV"
+        >
+          <Download className="mr-1.5 h-3.5 w-3.5" />
+          Download CSV
+        </Button>
+      </div>
+      <MilestoneProofTable rows={rows} loading={loading} />
+    </Card>
+  );
+}
+
+function ProofStat({
+  label,
+  hint,
+  value,
+  accent = false,
+}: {
+  label: string;
+  hint: string;
+  value: number | undefined;
+  accent?: boolean;
+}) {
+  return (
+    <div className="flex flex-col">
+      <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-fg-3">{label}</span>
+      <span
+        className={cn('font-mono text-2xl font-semibold tabular-nums', accent && 'text-accent')}
+      >
+        {value ?? '…'}
+      </span>
+      <span className="text-[11px] text-fg-3">{hint}</span>
+    </div>
+  );
+}
+
+function MilestoneProofTable({ rows, loading }: { rows: MilestoneCsvRow[]; loading: boolean }) {
+  if (loading) return <Empty label="Loading…" />;
+  if (rows.length === 0) return <Empty label="No external builders yet" />;
+  return (
+    <div className="max-h-[360px] overflow-auto">
+      <table className="w-full border-collapse text-[12px]">
+        <thead className="sticky top-0 bg-surface-2">
+          <tr className="border-b border-line text-left font-mono text-[10px] uppercase tracking-[0.06em] text-fg-3">
+            <th className="px-4 py-2 font-normal">builder</th>
+            <th className="px-2 py-2 font-normal">registered</th>
+            <th className="px-2 py-2 text-right font-normal">agents</th>
+            <th className="px-2 py-2 font-normal">first tx</th>
+            <th className="px-2 py-2 text-right font-normal">tx 14d</th>
+            <th className="px-2 py-2 text-right font-normal">alerts 30d</th>
+            <th className="px-2 py-2 font-normal">last active</th>
+            <th className="px-4 py-2 text-right font-normal">status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((b) => (
+            <tr key={b.builderHash} className="border-b border-line-soft last:border-b-0">
+              <td className="px-4 py-2 font-mono text-[11px] text-fg-2">{b.builderHash}</td>
+              <td className="px-2 py-2 font-mono text-fg-3">{b.registeredAt.slice(0, 10)}</td>
+              <td className="px-2 py-2 text-right font-mono">{b.agentsCount}</td>
+              <td className="px-2 py-2 font-mono text-fg-3">{b.firstTxAt?.slice(0, 10) ?? '—'}</td>
+              <td className="px-2 py-2 text-right font-mono">{b.tx14d}</td>
+              <td className="px-2 py-2 text-right font-mono">{b.alertsDelivered30d}</td>
+              <td className="px-2 py-2 font-mono text-fg-3">
+                {b.lastActiveAt?.slice(0, 10) ?? '—'}
+              </td>
+              <td className="px-4 py-2 text-right">
+                <span
+                  className={cn(
+                    'rounded-full border px-2 py-px font-mono text-[10px] uppercase tracking-[0.06em]',
+                    b.active
+                      ? 'border-[color:var(--accent-dim)] text-accent'
+                      : b.connected
+                        ? 'border-line text-fg-2'
+                        : 'border-line text-fg-3',
+                  )}
+                >
+                  {b.active ? 'active' : b.connected ? 'connected' : 'registered'}
+                </span>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function downloadMilestoneCsv(rows: readonly MilestoneCsvRow[]) {
+  if (rows.length === 0) return;
+  const blob = new Blob([serializeMilestoneRowsToCsv(rows)], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = buildMilestoneCsvFilename();
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
 // ─── Builders table ─────────────────────────────────────────────────────────

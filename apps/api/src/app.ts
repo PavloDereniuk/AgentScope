@@ -299,6 +299,7 @@ export function buildApp(deps: AppDeps) {
     createAdminRouter({
       db: deps.db,
       milestones: deps.adminMilestones ?? { targets: [], deadline: null },
+      ownerDids,
       logger: log,
     }),
   );

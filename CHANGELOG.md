@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Milestone proof export on the admin panel** — `GET /api/admin/milestone-export` (owner-only) and a "Milestone proof · grant definition" card on `/admin`. The grant is scored on definitions that differ from the panel's own: M1 counts a builder as *connected* on any transaction ever, M2/M3 count one as *active* on ≥1 tx in the last 14 days **or** ≥1 alert *delivered* in the last 30 days. Until now those numbers were assembled by hand — a SQL query, manual anonymization, a screenshot — for every milestone. The card shows all three counts with their definitions spelled out beside them, an anonymized per-builder table (screenshot-ready: no DID, email or user id anywhere on screen) and a "Download CSV" of the same rows.
+
+  Owner accounts are excluded from every row and count, since the grant wants external builders. Builders are identified by the first 12 hex of `sha256(privy_did)`: stable across exports, so the same builder carries the same hash from M1 to M3, and not reversible without the DID list. The endpoint is two sequential queries on one connection; the tx aggregate is split into an unbounded `min/max` (index-only on `tx_agent_time_idx`) and a time-bounded count, because folding both into one CTE forced a read of every row per agent and took 4.4 s against production — split, 0.55 s.
+
 ## [0.5.10] - 2026-09-22
 
 Two incidents, one lesson: a process that is alive is not a process that is working. The Railway bill for 23 Jul – 23 Aug came in at $18.04 against ~$5 — memory climbing ~200 MB/day and resetting only on deploy. Three days later the ingestion worker ran for forty hours without parsing a single transaction, reporting `RUNNING` the whole time. The first was unread `fetch` bodies pinning sockets and buffers outside the heap, where `--max-old-space-size` never looked. The second had every monitor fire correctly and nothing able to act. This release drains the bodies, splits the memory signal so the two causes can be told apart, and gives the worker a watchdog that exits non-zero when its own heartbeat says it is wedged — because dying is the only recovery available to a process whose sockets will never settle.

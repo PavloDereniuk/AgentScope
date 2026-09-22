@@ -461,8 +461,12 @@
 >
 > **Визначення «active» — з гранту, не наше:** ≥1 tx за останні 14 днів **АБО** ≥1 доставлений alert за останні 30 днів. Registered ≠ active; трекаємо обидві цифри окремо (рішення з Cluster F).
 
-### G.1 — Milestone proof exporter 🔴 НАЙТЕРМІНОВІШЕ
-- [ ] **G.1** Кнопка «Export milestone bundle» на `/admin` → (a) анонімізований CSV (`builder_hash`, `agents_count`, `first_tx_at`, `last_active_at`, `active_by_grant_definition`), (b) screenshot-ready вьюха без PII, (c) автопідрахунок registered vs active **саме за грантовим визначенням** (14д tx / 30д alert), а не за нашим внутрішнім. Зараз ці цифри збираються вручну під кожен milestone
+### G.1 — Milestone proof exporter ✅ (2026-09-22)
+- [x] **G.1** (2026-09-22) `GET /api/admin/milestone-export` + картка «Milestone proof · grant definition» на `/admin`: три лічильники (**registered** = зовнішні юзери з ≥1 агентом; **connected · M1** = ≥1 агент з ≥1 tx будь-коли; **active · M2/M3** = tx за 14д ∨ *delivered* alert за 30д), анонімізована таблиця (screenshot-ready) і «Download CSV». Owner DIDs виключено з усього. `builderHash` = перші 12 hex `sha256(privy_did)` — стабільний між M1/M2/M3, без DID/email/user_id у payload (тест перевіряє явно). 8 тестів API (PGlite) + 5 тестів CSV-серіалізатора. На проді 2026-09-22: **31 registered / 29 connected / 21 active**, запит 0.55 с (перша версія з `count(*) filter` у тому ж CTE, що й `min/max`, — 4.4 с; розділення на bounded і index-only скани дало 8×).
+  **Порядок змінено (2026-09-22):** G.1 витягнуто поперед G.2 за даними з проду — когорта G.2 (`lastSeenAt == null`, >7 днів) = **2 агенти**, з них 1 досяжний через Telegram, а `users.email` порожній у **всіх 33** юзерів (Privy wallet-login) — email-канал для G.2 не існує фізично. G.2 лишається, але після E.11.
+  **Не зроблено свідомо:** наявні картки registered/active з *внутрішнім* визначенням (будь-яка tx або span) не змінено — F вирішив трекати обидва; test-акаунти поза owner DIDs не фільтруються (у схемі нема прапорця); server-side CSV не робили — серіалізація на клієнті дзеркалить E17 `tx-csv.ts`.
+  **Файли:** [apps/api/src/routes/admin.ts](../apps/api/src/routes/admin.ts) (`getMilestoneExport`, експортований) · [apps/dashboard/src/lib/milestone-csv.ts](../apps/dashboard/src/lib/milestone-csv.ts) · [apps/dashboard/src/routes/admin.tsx](../apps/dashboard/src/routes/admin.tsx) (`MilestoneProofCard`)
+  *Оригінальний опис:* Кнопка «Export milestone bundle» на `/admin` → (a) анонімізований CSV (`builder_hash`, `agents_count`, `first_tx_at`, `last_active_at`, `active_by_grant_definition`), (b) screenshot-ready вьюха без PII, (c) автопідрахунок registered vs active **саме за грантовим визначенням** (14д tx / 30д alert), а не за нашим внутрішнім. Зараз ці цифри збираються вручну під кожен milestone
   ⏱ 3-4 год · 📦 v0.5.2-admin · 🎯 *(internal/ops — опц. building-in-public твіт про грантовий трекер)*
   **Файли:** `apps/api/src/routes/admin.ts` (+`/milestone-export`) · `apps/dashboard/src/routes/admin.tsx` (кнопка + вьюха) · reuse `tx-csv.ts` serializer-паттерн з E17
   **Чому першим:** без цього кожне закриття milestone = ручний SQL + ручна анонімізація + ручний скріншот, і так тричі (M1/M2/M3). Один раз написати — тричі здати.
@@ -480,7 +484,7 @@
   **Файли:** `apps/ingestion/src/owner-digest.ts` (новий cron) · reuse `apps/api` admin SQL-хелпери (винести у `packages/db` якщо дублюються)
   **Обґрунтування:** ops-петля без відкривання дашборду. Помітити churn або наближення до storage-стелі через тиждень — дешево; через місяць — уже пізно.
 
-**Cluster G total:** ~2 дні, 3 micro-releases (v0.5.2-admin → v0.5.4-admin). **G.1 — блокер для здачі M1** (не терміновий після продовження дедлайну до 2026-10-01; G.2 + аутріч важать більше).
+**Cluster G total:** ~2 дні, 3 micro-releases (v0.5.2-admin → v0.5.4-admin). **G.1 закрито 2026-09-22** — M1 здається з нього; G.2 знижено в пріоритеті за прод-даними (див. G.1).
 
 ---
 
@@ -573,7 +577,8 @@
 **Phase 2 (parser surge):** A.4 ✅ → A.5 ✅ → A.7 ✅ → A.6 ✅ — **ЗАКРИТА**
 - 4 парсери підряд. A.6 (Drift perps) закрив фазу: скоуп звужено до класичних agent-order інструкцій (Drift order-flow мігрував на Swift; keeper/fill-інструкції поза скоупом). Далі — Phase 3 (DX + self-host): B.7 → B.6 → B.8.
 
-**Phase 2.5 (🟠 GRANT-DRIVEN, вставлено 2026-07-28; перевпорядковано 2026-07-31):** G.2 / аутріч → E.11 → G.1
+**Phase 2.5 (🟠 GRANT-DRIVEN, вставлено 2026-07-28; перевпорядковано 2026-07-31 і 2026-09-22):** G.1 ✅ → E.11 → G.2 / аутріч
+- **🔄 2026-09-22:** G.1 закрито першим — прод-дані показали, що когорта G.2 це 2 агенти (1 досяжний), а M1 уже перевиконано (21 active проти 4). Далі E.11 (backup) → G.2.
 - **🔄 Новий порядок після продовження дедлайну (M1 тепер до 2026-10-01):** два додаткові місяці — це час *набрати* білдерів, а не краще їх порахувати. **G.2 + прямий аутріч** ідуть першими: без 4 білдерів G.1 експортує порожній CSV. **E.11** (backup) — другим: proof-дані живуть у Supabase без PITR на два місяці довше, це єдиний пункт роадмапу без стелі збитку. **G.1** (~4 год) — ближче до фактичної здачі, він нікуди не втече і лишається тричі окупним (M1/M2/M3).
 - **Первинне обґрунтування (2026-07-28, дедлайн 2026-08-01):** G.1 ішов першим саме через 4 дні до закриття вікна M1.
 - **E.11 (backup) сюди ж:** грантові proof-дані живуть у тій самій Supabase-БД без PITR. Втратити їх напередодні звітності — єдиний ризик у роудмапі без стелі збитку.
