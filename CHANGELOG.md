@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.10] - 2026-09-22
+
+Two incidents, one lesson: a process that is alive is not a process that is working. The Railway bill for 23 Jul – 23 Aug came in at $18.04 against ~$5 — memory climbing ~200 MB/day and resetting only on deploy. Three days later the ingestion worker ran for forty hours without parsing a single transaction, reporting `RUNNING` the whole time. The first was unread `fetch` bodies pinning sockets and buffers outside the heap, where `--max-old-space-size` never looked. The second had every monitor fire correctly and nothing able to act. This release drains the bodies, splits the memory signal so the two causes can be told apart, and gives the worker a watchdog that exits non-zero when its own heartbeat says it is wedged — because dying is the only recovery available to a process whose sockets will never settle.
+
+Verified in production 2026-08-27 → 08-30: 64 h flat (`rssMb` 167 → 166), `arrayBuffersMb` 4 vs 260 on the wedged worker, 0.40 GB average ≈ $4/month.
+
+✅ No migration needed.
+
 ### Added
 - **Self-kill watchdog on the ingestion worker** — the worker now judges itself by the same signals `/health/ingestion` judges it by, and exits non-zero when it concludes it is wedged. `restartPolicyType: ON_FAILURE` turns that into a fresh container.
 
@@ -320,7 +328,8 @@ First post-submission iteration. The 2026-05-11 Colosseum Frontier submission sh
 ### Security
 - RLS enabled on every child partition of `agent_transactions` (`2026_04` through `2026_09` plus `_default`). Postgres does not inherit RLS from a partitioned parent, and PostgREST exposes each partition as its own `/rest/v1/<name>` endpoint — without per-partition `ENABLE ROW LEVEL SECURITY`, an anon/authenticated caller could hit a partition directly and bypass the parent's `tx_owner_access` policy. New migration `0010_rls_on_partitions.sql`; service-role ingestion (BYPASSRLS) untouched. ([`1ac359d`](https://github.com/PavloDereniuk/AgentScope/commit/1ac359d), P.11)
 
-[Unreleased]: https://github.com/PavloDereniuk/AgentScope/compare/v0.5.9...HEAD
+[Unreleased]: https://github.com/PavloDereniuk/AgentScope/compare/v0.5.10...HEAD
+[0.5.10]: https://github.com/PavloDereniuk/AgentScope/releases/tag/v0.5.10
 [0.5.9]: https://github.com/PavloDereniuk/AgentScope/releases/tag/v0.5.9
 [0.5.8]: https://github.com/PavloDereniuk/AgentScope/releases/tag/v0.5.8
 [0.5.7]: https://github.com/PavloDereniuk/AgentScope/releases/tag/v0.5.7
