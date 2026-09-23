@@ -103,10 +103,12 @@
   **Залежність:** нуль коду в критичному шляху; `/health` уже існує і навмисно не чіпає DB.
 
 ### E.11 — Backup / restore runbook
-- [ ] **E.11** (додано 2026-07-28) Supabase **free tier не має PITR** — зараз втрата проєкту = втрата всіх даних білдерів і всієї грантової звітності. Scheduled GH Action: `pg_dump` (schema + data, без RLS-ролей) → зашифрований artifact з 30-денною retention. `docs/DEPLOY.md` §10 — restore-процедура (§9 зайняв E.13), перевірена на локальному Postgres хоча б раз
-  ⏱ 1 день · 📦 v0.5.4-infra · 🎯 *(internal/ops — без твіту)*
-  **Файли:** `.github/workflows/backup.yml` (новий, cron daily) · `docs/DEPLOY.md` §10 «Backup & restore»
-  **Обґрунтування (аналіз 2026-07-28):** єдиний ризик у списку, що **не має ліміту збитку**. Усе інше в Cluster E — про вартість і швидкість; це про існування проєкту. Grant proof-артефакти живуть у тій самій БД.
+- [x] **E.11** (2026-09-23) Нічний `.github/workflows/backup.yml`: `pg_dump` схеми `public` (`--no-owner --no-privileges`, custom format) через Supabase **session pooler** → `gpg --symmetric` AES-256 (репо публічне — артефакти теж) → artifact з 30-денною retention → **той самий шифротекст розшифровується, відновлюється у throwaway `postgres:17`, перевіряються `users`/`agents` > 0 і ганяється `check-schema-drift` проти копії**. Тобто restore перевіряється щоночі, а не «хоча б раз». Провал → admin-Telegram. `DEPLOY.md` §10 — restore + disaster recovery
+  ⏱ 0.5 дня · 📦 unreleased · 🎯 *(internal/ops — без твіту)*
+  **Файли:** [.github/workflows/backup.yml](../.github/workflows/backup.yml) · [docs/DEPLOY.md](DEPLOY.md) §10 · `DATABASE_SSL=disable` у [scripts/check-schema-drift.ts](../scripts/check-schema-drift.ts)
+  **Перевірено 2026-09-23 на проді:** dump 61 с / 31.8 MB (live 299 MB, PG 17.6) → restore 5 с → 33 users · 57 agents · 101 851 tx · 87 205 alerts, 6 RLS-політик, 60 партицій, drift → no drift.
+  **Граблі:** `pg_dump -n public` емітить `CREATE SCHEMA public` → з `--exit-on-error` restore падає на першому ж рядку. Лікується `pg_restore --list | grep -v` → `--use-list`.
+  **Обґрунтування (аналіз 2026-07-28):** єдиний ризик у списку, що **не мав ліміту збитку**.
 
 ### E.12 — Schema-drift checker (🔴 інцидент 2026-07-31)
 - [x] **E.12** (2026-07-31) `scripts/check-schema-drift.ts` — звіряє живу БД з `packages/db/src/schema.ts` і повертає ненульовий exit-код при розходженні. Очікування виводяться з самих drizzle-об'єктів через `getTableConfig`/`isPgEnum`, не зі списку, який треба підтримувати руками. Перевіряє: значення enum-ів, наявність таблиць і колонок, наявність індексів **та їхню унікальність**, RLS на всіх таблицях і партиціях. 16 тестів

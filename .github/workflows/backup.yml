@@ -1,0 +1,224 @@
+name: Database backup
+
+# Nightly logical backup of the production database, restored and checked
+# before the job is allowed to go green (E.11).
+#
+# Supabase free tier has no point-in-time recovery. Losing the project — a
+# mistaken delete, a paused-then-purged free project, a bad migration — would
+# lose every builder's agents, transactions and alerts with nothing to go back
+# to. Every other risk on the roadmap has a ceiling; this one did not.
+#
+# What the job does:
+#   1. pg_dump of the `public` schema (the only schema the app owns — auth,
+#      storage, realtime etc. are Supabase's, and the app does not use them),
+#      without owners or grants, so the archive restores into any Postgres.
+#   2. Encrypts it with a symmetric passphrase. The repo is public and so are
+#      its workflow artifacts to any signed-in GitHub user — the ciphertext is
+#      the only thing that ever leaves the runner.
+#   3. Uploads the ciphertext as an artifact kept for 30 days.
+#   4. Decrypts that same ciphertext, restores it into a throwaway Postgres,
+#      checks the core tables are populated and runs check-schema-drift
+#      against the copy. A backup that has never been restored is a hope,
+#      not a backup — this makes the restore path run every night.
+#
+# Restore procedure: docs/DEPLOY.md §10.
+
+on:
+  schedule:
+    # 03:17 UTC — off the top of the hour, when scheduled Actions pile up.
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: db-backup
+  cancel-in-progress: false
+
+env:
+  # Must match the server's major version: pg_dump refuses to dump a newer
+  # server, and a newer pg_dump can emit syntax an older restore target does
+  # not accept. Prod is Supabase Postgres 17.6 (checked 2026-09-23). If
+  # Supabase upgrades the project, this job fails loudly on the version check —
+  # bump the tag here.
+  PG_IMAGE: postgres:17
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check secrets
+        env:
+          BACKUP_DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          missing=""
+          [ -n "$BACKUP_DATABASE_URL" ] || missing="$missing BACKUP_DATABASE_URL"
+          [ -n "$BACKUP_PASSPHRASE" ] || missing="$missing BACKUP_PASSPHRASE"
+          if [ -n "$missing" ]; then
+            echo "::error::missing repo secrets:$missing (see docs/DEPLOY.md §10)"
+            exit 1
+          fi
+
+      - name: Dump the public schema
+        id: dump
+        env:
+          # Supabase *session* pooler (port 5432), not the transaction pooler
+          # the services use (6543): pg_dump holds one snapshot for the whole
+          # run. The direct db.<ref>.supabase.co host is IPv6-only on free tier
+          # and GitHub runners have no IPv6.
+          DB_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          mkdir -p backup
+          name="agentscope-db-$(date -u +%Y-%m-%dT%H%MZ)"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+
+          # The server major must equal the client's (see PG_IMAGE above).
+          server=$(docker run --rm -e DB_URL "$PG_IMAGE" \
+                     sh -c 'psql "$DB_URL" -At -c "show server_version_num"')
+          client=$(docker run --rm "$PG_IMAGE" \
+                     sh -c 'echo "$PG_MAJOR"')
+          echo "server_version_num=$server · client major=$client"
+          if [ "$((server / 10000))" != "$client" ]; then
+            echo "::error::prod is Postgres $((server / 10000)), backup client is $client — update PG_IMAGE"
+            exit 1
+          fi
+
+          docker run --rm -e DB_URL -v "$PWD/backup:/out" "$PG_IMAGE" \
+            sh -c 'pg_dump "$DB_URL" --schema=public --no-owner --no-privileges \
+                     --format=custom --compress=9 --file=/out/db.dump'
+          ls -l backup/db.dump
+
+      - name: Encrypt
+        env:
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+          NAME: ${{ steps.dump.outputs.name }}
+        run: |
+          set -euo pipefail
+          # The dump is already compressed; gpg compressing it again only
+          # costs time.
+          printf '%s' "$BACKUP_PASSPHRASE" | gpg --batch --yes --quiet \
+            --pinentry-mode loopback --passphrase-fd 0 \
+            --symmetric --cipher-algo AES256 --compress-algo none \
+            --output "backup/$NAME.dump.gpg" backup/db.dump
+          # Only ciphertext is uploaded — drop the plaintext right away.
+          rm -f backup/db.dump
+          ls -l backup/
+
+      - name: Upload encrypted backup
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.dump.outputs.name }}
+          path: backup/${{ steps.dump.outputs.name }}.dump.gpg
+          retention-days: 30
+          compression-level: 0
+          if-no-files-found: error
+
+      - name: Restore into a throwaway Postgres
+        id: restore
+        env:
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+          NAME: ${{ steps.dump.outputs.name }}
+        run: |
+          set -euo pipefail
+          # Decrypt the exact file that was uploaded, so a wrong passphrase or
+          # a corrupted ciphertext fails tonight rather than on the day of
+          # the restore.
+          mkdir -p restore
+          printf '%s' "$BACKUP_PASSPHRASE" | gpg --batch --yes --quiet \
+            --pinentry-mode loopback --passphrase-fd 0 \
+            --decrypt --output restore/db.dump "backup/$NAME.dump.gpg"
+
+          docker run -d --name restore -p 127.0.0.1:5432:5432 \
+            -e POSTGRES_PASSWORD=restore -v "$PWD/restore:/in" "$PG_IMAGE"
+          for _ in $(seq 60); do
+            docker exec restore pg_isready -U postgres -q && break
+            sleep 1
+          done
+
+          # `pg_dump --schema=public` emits CREATE SCHEMA public, which every
+          # target database already has; with --exit-on-error that one line
+          # aborts the whole restore. Restore everything except that entry.
+          docker exec restore sh -c '
+            set -e
+            pg_restore --list /in/db.dump \
+              | grep -vE "^[0-9]+; [0-9]+ [0-9]+ SCHEMA - public " > /tmp/toc
+            pg_restore -U postgres -d postgres --no-owner --no-privileges \
+              --exit-on-error --use-list=/tmp/toc /in/db.dump'
+
+          counts=$(docker exec restore psql -U postgres -At -F ' ' -c "
+            select 'users', count(*) from users
+            union all select 'agents', count(*) from agents
+            union all select 'agent_transactions', count(*) from agent_transactions
+            union all select 'reasoning_logs', count(*) from reasoning_logs
+            union all select 'alerts', count(*) from alerts")
+          echo "$counts"
+
+          # An empty users/agents table means the dump ran against the wrong
+          # database, or the restore silently skipped data. Either way this
+          # is not a backup.
+          for t in users agents; do
+            n=$(printf '%s\n' "$counts" | awk -v t="$t" '$1 == t { print $2 }')
+            if [ "${n:-0}" -eq 0 ]; then
+              echo "::error::restored copy has no rows in $t"
+              exit 1
+            fi
+          done
+
+          size=$(stat -c %s "backup/$NAME.dump.gpg")
+          {
+            echo "### Backup \`$NAME\`"
+            echo
+            echo "Encrypted artifact: $((size / 1024 / 1024)) MB · kept 30 days"
+            echo
+            echo "| table | rows in restored copy |"
+            echo "|---|---|"
+            printf '%s\n' "$counts" | awk '{ printf "| %s | %s |\n", $1, $2 }'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Schema drift check against the restored copy
+        working-directory: scripts
+        env:
+          DATABASE_URL: postgres://postgres:restore@127.0.0.1:5432/postgres
+          DATABASE_SSL: disable
+        run: pnpm exec tsx check-schema-drift.ts
+
+      - name: Remove plaintext
+        if: always()
+        run: rm -rf restore backup/db.dump
+
+      # A backup that fails quietly is the failure mode this workflow exists to
+      # remove. Daily cadence, so one message per failed night is not noise.
+      - name: Notify Telegram on failure
+        if: failure()
+        env:
+          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.TELEGRAM_ADMIN_CHAT_ID }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ -z "${BOT_TOKEN}" ] || [ -z "${CHAT_ID}" ]; then
+            echo "Telegram secrets not configured — skipping notification."
+            exit 0
+          fi
+          curl -sS -m 20 -X POST \
+            "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+            -d "chat_id=${CHAT_ID}" \
+            -d "disable_web_page_preview=true" \
+            --data-urlencode "text=$(printf '%s\n%s' '🔴 AgentScope nightly DB backup FAILED' "${RUN_URL}")" \
+            > /dev/null

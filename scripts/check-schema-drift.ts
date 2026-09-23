@@ -18,6 +18,9 @@
  *
  * Usage: pnpm --filter @agentscope/scripts check-schema-drift
  *        (reads DATABASE_URL; exits 1 when anything is missing)
+ *
+ * DATABASE_SSL=disable drops the TLS requirement, for a plain local Postgres —
+ * the nightly backup job (E.11) runs this against a freshly restored copy.
  */
 
 import { createDb } from '@agentscope/db';
@@ -290,7 +293,10 @@ async function main(): Promise<void> {
     process.exit(2);
   }
 
-  const db = createDb({ connectionString });
+  const db = createDb({
+    connectionString,
+    ...(process.env['DATABASE_SSL'] === 'disable' ? { ssl: false } : {}),
+  });
   const expected = describeExpectedSchema(schema as unknown as Record<string, unknown>);
   const actual = await readActualSchema(db, expected);
   const findings = compareSchema(expected, actual);

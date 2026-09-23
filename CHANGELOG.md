@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Nightly database backup, restored every night** — `.github/workflows/backup.yml` dumps the `public` schema, encrypts it (AES-256, `gpg --symmetric`; the repo and its artifacts are public) and keeps it as a 30-day artifact. The job then decrypts that same artifact, restores it into a throwaway Postgres 17, checks the core tables are populated and runs `check-schema-drift` against the copy — a green run means the backup was actually restored, not just written. Failures page the admin Telegram. Supabase free tier has no point-in-time recovery; until now, losing the project meant losing every builder's data. Restore and disaster-recovery procedure: `docs/DEPLOY.md` §10.
+
+### Changed
+- `check-schema-drift` accepts `DATABASE_SSL=disable` for a plain local Postgres (TLS is still required by default).
+
 ## [0.5.11] - 2026-09-22
 
 ### Added
