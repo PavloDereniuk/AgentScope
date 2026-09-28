@@ -454,6 +454,53 @@ describe('cron cycle', () => {
   });
 });
 
+describe('cron — agent without a delivery channel', () => {
+  it('marks the alert skipped (not pending) when the agent has no telegram and no webhook', async () => {
+    await db.delete(alerts).where(eq(alerts.agentId, staleAgentId));
+    await db.update(agents).set({ telegramChatId: null }).where(eq(agents.id, staleAgentId));
+
+    const telegramCalls: AlertMessage[] = [];
+    const telegram: ChannelSender = {
+      async send(msg) {
+        telegramCalls.push(msg);
+        return { success: true, channel: 'telegram' };
+      },
+    };
+
+    const realDate = globalThis.Date;
+    const fakeNow = new Date('2026-04-09T12:00:00Z');
+    globalThis.Date = class extends realDate {
+      constructor(...args: unknown[]) {
+        if (args.length === 0) {
+          super(fakeNow.getTime());
+        } else {
+          // @ts-expect-error — spread into Date ctor
+          super(...args);
+        }
+      }
+      static override now() {
+        return fakeNow.getTime();
+      }
+    } as DateConstructor;
+
+    try {
+      await runCronCycle({ db, logger: silentLogger, defaults, alerter: { telegram } });
+
+      expect(telegramCalls.find((m) => m.agentId === staleAgentId)).toBeUndefined();
+      const rows = await db.select().from(alerts).where(eq(alerts.agentId, staleAgentId));
+      const staleRow = rows.find((a) => a.ruleName === 'stale_agent');
+      expect(staleRow?.deliveryStatus).toBe('skipped');
+      expect(staleRow?.deliveryChannel).toBeNull();
+    } finally {
+      globalThis.Date = realDate;
+      await db
+        .update(agents)
+        .set({ telegramChatId: '111222333' })
+        .where(eq(agents.id, staleAgentId));
+    }
+  });
+});
+
 // E.1: the cron primes the whole fleet's balances in one batch call per
 // cycle (one getMultipleAccounts instead of N getBalance), then the per-agent
 // low_balance reads hit the warm cache.

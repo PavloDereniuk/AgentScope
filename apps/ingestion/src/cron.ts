@@ -378,6 +378,18 @@ export async function runCronCycle(deps: CronDeps): Promise<number> {
             }
           }),
         );
+      } else {
+        // Nowhere to send it — record that instead of leaving the row
+        // 'pending' forever. `inserted` is non-empty here (guarded above).
+        await deps.db
+          .update(alerts)
+          .set({ deliveryStatus: 'skipped' })
+          .where(
+            inArray(
+              alerts.id,
+              inserted.map((row) => row.id),
+            ),
+          );
       }
     }
   }

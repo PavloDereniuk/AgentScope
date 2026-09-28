@@ -13,6 +13,8 @@ import type { CronRuleDef, RuleResult } from '../types';
 // 3× threshold → critical. Matches drawdown's escalation; slippage/gas
 // use 5× (swap-path rules tolerate higher overshoot before escalating).
 const CRITICAL_MULTIPLIER = 3;
+/** Shortest dedupe window — one day. */
+const DEDUPE_FLOOR_MINUTES = 24 * 60;
 
 export const staleRule: CronRuleDef = {
   name: 'stale_agent',
@@ -47,16 +49,22 @@ export const staleRule: CronRuleDef = {
 
     if (inactiveMinutes <= thresholdMinutes) return null;
 
+    const severity =
+      inactiveMinutes >= thresholdMinutes * CRITICAL_MULTIPLIER ? 'critical' : 'warning';
+    const windowMinutes = Math.max(thresholdMinutes, DEDUPE_FLOOR_MINUTES);
+
     return {
       ruleName: 'stale_agent',
-      severity: inactiveMinutes >= thresholdMinutes * CRITICAL_MULTIPLIER ? 'critical' : 'warning',
+      severity,
       payload: {
         inactiveMinutes,
         thresholdMinutes,
       },
-      // Dedupe window is capped at max(threshold, 60min) to prevent alert spam
-      // when short thresholds (e.g. 5min) would otherwise generate one alert per window.
-      dedupeKey: `stale:${agent.id}:${Math.floor(now.getTime() / (Math.max(thresholdMinutes, 60) * 60_000))}`,
+      // One reminder per day at most (or per threshold, when that is longer):
+      // a dead agent stays dead, and an hourly window re-fired 24×/day forever.
+      // Severity is part of the key so warning → critical still escalates
+      // inside the same window.
+      dedupeKey: `stale:${agent.id}:${severity}:${Math.floor(now.getTime() / (windowMinutes * 60_000))}`,
     };
   },
 };

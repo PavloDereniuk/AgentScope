@@ -85,7 +85,7 @@ afterAll(async () => {
 
 function makeCtx(
   agentIdOverride: string,
-  overrides: { staleMinutesThreshold?: number } = {},
+  overrides: { staleMinutesThreshold?: number; now?: string } = {},
 ): CronRuleContext {
   return {
     agent: {
@@ -96,7 +96,7 @@ function makeCtx(
     },
     defaults,
     db: testDb.db,
-    now: new Date('2026-04-09T12:00:00Z'),
+    now: new Date(overrides.now ?? '2026-04-09T12:00:00Z'),
   };
 }
 
@@ -125,5 +125,45 @@ describe('stale_agent rule', () => {
     // 10 min inactive, threshold 2 min в†’ 5Г— threshold в†’ critical
     const result = await staleRule.evaluate(makeCtx(activeAgentId, { staleMinutesThreshold: 2 }));
     expect(result?.severity).toBe('critical');
+  });
+
+  // An hourly key re-fired 24×/day for every dead agent, forever — 57% of
+  // all alerts in prod. One reminder per day per severity is enough.
+  it('keeps the same dedupe key for the whole UTC day', async () => {
+    const noon = await staleRule.evaluate(makeCtx(activeAgentId, { staleMinutesThreshold: 2 }));
+    const late = await staleRule.evaluate(
+      makeCtx(activeAgentId, { staleMinutesThreshold: 2, now: '2026-04-09T23:30:00Z' }),
+    );
+    expect(noon?.dedupeKey).toBeDefined();
+    expect(noon?.dedupeKey).toBe(late?.dedupeKey);
+  });
+
+  it('rotates the dedupe key across the day boundary', async () => {
+    const today = await staleRule.evaluate(makeCtx(activeAgentId, { staleMinutesThreshold: 2 }));
+    const tomorrow = await staleRule.evaluate(
+      makeCtx(activeAgentId, { staleMinutesThreshold: 2, now: '2026-04-10T00:01:00Z' }),
+    );
+    expect(today?.dedupeKey).not.toBe(tomorrow?.dedupeKey);
+  });
+
+  it('escalation to critical within the same day gets its own key', async () => {
+    // 10 min idle: threshold 5 → warning, threshold 2 → critical.
+    const warning = await staleRule.evaluate(makeCtx(activeAgentId, { staleMinutesThreshold: 5 }));
+    const critical = await staleRule.evaluate(makeCtx(activeAgentId, { staleMinutesThreshold: 2 }));
+    expect(warning?.severity).toBe('warning');
+    expect(critical?.severity).toBe('critical');
+    expect(warning?.dedupeKey).not.toBe(critical?.dedupeKey);
+  });
+
+  it('keeps a multi-day threshold as its own dedupe window', async () => {
+    // threshold 3 days: same key 2 days apart (one window), fires at most once per window.
+    const t = 3 * 24 * 60;
+    const a = await staleRule.evaluate(
+      makeCtx(activeAgentId, { staleMinutesThreshold: t, now: '2026-04-19T00:00:00Z' }),
+    );
+    const b = await staleRule.evaluate(
+      makeCtx(activeAgentId, { staleMinutesThreshold: t, now: '2026-04-19T23:00:00Z' }),
+    );
+    expect(a?.dedupeKey).toBe(b?.dedupeKey);
   });
 });

@@ -368,8 +368,9 @@ describe('runTxDetector вЂ” Epic 14 per-agent routing', () => {
       { ...slippageTx, signature: `${slippageTx.signature}_bare` },
     );
     // The alert STILL lands in the DB (count === 1) вЂ” we just don't ship
-    // it to the platform owner's chat via fallback. The row stays in the
-    // default 'pending' delivery_status and is visible in the dashboard.
+    // it to the platform owner's chat via fallback. With nowhere to send
+    // it the row is 'skipped' (channel null) — 'pending' would claim a
+    // delivery that is never coming.
     expect(count).toBe(1);
     expect(telegram.captured).toHaveLength(0);
 
@@ -378,7 +379,7 @@ describe('runTxDetector вЂ” Epic 14 per-agent routing', () => {
       .from(alerts)
       .where(eq(alerts.agentId, bareAgentId));
     expect(row?.channel).toBeNull();
-    expect(row?.status).toBe('pending');
+    expect(row?.status).toBe('skipped');
   });
 });
 

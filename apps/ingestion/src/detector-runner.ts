@@ -234,7 +234,22 @@ export async function runTxDetector(
   if (deps.alerter) {
     const alerter = deps.alerter;
     const channel = pickChannel(alerter, webhookUrl, telegramChatId);
-    if (!channel) return results.length;
+    if (!channel) {
+      // Nowhere to send it — record that instead of leaving the row
+      // 'pending' forever (99.8% of prod 'pending' rows were this case).
+      if (inserted.length > 0) {
+        await deps.db
+          .update(alerts)
+          .set({ deliveryStatus: 'skipped' })
+          .where(
+            inArray(
+              alerts.id,
+              inserted.map((row) => row.id),
+            ),
+          );
+      }
+      return results.length;
+    }
 
     // Epic 18: partition results into skip vs deliver. `pickDeliveryAction`
     // is the single dispatch point shared with the cron path so global

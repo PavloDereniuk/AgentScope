@@ -139,27 +139,37 @@ describe('low_balance rule', () => {
     expect(fetcher).toHaveBeenCalledWith(WALLET);
   });
 
-  it('emits a stable hourly dedupe key', async () => {
-    // 12:00 and 12:30 same hour → identical key (one alert per hour, not 60 per cycle).
+  it('emits a stable daily dedupe key', async () => {
+    // 12:00 and 23:30 same UTC day → identical key. An hourly key re-fired
+    // 24×/day for every drained wallet — 83% of all alerts in prod.
     const noonCtx = makeCtx({ balance: 0.0001 });
-    const halfPastCtx: CronRuleContext = {
+    const lateCtx: CronRuleContext = {
       ...noonCtx,
-      now: new Date('2026-04-09T12:30:00Z'),
+      now: new Date('2026-04-09T23:30:00Z'),
     };
     const a = await lowBalanceRule.evaluate(noonCtx);
-    const b = await lowBalanceRule.evaluate(halfPastCtx);
+    const b = await lowBalanceRule.evaluate(lateCtx);
     expect(a?.dedupeKey).toBeDefined();
     expect(a?.dedupeKey).toBe(b?.dedupeKey);
   });
 
-  it('rotates dedupe key across hourly boundary', async () => {
+  it('rotates dedupe key across day boundary', async () => {
     const noonCtx = makeCtx({ balance: 0.0001 });
-    const oneHourLater: CronRuleContext = {
+    const nextDay: CronRuleContext = {
       ...noonCtx,
-      now: new Date('2026-04-09T13:01:00Z'),
+      now: new Date('2026-04-10T00:01:00Z'),
     };
     const a = await lowBalanceRule.evaluate(noonCtx);
-    const b = await lowBalanceRule.evaluate(oneHourLater);
+    const b = await lowBalanceRule.evaluate(nextDay);
     expect(a?.dedupeKey).not.toBe(b?.dedupeKey);
+  });
+
+  it('escalation to critical within the same day gets its own key', async () => {
+    // Daily bucket must not swallow warning → critical on the same day.
+    const warning = await lowBalanceRule.evaluate(makeCtx({ balance: 0.004 }));
+    const critical = await lowBalanceRule.evaluate(makeCtx({ balance: 0.0001 }));
+    expect(warning?.severity).toBe('warning');
+    expect(critical?.severity).toBe('critical');
+    expect(warning?.dedupeKey).not.toBe(critical?.dedupeKey);
   });
 });

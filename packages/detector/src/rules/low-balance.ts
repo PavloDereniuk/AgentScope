@@ -2,8 +2,8 @@
  * Low wallet balance rule (post-MVP roadmap A.2, v0.4.1).
  *
  * Fires when the agent's wallet SOL balance drops below the warning
- * threshold. Cron-triggered — runs once per agent per 60s cycle. The
- * balance lookup is injected via `fetchAgentBalance` so unit tests can
+ * threshold. Cron-triggered — evaluated every 60s cycle, alerts at most
+ * once a day per severity (see dedupeKey). The balance lookup is injected via `fetchAgentBalance` so unit tests can
  * stub it and the rule stays RPC-agnostic; the ingestion layer wires
  * the real Helius `Connection.getBalance` with a per-wallet TTL cache.
  *
@@ -20,7 +20,7 @@
 
 import type { CronRuleDef, RuleResult } from '../types';
 
-const HOUR_MS = 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
 const CRITICAL_DIVIDER = 5;
 
 export const lowBalanceRule: CronRuleDef = {
@@ -53,10 +53,12 @@ export const lowBalanceRule: CronRuleDef = {
         thresholdSol: threshold,
         criticalThresholdSol: criticalThreshold,
       },
-      // 1h dedupe — balance changes slowly. Without this the same low
-      // condition would re-fire every 60s cycle. onConflictDoNothing on
+      // Daily dedupe — a drained wallet stays drained until someone tops it
+      // up, and an hourly window re-fired 24×/day. onConflictDoNothing on
       // (agent_id, rule_name, dedupe_key) collapses subsequent inserts.
-      dedupeKey: `low_balance:${agent.id}:${Math.floor(now.getTime() / HOUR_MS)}`,
+      // Severity is part of the key so warning → critical still escalates
+      // the same day.
+      dedupeKey: `low_balance:${agent.id}:${severity}:${Math.floor(now.getTime() / DAY_MS)}`,
     };
   },
 };
