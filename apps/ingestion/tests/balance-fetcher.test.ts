@@ -144,6 +144,32 @@ describe('createBalanceFetcher — primeBalances() (E.1)', () => {
     expect(getBalance).not.toHaveBeenCalled();
   });
 
+  it('a primed value (even a failed-batch null) outlives a slow cycle — no getBalance fallback', async () => {
+    // E.16: on 2026-09-28 a quota-exhausted batch cached null, the cycle
+    // ran past the old 25s TTL, and every later agent fell back to its own
+    // getBalance (+ web3.js 429 retries) — the cycle overran the next tick.
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date('2026-09-28T15:37:00Z'));
+      const getMulti = vi.fn<GetMultiFn>(async () => {
+        throw new Error('429 Too Many Requests: max usage reached');
+      });
+      const getBalance = vi.fn<GetBalanceFn>();
+      const { fetch, primeBalances } = createBalanceFetcher({
+        connection: makeConnection({ getBalance, getMultipleAccountsInfo: getMulti }),
+        logger: silentLogger,
+      });
+
+      await primeBalances([VALID_WALLET]);
+      vi.setSystemTime(new Date('2026-09-28T15:37:55Z')); // 55s into the cycle
+
+      expect(await fetch(VALID_WALLET)).toBeNull();
+      expect(getBalance).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('chunks at 100 keys per getMultipleAccounts call', async () => {
     // 100 distinct base58 wallets is awkward to hand-author; reuse two valid
     // pubkeys is not enough (dedupe collapses them). Instead drive chunking

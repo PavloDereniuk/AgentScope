@@ -44,9 +44,11 @@ export interface BalanceFetcherOptions {
   connection: Connection;
   logger: WarnLogger;
   /**
-   * TTL for cached balances. Defaults to 25s — short of the 60s cron
-   * cycle so each cycle re-primes a fresh reading, while still serving
-   * every per-agent read within the same cycle from the warm cache.
+   * TTL for cached balances. Defaults to 5 min. Freshness does not come
+   * from the TTL — `primeBalances` overwrites every wallet each 60s cycle,
+   * success or failure. The TTL only has to outlive a slow cycle: at 25s a
+   * cycle stretched by 429 retries expired the primed entries mid-cycle and
+   * every later agent fell back to its own `getBalance` (E.16).
    */
   cacheTtlMs?: number;
   /** Maximum cached wallets. Bounded memory — sub-100 B per entry. */
@@ -59,7 +61,7 @@ export interface BatchBalanceFetcher {
   primeBalances: (walletPubkeys: readonly string[]) => Promise<void>;
 }
 
-const DEFAULT_TTL_MS = 25_000;
+const DEFAULT_TTL_MS = 5 * 60_000;
 const DEFAULT_MAX_CACHE = 512;
 const LAMPORTS_PER_SOL = 1_000_000_000;
 /** Solana RPC caps `getMultipleAccounts` at 100 keys per call. */

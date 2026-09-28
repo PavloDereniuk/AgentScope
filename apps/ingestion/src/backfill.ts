@@ -15,7 +15,9 @@
  * (e.g. on every ingestion restart) are safe.
  */
 
+import { type Database, agentTransactions } from '@agentscope/db';
 import { Connection, PublicKey, type VersionedTransactionResponse } from '@solana/web3.js';
+import { and, eq, inArray } from 'drizzle-orm';
 import type { TxUpdate } from './grpc-client';
 import type { Logger } from './logger';
 import type { PersistContext } from './persist';
@@ -37,6 +39,31 @@ const DEFAULT_MAX_SIGNATURES = 50;
  * comfortably below that while still backfilling 50 tx in ~5s.
  */
 const BACKFILL_FETCH_DELAY_MS = 100;
+
+/**
+ * Drop signatures the agent already has in `agent_transactions`, keeping
+ * input order. Backfill runs for every wallet on every worker start, and
+ * without this each restart re-fetched ~50 tx per wallet only for
+ * ON CONFLICT DO NOTHING to discard them (E.16).
+ */
+export async function filterUnpersistedSignatures(
+  db: Database,
+  agentId: string,
+  signatures: readonly string[],
+): Promise<string[]> {
+  if (signatures.length === 0) return [];
+  const rows = await db
+    .select({ signature: agentTransactions.signature })
+    .from(agentTransactions)
+    .where(
+      and(
+        eq(agentTransactions.agentId, agentId),
+        inArray(agentTransactions.signature, [...signatures]),
+      ),
+    );
+  const stored = new Set(rows.map((r) => r.signature));
+  return signatures.filter((s) => !stored.has(s));
+}
 
 /**
  * Backfill recent transactions for a single wallet. Returns the count
@@ -72,6 +99,29 @@ export async function backfillWallet(
 
   if (signatures.length === 0) {
     logger.info({ walletPubkey }, 'backfill: no historical signatures found');
+    return 0;
+  }
+
+  const agentId = ctx.registry.lookup(walletPubkey);
+  if (agentId) {
+    try {
+      const fresh = new Set(
+        await filterUnpersistedSignatures(
+          ctx.db,
+          agentId,
+          signatures.map((s) => s.signature),
+        ),
+      );
+      signatures = signatures.filter((s) => fresh.has(s.signature));
+    } catch (err) {
+      // Filtering is an optimisation — on a DB error fall back to fetching
+      // everything; persistTx's ON CONFLICT still keeps it idempotent.
+      logger.warn({ err, walletPubkey }, 'backfill: persisted-signature filter failed');
+    }
+  }
+
+  if (signatures.length === 0) {
+    logger.info({ walletPubkey }, 'backfill: nothing new');
     return 0;
   }
 
