@@ -20,6 +20,7 @@ import type { TxUpdate } from './grpc-client';
 import type { Logger } from './logger';
 import type { PersistContext } from './persist';
 import { persistTx } from './persist';
+import { MAX_SUPPORTED_TX_VERSION } from './tx-version';
 
 export interface BackfillOptions {
   rpcUrl: string;
@@ -91,7 +92,7 @@ export async function backfillWallet(
     let tx: VersionedTransactionResponse | null;
     try {
       tx = await connection.getTransaction(sig.signature, {
-        maxSupportedTransactionVersion: 0,
+        maxSupportedTransactionVersion: MAX_SUPPORTED_TX_VERSION,
         commitment,
       });
     } catch (err) {

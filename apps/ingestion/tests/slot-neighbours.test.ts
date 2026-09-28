@@ -192,4 +192,18 @@ describe('createSlotNeighbourFetcher', () => {
     const [tx] = await fetcher(300_000_000);
     expect(tx?.programIds).toContain(JUPITER);
   });
+
+  // Regression: at version 0 the RPC rejects the whole block as soon as
+  // one v1 tx is in the slot, so the sandwich rule never saw neighbours.
+  it('requests blocks with v1 transactions enabled', async () => {
+    const connection = makeMockConnection(async () => makeBlock([]));
+    const fetcher = createSlotNeighbourFetcher({ connection, logger: silentLogger });
+
+    await fetcher(300_000_000);
+
+    expect(connection.getBlock).toHaveBeenCalledWith(
+      300_000_000,
+      expect.objectContaining({ maxSupportedTransactionVersion: 1 }),
+    );
+  });
 });

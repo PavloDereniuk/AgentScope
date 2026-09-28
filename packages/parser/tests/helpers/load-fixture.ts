@@ -24,7 +24,7 @@ interface RawFixture {
   response: {
     slot: number;
     blockTime: number | null;
-    version: 'legacy' | 0;
+    version: 'legacy' | 0 | 1;
     transaction: [string, 'base64'];
     meta: {
       err: unknown;
@@ -79,7 +79,7 @@ export function loadFixtureResponse(name: string): VersionedTransactionResponse 
       innerInstructions: r.meta.innerInstructions ?? [],
       computeUnitsConsumed: 0,
     },
-    version: r.version === 'legacy' ? 'legacy' : 0,
+    version: versionedTx.version,
   } as unknown as VersionedTransactionResponse;
 }
 

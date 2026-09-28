@@ -76,3 +76,25 @@ describe('jupiter parser tx-level fields', () => {
     expect(parsed.signature).toBe(input.signature);
   });
 });
+
+// v1 transactions (compute budget in `transactionConfig`, no address
+// lookup tables) went live on mainnet in Sep 2026 — ~13% of a sampled
+// block. Captured from a real agent swap the ingestion worker dropped.
+describe('jupiter parser — v1 transaction message', () => {
+  it('jupiter-swap-v1-1 → deserializes and identifies jupiter.swap', () => {
+    const input = loadFixtureAsParseInput('jupiter-swap-v1-1');
+    expect(input.transaction.version).toBe(1);
+
+    const parsed = parseTransaction(input);
+    const jupiterIx = parsed.instructions.find((ix) => ix.programId === JUPITER_V6);
+    expect(jupiterIx?.name).toBe('jupiter.swap');
+    expect(jupiterIx?.args).toMatchObject({
+      inputMint: expect.any(String),
+      outputMint: expect.any(String),
+      inAmount: expect.any(String),
+      outAmount: expect.any(String),
+    });
+    expect(parsed.success).toBe(true);
+    expect(parsed.feeLamports).toBe(5001);
+  });
+});

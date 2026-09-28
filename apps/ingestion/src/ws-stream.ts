@@ -14,6 +14,7 @@
 import { Connection, type Context, type Logs, PublicKey } from '@solana/web3.js';
 import type { TxUpdate } from './grpc-client';
 import type { Logger } from './logger';
+import { MAX_SUPPORTED_TX_VERSION } from './tx-version';
 
 export interface WsStreamHandlers {
   onSlot?: (slot: number) => void;
@@ -80,13 +81,13 @@ export async function createWsStream(
       // on some RPC providers. Retry once after a short delay to avoid
       // silently dropping transactions due to this race condition.
       let tx = await connection.getTransaction(logs.signature, {
-        maxSupportedTransactionVersion: 0,
+        maxSupportedTransactionVersion: MAX_SUPPORTED_TX_VERSION,
         commitment: 'confirmed',
       });
       if (!tx) {
         await new Promise((r) => setTimeout(r, 2000));
         tx = await connection.getTransaction(logs.signature, {
-          maxSupportedTransactionVersion: 0,
+          maxSupportedTransactionVersion: MAX_SUPPORTED_TX_VERSION,
           commitment: 'confirmed',
         });
       }

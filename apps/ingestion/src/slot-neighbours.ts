@@ -21,7 +21,8 @@
  */
 
 import type { NeighbourFetcher, SlotNeighbourTx } from '@agentscope/detector';
-import type { Connection, Message, MessageV0 } from '@solana/web3.js';
+import type { Connection, Message, MessageV0, VersionedMessage } from '@solana/web3.js';
+import { MAX_SUPPORTED_TX_VERSION } from './tx-version';
 
 interface CacheEntry {
   at: number;
@@ -51,13 +52,13 @@ const DEFAULT_TTL_MS = 30_000;
 const DEFAULT_MAX_CACHE = 256;
 
 /**
- * Resolve program ids referenced by a transaction. Both legacy and v0
+ * Resolve program ids referenced by a transaction. Legacy, v0 and v1
  * messages compile their account indices the same way; the only
- * difference is where the keys live (static for v0 + ALT-loaded under
+ * difference is where the keys live (static for v0/v1 + ALT-loaded under
  * `meta.loadedAddresses`, vs `accountKeys` for legacy).
  */
 function extractProgramIds(
-  message: Message | MessageV0,
+  message: VersionedMessage,
   loaded:
     | {
         writable?: ReadonlyArray<{ toBase58: () => string }>;
@@ -69,7 +70,7 @@ function extractProgramIds(
   // Build the full account-keys array in the order Solana resolves it:
   // static keys first, then ALT-loaded writable, then ALT-loaded readonly.
   const keys: string[] = [];
-  // Both Message and MessageV0 expose `staticAccountKeys` in current @solana/web3.js;
+  // Message, MessageV0 and MessageV1 all expose `staticAccountKeys` in current @solana/web3.js;
   // older Message also exposes `accountKeys` — prefer staticAccountKeys when present.
   const candidate = (message as MessageV0).staticAccountKeys ?? (message as Message).accountKeys;
   for (const k of candidate) keys.push(k.toBase58());
@@ -79,7 +80,7 @@ function extractProgramIds(
   }
 
   // Walk compiled instructions and resolve each `programIdIndex`.
-  // MessageV0 uses `compiledInstructions` (with `accountKeyIndexes`);
+  // MessageV0/V1 use `compiledInstructions` (with `accountKeyIndexes`);
   // legacy Message uses `instructions` (with `accounts`). Their typed
   // shapes differ but both carry the same `programIdIndex` field, which
   // is the only one we need — so we erase to a minimal structural type.
@@ -120,7 +121,7 @@ export function createSlotNeighbourFetcher(opts: SlotNeighbourFetcherOptions): N
   async function fetchBlock(slot: number): Promise<readonly SlotNeighbourTx[]> {
     try {
       const block = await opts.connection.getBlock(slot, {
-        maxSupportedTransactionVersion: 0,
+        maxSupportedTransactionVersion: MAX_SUPPORTED_TX_VERSION,
         transactionDetails: 'full',
         rewards: false,
       });
