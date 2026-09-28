@@ -104,7 +104,7 @@
 
 ### E.11 — Backup / restore runbook
 - [x] **E.11** (2026-09-23) Нічний `.github/workflows/backup.yml`: `pg_dump` схеми `public` (`--no-owner --no-privileges`, custom format) через Supabase **session pooler** → `gpg --symmetric` AES-256 (репо публічне — артефакти теж) → artifact з 30-денною retention → **той самий шифротекст розшифровується, відновлюється у throwaway `postgres:17`, перевіряються `users`/`agents` > 0 і ганяється `check-schema-drift` проти копії**. Тобто restore перевіряється щоночі, а не «хоча б раз». Провал → admin-Telegram. `DEPLOY.md` §10 — restore + disaster recovery
-  ⏱ 0.5 дня · 📦 unreleased · 🎯 *(internal/ops — без твіту)*
+  ⏱ 0.5 дня · 📦 v0.5.12 (2026-09-28) · 🎯 *(internal/ops — без твіту)*
   **Файли:** [.github/workflows/backup.yml](../.github/workflows/backup.yml) · [docs/DEPLOY.md](DEPLOY.md) §10 · `DATABASE_SSL=disable` у [scripts/check-schema-drift.ts](../scripts/check-schema-drift.ts)
   **Перевірено 2026-09-23 на проді:** dump 61 с / 31.8 MB (live 299 MB, PG 17.6) → restore 5 с → 33 users · 57 agents · 101 851 tx · 87 205 alerts, 6 RLS-політик, 60 партицій, drift → no drift.
   **Граблі:** `pg_dump -n public` емітить `CREATE SCHEMA public` → з `--exit-on-error` restore падає на першому ж рядку. Лікується `pg_restore --list | grep -v` → `--use-list`.
@@ -165,13 +165,13 @@
 ### E.16 — Helius credit economy (🔴 інцидент 2026-09-28, квота вичерпана, ~35 хв простою)
 
 - [x] **E.16** (2026-09-28) Helius відповідав `429 max usage reached` на все — і на WS, і на RPC; ingestion `stream-stalled` ~15:21→15:55 UTC. Власник втратив доступ до старого акаунта, завів новий ключ, редеплой. Щоб новий ключ не вигорів так само — два детерміновані витоки, без здогадок про тарифікацію.
-  ⏱ 0.5 дня · 📦 unreleased · 🎯 *(internal/ops — без твіту)*
+  ⏱ 0.5 дня · 📦 v0.5.13 (2026-09-28) · 🎯 *(internal/ops — без твіту)*
   **Файли:** [balance-fetcher.ts](../apps/ingestion/src/balance-fetcher.ts) + [тест](../apps/ingestion/tests/balance-fetcher.test.ts) · `filterUnpersistedSignatures` у [backfill.ts](../apps/ingestion/src/backfill.ts) + [3 тести](../apps/ingestion/tests/backfill.test.ts)
   - **TTL кешу балансів 25 с → 5 хв.** Свіжість дає не TTL, а `primeBalances`, що перезаписує кожен гаманець щоциклу (і при успіху, і при помилці). 25 с протухали посеред циклу, розтягнутого 429-ретраями web3.js, і кожен наступний агент падав у власний `getBalance` (+ ретраї ~7.5 с) — cycle не вкладався в тік. Видно в логах 15:37–15:38: по 2 гаманці на 10 с + «previous cycle still running».
   - **Backfill не перезапитує збережене.** Запускається для кожного гаманця на **кожному** старті і тягнув ~50 `getTransaction` на гаманець лише для того, щоб `ON CONFLICT DO NOTHING` їх викинув: 53 гаманці ≈ 2.7k викликів на рестарт (28.09 — три рестарти). Тепер один запит до БД відсіює вже збережені сигнатури; помилка фільтра → fallback на старий шлях.
   **Не зроблено свідомо:** `disableRetryOnRateLimit` не вмикали — для RPS-429 ретраї корисні, а відхилений через вичерпану квоту запит кредитів не коштує. `onSlotChange` (~216k повідомлень/добу) не чіпали, поки не видно розбивки Helius по методах — не вгадувати тарифікацію WS.
 
-**Cluster E total:** ~9 днів, 13 micro-releases (v0.4.3 → v0.5.10). **E.1 + E.2 — must-have для M3 на free-tier; E.7 — deploy-safety; E.11 — єдиний пункт з необмеженим збитком при відмові; E.12, E.13, E.14, E.15 — наслідки інцидентів 2026-07-31, 2026-07-30/08-11, 2026-08-23 (білл) і 2026-08-25 (40 год простою).**
+**Cluster E total:** ~9 днів, 15 micro-releases (v0.4.3 → v0.5.13). **E.1 + E.2 — must-have для M3 на free-tier; E.7 — deploy-safety; E.11 — єдиний пункт з необмеженим збитком при відмові; E.12, E.13, E.14, E.15 — наслідки інцидентів 2026-07-31, 2026-07-30/08-11, 2026-08-23 (білл) і 2026-08-25 (40 год простою).**
 
 ---
 
@@ -663,6 +663,8 @@
 | v0.5.9 | 2026-08-22 | E.13 (ingestion heartbeat + edge-triggered uptime alert) | ✅ released |
 | v0.5.10 | 2026-09-22 | E.14 (fetch body drain + memory signals) + E.15 (self-kill watchdog + cron deadline) | ✅ released |
 | v0.5.11 | 2026-09-22 | G.1 (milestone proof export by grant definitions) | ✅ released |
+| v0.5.12 | 2026-09-28 | Solana v1 transactions ingested again (fix `2dcbce7`) + E.11 nightly backup | ✅ released |
+| v0.5.13 | 2026-09-28 | stale/low-balance alerts once a day + no-channel → skipped (`6512890`) + E.16 Helius credit leaks | ✅ released |
 | … | … | … | … |
 
 ---

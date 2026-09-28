@@ -7,11 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.13] - 2026-09-28
+
+### Changed
+- **Stale-agent and low-balance alerts remind once a day, not every hour** — both rules used an hourly dedupe window, so a dead agent or a drained wallet re-alerted 24× a day for as long as it stayed that way: 83% of all alerts in the last 7 days. The window is now one UTC day (a stale threshold longer than a day keeps its own window). Severity is part of the dedupe key, so a warning that turns critical the same day still escalates.
+
+### Fixed
+- Alerts for an agent with no Telegram chat and no webhook were left `pending` forever; they are now recorded as `skipped`.
+- **Helius credit leaks** (E.16) — the balance cache no longer expires mid-cycle and falls back to one `getBalance` per agent under 429 retries; the startup backfill skips signatures already stored instead of re-fetching ~50 per wallet on every restart.
+
+✅ No migration needed.
+
+## [0.5.12] - 2026-09-28
+
+### Fixed
+- **Solana v1 transactions are ingested again** — v1 transaction messages (compute budget in `transactionConfig`, no address lookup tables) are live on mainnet: 164 of 1,221 transactions in slot 451366018. Every fetch asked for `maxSupportedTransactionVersion: 0`, so the RPC rejected them — agent transactions in the new format, Jupiter swaps included, were silently dropped, and `getBlock` failed for any slot containing one, so the sandwich rule's same-slot front-runner lookup never ran (phase-1 `slippage_sandwich` alerts still fired, but never escalated to critical). `@solana/web3.js` 1.99 is the first release that deserializes `MessageV1`; all fetch sites now share `MAX_SUPPORTED_TX_VERSION = 1`. Transactions dropped before this fix are recovered by the startup backfill up to its 50-signature window per wallet.
+
 ### Added
 - **Nightly database backup, restored every night** — `.github/workflows/backup.yml` dumps the `public` schema, encrypts it (AES-256, `gpg --symmetric`; the repo and its artifacts are public) and keeps it as a 30-day artifact. The job then decrypts that same artifact, restores it into a throwaway Postgres 17, checks the core tables are populated and runs `check-schema-drift` against the copy — a green run means the backup was actually restored, not just written. Failures page the admin Telegram. Supabase free tier has no point-in-time recovery; until now, losing the project meant losing every builder's data. Restore and disaster-recovery procedure: `docs/DEPLOY.md` §10.
 
 ### Changed
 - `check-schema-drift` accepts `DATABASE_SSL=disable` for a plain local Postgres (TLS is still required by default).
+- `@solana/web3.js` ^1.95.5 → ^1.99.0 (ingestion, parser).
+
+✅ No migration needed.
 
 ## [0.5.11] - 2026-09-22
 
@@ -341,7 +360,9 @@ First post-submission iteration. The 2026-05-11 Colosseum Frontier submission sh
 ### Security
 - RLS enabled on every child partition of `agent_transactions` (`2026_04` through `2026_09` plus `_default`). Postgres does not inherit RLS from a partitioned parent, and PostgREST exposes each partition as its own `/rest/v1/<name>` endpoint — without per-partition `ENABLE ROW LEVEL SECURITY`, an anon/authenticated caller could hit a partition directly and bypass the parent's `tx_owner_access` policy. New migration `0010_rls_on_partitions.sql`; service-role ingestion (BYPASSRLS) untouched. ([`1ac359d`](https://github.com/PavloDereniuk/AgentScope/commit/1ac359d), P.11)
 
-[Unreleased]: https://github.com/PavloDereniuk/AgentScope/compare/v0.5.11...HEAD
+[Unreleased]: https://github.com/PavloDereniuk/AgentScope/compare/v0.5.13...HEAD
+[0.5.13]: https://github.com/PavloDereniuk/AgentScope/releases/tag/v0.5.13
+[0.5.12]: https://github.com/PavloDereniuk/AgentScope/releases/tag/v0.5.12
 [0.5.11]: https://github.com/PavloDereniuk/AgentScope/releases/tag/v0.5.11
 [0.5.10]: https://github.com/PavloDereniuk/AgentScope/releases/tag/v0.5.10
 [0.5.9]: https://github.com/PavloDereniuk/AgentScope/releases/tag/v0.5.9
