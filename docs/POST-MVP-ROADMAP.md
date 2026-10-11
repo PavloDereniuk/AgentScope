@@ -293,7 +293,8 @@
   **Файли:** `packages/alerter/src/slack.ts` + tests · `apps/dashboard/src/routes/settings.tsx`
 
 ### B.3 — Webhook HMAC signing
-- [ ] **B.3** Підписувати webhook payloads (existing webhook channel) з `X-AgentScope-Signature: sha256=...` header, секрет генерується при створенні агента (`agents.webhook_secret`), показується раз у settings. Доку у QUICKSTART
+- [x] **B.3** Підписувати webhook payloads (existing webhook channel) з `X-AgentScope-Signature: sha256=...` header, секрет генерується при створенні агента (`agents.webhook_secret`), показується раз у settings. Доку у QUICKSTART
+  ✅ **Shipped v0.6.2 (2026-10-11, `5a278a5`).** Підпис `sha256=HMAC(secret, "<ts>.<body>")` + `X-AgentScope-Timestamp` (anti-replay). Відхилення від опису: секрет видно власнику в settings постійно (як `ingestToken`) + двокрокове regenerate, а не «показати раз»; бекфіл усім агентам міграцією 0021; дока в README (QUICKSTART у gitignore).
   ⏱ 1 день · 📦 v0.6.2 · 🎯 *"Webhook security: every payload now signed with HMAC-SHA256. Verify the signature before trusting incoming AgentScope alerts — protects against spoofed webhook fires."*
   **Файли:** `packages/alerter/src/webhook.ts` · `packages/db` migration · `apps/dashboard/src/routes/settings.tsx` "regenerate secret"
 
@@ -668,6 +669,7 @@
 | v0.5.12 | 2026-09-28 | Solana v1 transactions ingested again (fix `2dcbce7`) + E.11 nightly backup | ✅ released |
 | v0.5.13 | 2026-09-28 | stale/low-balance alerts once a day + no-channel → skipped (`6512890`) + E.16 Helius credit leaks | ✅ released |
 | v0.5.14 | 2026-10-11 | H.1 upgrade request waitlist at the agent cap (`e57f0d9`) | ✅ released |
+| v0.6.2 | 2026-10-11 | B.3 webhook HMAC signing (`5a278a5`) | ✅ released |
 | … | … | … | … |
 
 ---

@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-10-11
+
+### Added
+- **Signed webhooks** (B.3) — every webhook alert now carries `X-AgentScope-Timestamp` and `X-AgentScope-Signature: sha256=<hex>`, an HMAC-SHA256 of `"<timestamp>.<raw body>"` under the agent's own secret, so your endpoint can reject spoofed or replayed alerts before acting on them. Retries of one delivery reuse the same signature. Every agent has a `whsec_…` secret — existing agents were backfilled, so signing is already on; endpoints that don't verify keep working unchanged. Verification guide with a Node snippet in the README.
+- Settings → Notifications shows the signing secret with copy and a two-step regenerate. Rotation takes effect on the next delivery (no overlap window). "Send test alert" is signed too, so it doubles as a check of your verification code.
+- `POST /api/agents/:id/webhook-secret` — rotates the secret. The secret is returned on create and by the owner-scoped agent detail endpoint, never by the list or PATCH responses.
+
+⚠️ DB migration required: `0021_webhook_secret.sql` (already applied to production).
+
 ## [0.5.14] - 2026-10-11
 
 ### Added
