@@ -27,6 +27,7 @@ import {
   bigserial,
   boolean,
   index,
+  integer,
   jsonb,
   numeric,
   pgEnum,
@@ -318,6 +319,43 @@ export const serviceHeartbeats = pgTable('service_heartbeats', {
   detail: jsonb('detail').$type<Record<string, unknown>>().notNull().default(sql`'{}'::jsonb`),
 });
 
+/**
+ * Paid-plan requests from users who hit the free agent cap (roadmap H.1).
+ *
+ * Demand signal only — no billing. One row per user: a re-submit updates the
+ * row and clears `notified_at`. The ingestion worker treats rows with
+ * `notified_at IS NULL` as an outbox, pings the admin Telegram chat, then
+ * stamps them. `plan` / `agent_count` are range-checked in migration 0020.
+ */
+export const upgradeRequests = pgTable(
+  'upgrade_requests',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** Requested tier: `pro` | `team`. */
+    plan: text('plan').$type<'pro' | 'team'>().notNull(),
+    /** Email or Telegram handle — Privy users often have no email on file. */
+    contact: text('contact').notNull(),
+    agentCount: integer('agent_count').notNull(),
+    useCase: text('use_case').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' })
+      .notNull()
+      .defaultNow(),
+    notifiedAt: timestamp('notified_at', { withTimezone: true, mode: 'string' }),
+  },
+  (t) => ({
+    userUnique: uniqueIndex('upgrade_requests_user_unique').on(t.userId),
+    pendingNotifyIdx: index('upgrade_requests_pending_notify_idx')
+      .on(t.updatedAt)
+      .where(sql`notified_at IS NULL`),
+  }),
+);
+
 // ─── Relations (for type-safe joins) ───────────────────────────────────────
 
 export const usersRelations = relations(users, ({ many }) => ({
@@ -364,3 +402,5 @@ export type AlertRow = typeof alerts.$inferSelect;
 export type NewAlertRow = typeof alerts.$inferInsert;
 export type TelegramBindingRow = typeof telegramBindings.$inferSelect;
 export type NewTelegramBindingRow = typeof telegramBindings.$inferInsert;
+export type UpgradeRequestRow = typeof upgradeRequests.$inferSelect;
+export type NewUpgradeRequestRow = typeof upgradeRequests.$inferInsert;

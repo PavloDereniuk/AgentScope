@@ -1,6 +1,7 @@
 import { IntegrationSnippet } from '@/components/IntegrationSnippet';
 import { PausedBadge } from '@/components/PausedBadge';
 import { Sparkline } from '@/components/Sparkline';
+import { UpgradeCard } from '@/components/UpgradeCard';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -100,11 +101,13 @@ export function AgentsPage() {
           </div>
           {atCap && maxAgents !== null ? (
             <p className="font-mono text-[10.5px] text-fg-3">
-              Limit reached ({maxAgents} per account) — delete an agent to add another.
+              Limit reached ({maxAgents} per account)
             </p>
           ) : null}
         </div>
       </div>
+
+      {atCap && maxAgents !== null ? <UpgradeCard maxAgents={maxAgents} /> : null}
 
       <div className="mb-5 flex flex-wrap items-center gap-4 border-b border-line">
         <div className="flex gap-0">

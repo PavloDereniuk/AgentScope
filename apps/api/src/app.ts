@@ -40,6 +40,7 @@ import { createStatsRouter } from './routes/stats';
 import { createStreamRouter } from './routes/stream';
 import { createTelegramRouter } from './routes/telegram';
 import { createTransactionsRouter } from './routes/transactions';
+import { createUpgradeRequestRouter } from './routes/upgrade-request';
 
 export interface AppDeps {
   db: Database;
@@ -287,6 +288,8 @@ export function buildApp(deps: AppDeps) {
       ...(deps.ownerPrivyDids ? { ownerPrivyDids: deps.ownerPrivyDids } : {}),
     }),
   );
+  // H.1 — paid-plan demand signal from users at the agent cap. No billing.
+  api.route('/upgrade-request', createUpgradeRequestRouter(deps.db));
   api.route('/transactions', createTransactionsRouter(deps.db));
   api.route('/alerts', createAlertsRouter(deps.db));
   api.route('/stats', createStatsRouter(deps.db));

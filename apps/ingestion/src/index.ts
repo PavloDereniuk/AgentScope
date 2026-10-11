@@ -35,6 +35,7 @@ import type { PersistContext } from './persist';
 import { createWalletRegistry } from './registry';
 import { createSlotNeighbourFetcher } from './slot-neighbours';
 import { startTelegramBot } from './telegram-bot';
+import { startUpgradeRequestNotifier } from './upgrade-request-notifier';
 import { startWatchdog } from './watchdog';
 import { createWsStream } from './ws-stream';
 
@@ -304,6 +305,14 @@ async function main(): Promise<void> {
   });
   logger.info({ adminAlerts: Boolean(adminSender) }, 'abuse monitor started');
 
+  // H.1 — paid-plan requests outbox → admin Telegram. Idle without creds;
+  // rows stay pending and are delivered once creds are configured.
+  const upgradeNotifier = startUpgradeRequestNotifier({
+    db,
+    logger,
+    ...(adminSender ? { sendAdminMessage: adminSender } : {}),
+  });
+
   // Start Telegram bot long-poll worker for the /start <code> deep-link
   // flow (Epic 14 Phase 2). Skipped when no bot token is configured —
   // the dashboard's "Link Telegram" button degrades to a manual chat_id
@@ -358,6 +367,7 @@ async function main(): Promise<void> {
     cron.stop();
     partitionMaintenance.stop();
     abuseMonitor.stop();
+    upgradeNotifier.stop();
     registry.stop();
     Promise.resolve(reconciling)
       .catch(() => undefined)
