@@ -13,8 +13,16 @@
  *   - 10s per-request timeout via AbortSignal.timeout
  *   - retry on network error and 5xx; give up on 4xx (client error)
  *   - truncate error messages to 200 chars (matches alerts.delivery_error shape)
+ *
+ * Signing (B.3): when a secret is bound, every POST carries
+ *   X-AgentScope-Timestamp: <unix seconds>
+ *   X-AgentScope-Signature: sha256=<hex HMAC-SHA256(secret, `${timestamp}.${body}`)>
+ * The timestamp is inside the signed string so a captured delivery cannot be
+ * replayed later with a fresh timestamp — receivers reject stale ones.
+ * Retries reuse the same body, timestamp and signature: it is one delivery.
  */
 
+import { createHmac } from 'node:crypto';
 import { drainBody } from '@agentscope/shared';
 import type { AlertMessage, DeliveryResult } from './types';
 
@@ -29,6 +37,16 @@ export interface WebhookConfig {
    * via the sender returned by `createWebhookSender`.
    */
   url: string;
+  /** Per-agent HMAC key. Absent → deliveries go out unsigned. */
+  secret?: string;
+}
+
+/**
+ * Signature header value for one delivery. Exported so receivers' docs and
+ * tests can reproduce it byte-for-byte.
+ */
+export function signWebhookPayload(secret: string, timestamp: number, body: string): string {
+  return `sha256=${createHmac('sha256', secret).update(`${timestamp}.${body}`).digest('hex')}`;
 }
 
 /**
@@ -87,13 +105,20 @@ export function createWebhookSender(config: WebhookConfig, fetchImpl?: FetchLike
         },
       });
 
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (config.secret) {
+        const timestamp = Math.floor(Date.now() / 1000);
+        headers['X-AgentScope-Timestamp'] = String(timestamp);
+        headers['X-AgentScope-Signature'] = signWebhookPayload(config.secret, timestamp, body);
+      }
+
       let lastError = 'unknown error';
 
       for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
         try {
           const res = await doFetch(config.url, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers,
             body,
             signal: AbortSignal.timeout(WEBHOOK_FETCH_TIMEOUT_MS),
           });

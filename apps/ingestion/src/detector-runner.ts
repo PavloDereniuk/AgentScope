@@ -102,18 +102,21 @@ function pickChannel(
 }
 
 /**
- * Build or reuse a webhook sender for a given URL. Senders are cheap but
- * URL validation runs at construction time; caching keeps the per-tick
- * cost constant when the same agent fires multiple rules.
+ * Build or reuse a webhook sender for a given URL + signing secret (B.3).
+ * Senders are cheap but URL validation runs at construction time; caching
+ * keeps the per-tick cost constant when the same agent fires multiple rules.
  */
 function webhookSenderFor(
   url: string,
+  secret: string | null,
   cache: Map<string, ReturnType<typeof createWebhookSender>>,
 ): ReturnType<typeof createWebhookSender> {
-  const existing = cache.get(url);
+  const cacheKey = `${url}
+${secret ?? ''}`;
+  const existing = cache.get(cacheKey);
   if (existing) return existing;
-  const sender = createWebhookSender({ url });
-  cache.set(url, sender);
+  const sender = createWebhookSender({ url, ...(secret ? { secret } : {}) });
+  cache.set(cacheKey, sender);
   return sender;
 }
 
@@ -136,6 +139,7 @@ export async function runTxDetector(
       userId: agents.userId,
       telegramChatId: agents.telegramChatId,
       webhookUrl: agents.webhookUrl,
+      webhookSecret: agents.webhookSecret,
       alertsPausedUntil: agents.alertsPausedUntil,
     })
     .from(agents)
@@ -147,6 +151,7 @@ export async function runTxDetector(
   const userId = agent?.userId ?? null;
   const telegramChatId = agent?.telegramChatId ?? null;
   const webhookUrl = agent?.webhookUrl ?? null;
+  const webhookSecret = agent?.webhookSecret ?? null;
   const alertsPausedUntil = agent?.alertsPausedUntil ?? null;
 
   const results = await evaluateTx(
@@ -292,7 +297,7 @@ export async function runTxDetector(
     const perAgentDeps: DeliverDeps = {
       ...(alerter.telegram ? { telegram: alerter.telegram } : {}),
       ...(channel === 'webhook' && webhookUrl
-        ? { webhook: webhookSenderFor(webhookUrl, webhookCache) }
+        ? { webhook: webhookSenderFor(webhookUrl, webhookSecret, webhookCache) }
         : {}),
     };
 

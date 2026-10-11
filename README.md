@@ -165,6 +165,7 @@ All `/api/*` routes require a valid Privy access token. The token is verified by
 | `GET` | `/api/agents/:id` | Agent detail (24h tx count, last alert, status) |
 | `PATCH` | `/api/agents/:id` | Update agent metadata / alert thresholds |
 | `DELETE` | `/api/agents/:id` | Delete agent and cascade all child records |
+| `POST` | `/api/agents/:id/webhook-secret` | Rotate the webhook signing secret (returns the new `whsec_…`) |
 
 #### Transactions
 
@@ -276,6 +277,35 @@ Sends HTML-formatted messages to a configured chat ID via the Telegram Bot API.
 Format: severity badge + rule name + agent ID + payload summary.
 
 Config: `TELEGRAM_BOT_TOKEN` env var (bot-level). Per-agent `chat_id` rides on each `AlertMessage` via `agents.telegram_chat_id` — no deployer-wide fallback (Epic 14 multi-tenant safety).
+
+### Webhook (signed)
+
+Set a webhook URL on the agent (dashboard → Settings → Notifications) and every alert is `POST`ed there as JSON `{ alert, agent }`. Webhook takes precedence over Telegram.
+
+Every delivery is signed with HMAC-SHA256 under the agent's own secret (`whsec_…`, shown and rotatable in Settings):
+
+```
+X-AgentScope-Timestamp: 1791720000
+X-AgentScope-Signature: sha256=<hex HMAC-SHA256(secret, "<timestamp>.<raw body>")>
+```
+
+The timestamp is part of the signed string, so reject deliveries older than a few minutes to stop replays. Sign the **raw** request body — re-serialised JSON will not match. Verify before trusting the payload:
+
+```ts
+import { createHmac, timingSafeEqual } from 'node:crypto';
+
+export function verifyAgentScope(rawBody: string, headers: Headers, secret: string): boolean {
+  const timestamp = headers.get('x-agentscope-timestamp') ?? '';
+  const signature = headers.get('x-agentscope-signature') ?? '';
+  if (Math.abs(Date.now() / 1000 - Number(timestamp)) > 300) return false;
+  const expected = `sha256=${createHmac('sha256', secret).update(`${timestamp}.${rawBody}`).digest('hex')}`;
+  const a = Buffer.from(signature);
+  const b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+```
+
+Rotating the secret takes effect on the next delivery — there is no overlap window, so update the receiver right after rotating. "Send test alert" in Settings sends a signed delivery, so it doubles as a check of your verification code.
 
 ### Discord / Slack (stubbed, post-MVP)
 

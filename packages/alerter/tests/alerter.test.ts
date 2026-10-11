@@ -6,11 +6,12 @@
  * behavior.
  */
 
+import { createHmac } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import { deliver } from '../src/deliver';
 import { createTelegramSender, formatTelegramMessage } from '../src/telegram';
 import type { AlertMessage, ChannelSender } from '../src/types';
-import { createWebhookSender } from '../src/webhook';
+import { createWebhookSender, signWebhookPayload } from '../src/webhook';
 
 const sampleAlert: AlertMessage = {
   id: 'alert-1',
@@ -302,5 +303,69 @@ describe('createWebhookSender', () => {
 
   it('rejects empty URL at construction time', () => {
     expect(() => createWebhookSender({ url: '' })).toThrow(/required/);
+  });
+
+  // B.3 — HMAC signing.
+  const secret = 'whsec_test_secret';
+
+  it('signs `${timestamp}.${body}` with HMAC-SHA256 when a secret is bound', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-11T12:00:00Z'));
+    try {
+      const fetchMock = vi.fn().mockResolvedValue(makeResponse(200, 'ok'));
+      const sender = createWebhookSender({ url, secret }, fetchMock);
+
+      await sender.send(sampleAlert);
+
+      const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      const headers = init.headers as Record<string, string>;
+      expect(headers['X-AgentScope-Timestamp']).toBe('1791720000');
+      const expected = createHmac('sha256', secret)
+        .update(`1791720000.${init.body as string}`)
+        .digest('hex');
+      expect(headers['X-AgentScope-Signature']).toBe(`sha256=${expected}`);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps the same body, timestamp and signature across retries', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(makeResponse(503))
+      .mockResolvedValueOnce(makeResponse(200, 'ok'));
+    const sender = createWebhookSender({ url, secret }, fetchMock);
+
+    await sender.send(sampleAlert);
+
+    const [, first] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const [, second] = fetchMock.mock.calls[1] as [string, RequestInit];
+    expect(second.body).toBe(first.body);
+    expect(second.headers).toEqual(first.headers);
+  });
+
+  it('sends no signature headers when no secret is bound', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(makeResponse(200, 'ok'));
+    const sender = createWebhookSender({ url }, fetchMock);
+
+    await sender.send(sampleAlert);
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const headers = init.headers as Record<string, string>;
+    expect(headers['X-AgentScope-Signature']).toBeUndefined();
+    expect(headers['X-AgentScope-Timestamp']).toBeUndefined();
+  });
+});
+
+describe('signWebhookPayload', () => {
+  it('matches a plain node:crypto HMAC over `${timestamp}.${body}`', () => {
+    const body = '{"alert":{"id":"a"}}';
+    const expected = createHmac('sha256', 'k').update(`1700000000.${body}`).digest('hex');
+    expect(signWebhookPayload('k', 1700000000, body)).toBe(`sha256=${expected}`);
+  });
+
+  it('changes when the timestamp changes (replay of an old body fails)', () => {
+    const body = '{}';
+    expect(signWebhookPayload('k', 1, body)).not.toBe(signWebhookPayload('k', 2, body));
   });
 });

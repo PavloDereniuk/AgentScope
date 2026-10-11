@@ -22,7 +22,7 @@ import {
   isRulePaused,
 } from '@agentscope/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Bell, Copy, Loader2, PauseCircle, Play, Save, Trash2 } from 'lucide-react';
+import { Bell, Copy, Loader2, PauseCircle, Play, RefreshCw, Save, Trash2 } from 'lucide-react';
 import type { FormEvent } from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -36,6 +36,7 @@ interface AgentRow {
   telegramChatId: string | null;
   alertsPausedUntil: string | null;
   ingestToken?: string;
+  webhookSecret?: string;
   alertRules: AlertRuleThresholds | null;
   recentTxCount24h?: number;
   solDelta24h?: string;
@@ -529,6 +530,7 @@ export function SettingsPage() {
                     webhooks or any POST-JSON endpoint.
                   </p>
                 </div>
+                <WebhookSecretField selectedId={selectedId} secret={selected?.webhookSecret} />
                 <div>
                   <FieldLabel hint="post-MVP">Discord webhook</FieldLabel>
                   <div className="flex items-center rounded-[5px] border border-line bg-surface-2 px-2.5 py-1.5 opacity-50">
@@ -655,6 +657,123 @@ function FieldLabel({ children, hint }: { children: React.ReactNode; hint?: stri
       {hint ? (
         <span className="normal-case tracking-normal text-[11px] text-fg-3">{hint}</span>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * B.3 — Webhook signing secret: copy + rotate. Rotation commits immediately
+ * (like pause) and needs a second click, because the receiver must switch to
+ * the new secret at once — there is no overlap window server-side.
+ */
+function WebhookSecretField({
+  selectedId,
+  secret,
+}: {
+  selectedId: string;
+  secret: string | undefined;
+}) {
+  const queryClient = useQueryClient();
+  const [copied, setCopied] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+
+  // Agent switch → drop a half-finished confirmation.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reset only on agent switch
+  useEffect(() => {
+    setConfirming(false);
+  }, [selectedId]);
+
+  useEffect(() => {
+    if (!copied) return;
+    const id = window.setTimeout(() => setCopied(false), 1400);
+    return () => window.clearTimeout(id);
+  }, [copied]);
+
+  const rotateMutation = useMutation({
+    mutationFn: () =>
+      apiClient.post<{ webhookSecret: string }>(`/api/agents/${selectedId}/webhook-secret`, {}),
+    onSuccess: () => {
+      setConfirming(false);
+      queryClient.invalidateQueries({ queryKey: ['agent', selectedId] });
+      toast.success('Webhook secret rotated — update your receiver now.');
+    },
+    onError: (err) => {
+      toast.error(`Failed: ${(err as Error).message}`);
+    },
+  });
+
+  async function copySecret() {
+    if (!secret) return;
+    try {
+      await navigator.clipboard.writeText(secret);
+      setCopied(true);
+    } catch {
+      toast.error('Copy failed');
+    }
+  }
+
+  const smallButton = cn(
+    'inline-flex items-center gap-1 rounded-sm border border-line px-1.5 py-0.5',
+    'font-mono text-[10px] text-fg-2 hover:border-fg-3 hover:text-fg disabled:opacity-50',
+  );
+
+  return (
+    <div>
+      <FieldLabel hint="HMAC-SHA256">Webhook signing secret</FieldLabel>
+      <div className="flex items-center gap-2 rounded-[5px] border border-line bg-surface-2 px-2.5 py-1.5">
+        <input
+          value={secret ?? ''}
+          readOnly
+          className="flex-1 bg-transparent font-mono text-[11.5px] text-fg outline-none"
+        />
+        <button type="button" onClick={copySecret} disabled={!secret} className={smallButton}>
+          <Copy className="h-2.5 w-2.5" />
+          {copied ? 'copied' : 'copy'}
+        </button>
+        {confirming ? (
+          <>
+            <button
+              type="button"
+              onClick={() => rotateMutation.mutate()}
+              disabled={rotateMutation.isPending}
+              className={cn(smallButton, 'border-crit text-crit hover:border-crit hover:text-crit')}
+            >
+              {rotateMutation.isPending ? (
+                <Loader2 className="h-2.5 w-2.5 animate-spin" />
+              ) : (
+                <RefreshCw className="h-2.5 w-2.5" />
+              )}
+              confirm
+            </button>
+            <button type="button" onClick={() => setConfirming(false)} className={smallButton}>
+              cancel
+            </button>
+          </>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setConfirming(true)}
+            disabled={!selectedId || !secret}
+            className={smallButton}
+          >
+            <RefreshCw className="h-2.5 w-2.5" />
+            regenerate
+          </button>
+        )}
+      </div>
+      <p className="mt-2 font-mono text-[11px] text-fg-3">
+        {confirming ? (
+          <span className="text-crit">
+            The old secret stops working immediately — deliveries fail verification until your
+            receiver uses the new one.
+          </span>
+        ) : (
+          <>
+            Every webhook carries <span className="text-accent">X-AgentScope-Signature</span>.
+            Verify it before trusting the payload.
+          </>
+        )}
+      </p>
     </div>
   );
 }

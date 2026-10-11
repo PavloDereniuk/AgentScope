@@ -8,7 +8,12 @@
 import { readFile, readdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { AlertMessage, ChannelSender, DeliveryResult } from '@agentscope/alerter';
+import {
+  type AlertMessage,
+  type ChannelSender,
+  type DeliveryResult,
+  signWebhookPayload,
+} from '@agentscope/alerter';
 import { type Database, agentTransactions, agents, alerts, users } from '@agentscope/db';
 import type { DefaultThresholds, TxSnapshot } from '@agentscope/detector';
 import { PGlite } from '@electric-sql/pglite';
@@ -345,6 +350,20 @@ describe('runTxDetector вЂ” Epic 14 per-agent routing', () => {
       const body = JSON.parse(init.body as string);
       expect(body.agent.name).toBe('Webhook Agent');
       expect(body.alert.ruleName).toBe('slippage_spike');
+
+      // B.3 — signed with the agent's own secret.
+      const [seeded] = await db
+        .select({ webhookSecret: agents.webhookSecret })
+        .from(agents)
+        .where(eq(agents.id, webhookAgentId));
+      const headers = init.headers as Record<string, string>;
+      expect(headers['X-AgentScope-Signature']).toBe(
+        signWebhookPayload(
+          seeded?.webhookSecret ?? '',
+          Number(headers['X-AgentScope-Timestamp']),
+          init.body as string,
+        ),
+      );
 
       // Alert row should record delivery_channel = 'webhook'.
       const [row] = await db

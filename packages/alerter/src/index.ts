@@ -9,5 +9,5 @@ export { deliver } from './deliver';
 export type { DeliverDeps } from './deliver';
 export { createTelegramSender, formatTelegramMessage } from './telegram';
 export type { TelegramConfig } from './telegram';
-export { createWebhookSender } from './webhook';
+export { createWebhookSender, signWebhookPayload } from './webhook';
 export type { FetchLike, WebhookConfig } from './webhook';

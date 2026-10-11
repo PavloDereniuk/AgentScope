@@ -6,6 +6,7 @@
  * 3.7 — GET    /api/agents/:id       single agent + recent_tx_count + last_alert
  * 3.8 — PATCH  /api/agents/:id       partial update (name/tags/webhookUrl/alertRules)
  * 3.9 — DELETE /api/agents/:id       cascade delete via FK
+ * B.3 — POST   /api/agents/:id/webhook-secret   rotate the webhook signing secret
  *
  * Every route expects `c.var.userId` (a Privy DID) populated by
  * `requireAuth`, and looks up the real `users.id` via `ensureUser`
@@ -44,6 +45,15 @@ function generateIngestToken(): string {
 }
 
 /**
+ * HMAC-SHA256 key for signing webhook deliveries (B.3). Same `whsec_` +
+ * 64 hex shape as the DB default in migration 0021, which covers rows
+ * inserted outside this router.
+ */
+function generateWebhookSecret(): string {
+  return `whsec_${randomBytes(32).toString('hex')}`;
+}
+
+/**
  * Rolling window used by `recent_tx_count` on agent detail. 24h is the
  * standard dashboard default — consistent with what Datadog/Grafana use
  * for "recent activity" cards, and short enough to be meaningful for a
@@ -54,11 +64,9 @@ const RECENT_TX_WINDOW_MS = 24 * 60 * 60 * 1000;
 const agentIdParamSchema = z.object({ id: z.string().uuid() });
 
 /**
- * Public projection for read/update responses. `ingestToken` is omitted
- * so the secret only crosses the wire once, on POST /agents (the user
- * needs it to configure their OTel exporter). Every subsequent response
- * — list, detail, patch — uses this projection so the token can never
- * be re-fetched by an authenticated client.
+ * Public projection for list/update responses. `ingestToken` and
+ * `webhookSecret` are omitted: they are returned by POST /agents and by the
+ * owner-scoped detail endpoint (settings page), never by list or patch.
  */
 const AGENT_PUBLIC_COLUMNS = {
   id: agents.id,
@@ -221,6 +229,7 @@ export function createAgentsRouter(
           telegramChatId: body.telegramChatId ?? null,
           alertRules: body.alertRules ?? {},
           ingestToken: generateIngestToken(),
+          webhookSecret: generateWebhookSecret(),
         })
         .returning();
 
@@ -305,10 +314,10 @@ export function createAgentsRouter(
 
       const user = await ensureUser(db, privyDid);
 
-      // ingestToken is intentionally included here — this is the single
-      // owner-scoped detail endpoint the dashboard settings page uses to
-      // surface the token to its owner (copy-to-clipboard for OTel exporter
-      // setup). The list endpoint omits it on purpose (fewer exposures,
+      // ingestToken and webhookSecret are intentionally included here — this
+      // is the single owner-scoped detail endpoint the dashboard settings
+      // page uses to surface both to their owner (copy-to-clipboard for OTel
+      // exporter setup / webhook signature verification). The list endpoint omits it on purpose (fewer exposures,
       // many-agent cache surface). A dedicated reveal endpoint with an
       // explicit confirmation step is tracked for post-MVP.
       const [agent] = await db
@@ -575,6 +584,7 @@ export function createAgentsRouter(
           name: agents.name,
           telegramChatId: agents.telegramChatId,
           webhookUrl: agents.webhookUrl,
+          webhookSecret: agents.webhookSecret,
         })
         .from(agents)
         .where(and(eq(agents.id, agentId), eq(agents.userId, user.id)))
@@ -621,7 +631,7 @@ export function createAgentsRouter(
       const perAgentDeps: DeliverDeps = {
         ...(alerter.telegram ? { telegram: alerter.telegram } : {}),
         ...(channel === 'webhook' && webhookUrl
-          ? { webhook: createWebhookSender({ url: webhookUrl }) }
+          ? { webhook: createWebhookSender({ url: webhookUrl, secret: agent.webhookSecret }) }
           : {}),
       };
 
@@ -657,6 +667,34 @@ export function createAgentsRouter(
         });
       }
       return c.json({ ok: true, delivered: true, channel });
+    },
+  );
+
+  // B.3 — Rotate the webhook signing secret. Takes effect on the next
+  // delivery; there is no overlap window, so the receiver has to switch to
+  // the new secret right away (the settings page says so before rotating).
+  router.post(
+    '/:id/webhook-secret',
+    zValidator('param', agentIdParamSchema, (result) => {
+      if (!result.success) {
+        throw new HTTPException(422, { message: 'invalid agent id (expected uuid)' });
+      }
+    }),
+    async (c) => {
+      const privyDid = c.get('userId');
+      const { id: agentId } = c.req.valid('param');
+
+      const user = await ensureUser(db, privyDid);
+
+      const [updated] = await db
+        .update(agents)
+        .set({ webhookSecret: generateWebhookSecret() })
+        .where(and(eq(agents.id, agentId), eq(agents.userId, user.id)))
+        .returning({ webhookSecret: agents.webhookSecret });
+      if (!updated) {
+        throw new HTTPException(404, { message: 'agent not found' });
+      }
+      return c.json({ webhookSecret: updated.webhookSecret });
     },
   );
 

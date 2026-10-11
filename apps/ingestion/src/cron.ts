@@ -159,6 +159,7 @@ export async function runCronCycle(deps: CronDeps): Promise<number> {
       alertRules: agents.alertRules,
       telegramChatId: agents.telegramChatId,
       webhookUrl: agents.webhookUrl,
+      webhookSecret: agents.webhookSecret,
       alertsPausedUntil: agents.alertsPausedUntil,
     })
     .from(agents);
@@ -166,7 +167,9 @@ export async function runCronCycle(deps: CronDeps): Promise<number> {
   // Shared across the whole cycle: webhook senders are expensive to
   // reconstruct (they parse-validate the URL) and the same agent URL
   // typically fires multiple rules per tick. Scoped per-cycle so stale
-  // senders don't leak if an agent later rotates its webhookUrl.
+  // senders don't leak if an agent later rotates its webhookUrl. Keyed by
+  // URL + secret (B.3): two agents may share one endpoint, but each signs
+  // with its own secret.
   const webhookCache = new Map<string, ReturnType<typeof createWebhookSender>>();
 
   const now = new Date();
@@ -328,10 +331,15 @@ export async function runCronCycle(deps: CronDeps): Promise<number> {
           ...(channel === 'webhook' && webhookUrl
             ? {
                 webhook: (() => {
-                  const cached = webhookCache.get(webhookUrl);
+                  const cacheKey = `${webhookUrl}
+${agent.webhookSecret}`;
+                  const cached = webhookCache.get(cacheKey);
                   if (cached) return cached;
-                  const sender = createWebhookSender({ url: webhookUrl });
-                  webhookCache.set(webhookUrl, sender);
+                  const sender = createWebhookSender({
+                    url: webhookUrl,
+                    secret: agent.webhookSecret,
+                  });
+                  webhookCache.set(cacheKey, sender);
                   return sender;
                 })(),
               }

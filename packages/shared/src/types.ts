@@ -172,6 +172,8 @@ export interface Agent {
   alertRules: AlertRuleThresholds;
   /** Opaque token used by the agent's OTel exporter to authenticate /v1/traces. */
   ingestToken: string;
+  /** HMAC-SHA256 key that signs this agent's webhook deliveries (B.3). */
+  webhookSecret: string;
   status: AgentStatus;
   /**
    * Notifications are paused until this moment (inclusive). Null = active.

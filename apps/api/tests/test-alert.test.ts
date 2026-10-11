@@ -10,6 +10,7 @@
  *   - no row written to `alerts` — the feed stays clean
  */
 
+import { signWebhookPayload } from '@agentscope/alerter';
 import { alerts } from '@agentscope/db';
 import pino from 'pino';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -247,7 +248,9 @@ describe('POST /api/agents/:id/test-alert', () => {
           webhookUrl: 'https://example.com/hooks/abc',
         }),
       });
-      const { agent } = (await createRes.json()) as { agent: { id: string } };
+      const { agent } = (await createRes.json()) as {
+        agent: { id: string; webhookSecret: string };
+      };
 
       const res = await post(ctx, agent.id);
       expect(res.status).toBe(200);
@@ -261,6 +264,14 @@ describe('POST /api/agents/:id/test-alert', () => {
       const webhookBody = JSON.parse(init.body as string);
       expect(webhookBody.agent.name).toBe('WebhookOnly');
       expect(webhookBody.alert.ruleName).toBe('test_alert');
+
+      // B.3 — the test alert is signed with the agent's own secret, so it
+      // also proves the receiver's verification code.
+      const headers = init.headers as Record<string, string>;
+      const timestamp = Number(headers['X-AgentScope-Timestamp']);
+      expect(headers['X-AgentScope-Signature']).toBe(
+        signWebhookPayload(agent.webhookSecret, timestamp, init.body as string),
+      );
     } finally {
       fetchSpy.mockRestore();
     }

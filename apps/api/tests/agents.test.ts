@@ -1507,3 +1507,129 @@ describe('POST /api/agents — owner DID whitelist', () => {
     }
   });
 });
+
+describe('webhook signing secret (B.3)', () => {
+  let ctx: TestApp;
+
+  beforeEach(async () => {
+    ctx = await setup();
+  });
+
+  afterEach(async () => {
+    await ctx.testDb.close();
+  });
+
+  async function createAgent(token = BEARER) {
+    const res = await ctx.app.request('/api/agents', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: token },
+      body: JSON.stringify({
+        walletPubkey: 'So11111111111111111111111111111111111111112',
+        name: 'Signer',
+        framework: 'custom',
+        agentType: 'other',
+      }),
+    });
+    if (res.status !== 201) throw new Error(`seed create failed: ${res.status}`);
+    return (await res.json()) as { agent: { id: string; webhookSecret: string } };
+  }
+
+  function rotate(id: string, app = ctx.app, token = BEARER) {
+    return app.request(`/api/agents/${id}/webhook-secret`, {
+      method: 'POST',
+      headers: { Authorization: token },
+    });
+  }
+
+  it('issues a whsec_ secret on create and returns it on the detail endpoint', async () => {
+    const { agent } = await createAgent();
+    expect(agent.webhookSecret).toMatch(/^whsec_[0-9a-f]{64}$/);
+
+    const res = await ctx.app.request(`/api/agents/${agent.id}`, {
+      headers: { Authorization: BEARER },
+    });
+    const body = (await res.json()) as { agent: { webhookSecret: string } };
+    expect(body.agent.webhookSecret).toBe(agent.webhookSecret);
+  });
+
+  it('never returns the secret from list or patch', async () => {
+    const { agent } = await createAgent();
+
+    const list = await ctx.app.request('/api/agents', { headers: { Authorization: BEARER } });
+    const listBody = (await list.json()) as { agents: Array<Record<string, unknown>> };
+    expect(listBody.agents[0]).not.toHaveProperty('webhookSecret');
+
+    const patch = await ctx.app.request(`/api/agents/${agent.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: BEARER },
+      body: JSON.stringify({ name: 'Renamed' }),
+    });
+    const patchBody = (await patch.json()) as { agent: Record<string, unknown> };
+    expect(patchBody.agent).not.toHaveProperty('webhookSecret');
+  });
+
+  it('backfills a secret for rows inserted without one (migration 0021 default)', async () => {
+    const [user] = await ctx.testDb.db
+      .insert(users)
+      .values({ privyDid: 'did:privy:raw-insert' })
+      .returning();
+    if (!user) throw new Error('user insert failed');
+    const [row] = await ctx.testDb.db
+      .insert(agents)
+      .values({
+        userId: user.id,
+        walletPubkey: 'So11111111111111111111111111111111111111112',
+        name: 'Raw',
+        framework: 'custom',
+        agentType: 'other',
+        ingestToken: 'tok_raw_insert',
+      })
+      .returning({ webhookSecret: agents.webhookSecret });
+    expect(row?.webhookSecret).toMatch(/^whsec_[0-9a-f]{64}$/);
+  });
+
+  it('rotates the secret and persists the new value', async () => {
+    const { agent } = await createAgent();
+
+    const res = await rotate(agent.id);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { webhookSecret: string };
+    expect(body.webhookSecret).toMatch(/^whsec_[0-9a-f]{64}$/);
+    expect(body.webhookSecret).not.toBe(agent.webhookSecret);
+
+    const [row] = await ctx.testDb.db
+      .select({ webhookSecret: agents.webhookSecret })
+      .from(agents)
+      .where(eq(agents.id, agent.id));
+    expect(row?.webhookSecret).toBe(body.webhookSecret);
+  });
+
+  it('returns 401 without auth, 422 for a non-uuid, 404 for an unknown id', async () => {
+    const unauth = await ctx.app.request(
+      '/api/agents/11111111-1111-1111-1111-111111111111/webhook-secret',
+      { method: 'POST' },
+    );
+    expect(unauth.status).toBe(401);
+    expect((await rotate('not-a-uuid')).status).toBe(422);
+    expect((await rotate('11111111-1111-1111-1111-111111111111')).status).toBe(404);
+  });
+
+  it("returns 404 and leaves the secret alone for another user's agent", async () => {
+    const { agent } = await createAgent();
+    const mallory = buildApp({
+      db: ctx.testDb.db,
+      verifier: makeVerifier('did:privy:mallory'),
+      sseBus: createSseBus(),
+      logger: silentLogger,
+    });
+
+    const res = await rotate(agent.id, mallory);
+    expect(res.status).toBe(404);
+
+    const [row] = await ctx.testDb.db
+      .select({ webhookSecret: agents.webhookSecret })
+      .from(agents)
+      .where(eq(agents.id, agent.id));
+    expect(row?.webhookSecret).toBe(agent.webhookSecret);
+  });
+});

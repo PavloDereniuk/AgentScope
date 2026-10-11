@@ -106,6 +106,16 @@ export const agents = pgTable(
     agentType: agentTypeEnum('agent_type').notNull(),
     tags: text('tags').array().notNull().default(sql`ARRAY[]::text[]`),
     webhookUrl: text('webhook_url'),
+    /**
+     * HMAC-SHA256 key for signing webhook deliveries (B.3). Generated per
+     * agent; the DB default covers rows inserted outside the api and the
+     * backfill in migration 0021.
+     */
+    webhookSecret: text('webhook_secret')
+      .notNull()
+      .default(
+        sql`('whsec_' || replace(gen_random_uuid()::text || gen_random_uuid()::text, '-', ''))`,
+      ),
     /** Per-agent Telegram chat_id for alert delivery. Null → fall back to env default. */
     telegramChatId: text('telegram_chat_id'),
     alertRules: jsonb('alert_rules').notNull().default({}),

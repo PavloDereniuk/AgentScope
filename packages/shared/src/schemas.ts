@@ -145,6 +145,7 @@ export const agentSchema = z.object({
   telegramChatId: telegramChatIdSchema.nullable(),
   alertRules: alertRuleThresholdsSchema,
   ingestToken: z.string().min(1),
+  webhookSecret: z.string().min(1),
   status: agentStatusSchema,
   alertsPausedUntil: isoTimestampSchema.nullable(),
   createdAt: isoTimestampSchema,
