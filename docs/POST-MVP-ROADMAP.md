@@ -509,9 +509,9 @@
 
 ### H.1 — Upgrade CTA + waitlist (без білінгу)
 - [x] **H.1** Замість мовчазного приховування Add-кнопки при досягненні cap — картка «Need more than 2 agents?» з коротким поясненням і формою waitlist (email + скільки агентів + який use-case → у БД, нотифікація власнику в Telegram). Жодних платежів, жодного провайдера
-  ⏱ 2 год · 📦 v0.8.4 · 🎯 *(internal — не твітити до появи реальної пропозиції)*
+  ⏱ 2 год · 📦 **v0.5.14 (2026-10-11)** · 🎯 *(internal — не твітити до появи реальної пропозиції)*
   **Файли:** `apps/dashboard/src/routes/agents.tsx` (cap-стан) · `apps/api/src/routes/waitlist.ts` (новий) · `packages/db` migration `upgrade_waitlist`
-  **Реалізовано (2026-10-11, unreleased):** таблиця `upgrade_requests` (міграція `0020`, одна заявка на юзера, RLS owner-policy) · `GET/PUT /api/upgrade-request` · `apps/ingestion/src/upgrade-request-notifier.ts` — outbox → admin-Telegram раз на хвилину (API не має bot-кредів; збій Telegram затримує, а не губить заявку) · `UpgradeCard` на сторінці Agents при cap: Free / Pro $29 / Team $99 як «coming soon» + форма (план, к-сть агентів, email або Telegram, use-case). Ціни показано свідомо — це і є тест цінової реакції.
+  **Реалізовано (2026-10-11) · 📦 v0.5.14:** таблиця `upgrade_requests` (міграція `0020`, одна заявка на юзера, RLS owner-policy) · `GET/PUT /api/upgrade-request` · `apps/ingestion/src/upgrade-request-notifier.ts` — outbox → admin-Telegram раз на хвилину (API не має bot-кредів; збій Telegram затримує, а не губить заявку) · `UpgradeCard` на сторінці Agents при cap: Free / Pro $29 / Team $99 як «coming soon» + форма (план, к-сть агентів, email або Telegram, use-case). Ціни показано свідомо — це і є тест цінової реакції.
   **Обґрунтування:** дає pipeline-сигнал за 2 години і **не вимагає жодного рішення про ціни**. Якщо за місяць нуль заявок — H.2 не потрібен, і ми зекономили тижні. Якщо заявки є — у нас є конкретні use-case'и, на яких будувати тариф.
 
 ### H.2 — Реальний білінг
@@ -667,6 +667,7 @@
 | v0.5.11 | 2026-09-22 | G.1 (milestone proof export by grant definitions) | ✅ released |
 | v0.5.12 | 2026-09-28 | Solana v1 transactions ingested again (fix `2dcbce7`) + E.11 nightly backup | ✅ released |
 | v0.5.13 | 2026-09-28 | stale/low-balance alerts once a day + no-channel → skipped (`6512890`) + E.16 Helius credit leaks | ✅ released |
+| v0.5.14 | 2026-10-11 | H.1 upgrade request waitlist at the agent cap (`e57f0d9`) | ✅ released |
 | … | … | … | … |
 
 ---

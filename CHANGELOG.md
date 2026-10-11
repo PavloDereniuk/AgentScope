@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.14] - 2026-10-11
+
+### Added
+- **Request a paid plan when you hit the agent limit** (H.1) — free accounts that reach the 2-agent cap now see the planned Pro ($29/mo) and Team ($99/mo) tiers on the Agents page and can request early access, instead of a dead-end "limit reached" line. Paid tiers are marked as coming soon — nothing is billed. The request form takes the plan, how many agents you need, an email or Telegram handle, and what your agents do; one request per account, and submitting again updates it.
+- `GET/PUT /api/upgrade-request` — authenticated, zod-validated, scoped to the caller.
+- The ingestion worker forwards new and updated requests to the admin Telegram chat within a minute. Requests are an outbox (`notified_at IS NULL`), so a Telegram outage delays a request instead of losing it, and the api holds no bot credentials.
+
+⚠️ DB migration required: `0020_upgrade_requests.sql` (already applied to production).
+
 ## [0.5.13] - 2026-09-28
 
 ### Changed
@@ -360,7 +369,8 @@ First post-submission iteration. The 2026-05-11 Colosseum Frontier submission sh
 ### Security
 - RLS enabled on every child partition of `agent_transactions` (`2026_04` through `2026_09` plus `_default`). Postgres does not inherit RLS from a partitioned parent, and PostgREST exposes each partition as its own `/rest/v1/<name>` endpoint — without per-partition `ENABLE ROW LEVEL SECURITY`, an anon/authenticated caller could hit a partition directly and bypass the parent's `tx_owner_access` policy. New migration `0010_rls_on_partitions.sql`; service-role ingestion (BYPASSRLS) untouched. ([`1ac359d`](https://github.com/PavloDereniuk/AgentScope/commit/1ac359d), P.11)
 
-[Unreleased]: https://github.com/PavloDereniuk/AgentScope/compare/v0.5.13...HEAD
+[Unreleased]: https://github.com/PavloDereniuk/AgentScope/compare/v0.5.14...HEAD
+[0.5.14]: https://github.com/PavloDereniuk/AgentScope/releases/tag/v0.5.14
 [0.5.13]: https://github.com/PavloDereniuk/AgentScope/releases/tag/v0.5.13
 [0.5.12]: https://github.com/PavloDereniuk/AgentScope/releases/tag/v0.5.12
 [0.5.11]: https://github.com/PavloDereniuk/AgentScope/releases/tag/v0.5.11
