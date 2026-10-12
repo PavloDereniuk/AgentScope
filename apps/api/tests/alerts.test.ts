@@ -299,3 +299,171 @@ describe('GET /api/alerts', () => {
     expect(body.alerts[0]?.severity).toBe('critical');
   });
 });
+
+function setFeedback(ctx: TestApp, alertId: string, body: unknown, token = BEARER) {
+  return ctx.app.request(`/api/alerts/${alertId}/feedback`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: token },
+    body: JSON.stringify(body),
+  });
+}
+
+async function seedAlert(
+  ctx: TestApp,
+  agentId: string,
+  ruleName: 'gas_spike' | 'drawdown' = 'gas_spike',
+  triggeredAt: string = new Date().toISOString(),
+): Promise<string> {
+  const [row] = await ctx.testDb.db
+    .insert(alerts)
+    .values({ agentId, ruleName, severity: 'warning', payload: {}, triggeredAt })
+    .returning({ id: alerts.id });
+  if (!row) throw new Error('seed alert failed');
+  return row.id;
+}
+
+function bobApp(ctx: TestApp) {
+  return buildApp({
+    db: ctx.testDb.db,
+    verifier: makeVerifier('did:privy:user-bob'),
+    sseBus: createSseBus(),
+    logger: silentLogger,
+  });
+}
+
+const WALLET = 'So11111111111111111111111111111111111111112';
+
+describe('PATCH /api/alerts/:id/feedback', () => {
+  let ctx: TestApp;
+
+  beforeEach(async () => {
+    ctx = await setup();
+  });
+
+  afterEach(async () => {
+    await ctx.testDb.close();
+  });
+
+  it('labels an alert and surfaces the label in the feed', async () => {
+    const agent = await createAgent(ctx, 'Bot', WALLET);
+    const alertId = await seedAlert(ctx, agent.id);
+
+    const res = await setFeedback(ctx, alertId, { feedback: 'noise' });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      alert: { id: string; feedback: string; feedbackAt: string | null };
+    };
+    expect(body.alert.id).toBe(alertId);
+    expect(body.alert.feedback).toBe('noise');
+    expect(body.alert.feedbackAt).not.toBeNull();
+
+    const list = (await (await listAlerts(ctx)).json()) as {
+      alerts: Array<{ id: string; feedback: string | null }>;
+    };
+    expect(list.alerts[0]?.feedback).toBe('noise');
+  });
+
+  it('clears the label with null', async () => {
+    const agent = await createAgent(ctx, 'Bot', WALLET);
+    const alertId = await seedAlert(ctx, agent.id);
+    await setFeedback(ctx, alertId, { feedback: 'useful' });
+
+    const res = await setFeedback(ctx, alertId, { feedback: null });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      alert: { feedback: string | null; feedbackAt: string | null };
+    };
+    expect(body.alert.feedback).toBeNull();
+    expect(body.alert.feedbackAt).toBeNull();
+  });
+
+  it('returns 422 for an unknown label or a missing field', async () => {
+    const agent = await createAgent(ctx, 'Bot', WALLET);
+    const alertId = await seedAlert(ctx, agent.id);
+    expect((await setFeedback(ctx, alertId, { feedback: 'meh' })).status).toBe(422);
+    expect((await setFeedback(ctx, alertId, {})).status).toBe(422);
+  });
+
+  it('returns 422 for a non-uuid alert id', async () => {
+    const res = await setFeedback(ctx, 'not-a-uuid', { feedback: 'noise' });
+    expect(res.status).toBe(422);
+  });
+
+  it("returns 404 for another user's alert and leaves it untouched", async () => {
+    const agent = await createAgent(ctx, 'Alice bot', WALLET);
+    const alertId = await seedAlert(ctx, agent.id);
+
+    const res = await bobApp(ctx).request(`/api/alerts/${alertId}/feedback`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: BEARER },
+      body: JSON.stringify({ feedback: 'noise' }),
+    });
+    expect(res.status).toBe(404);
+
+    const list = (await (await listAlerts(ctx)).json()) as {
+      alerts: Array<{ feedback: string | null }>;
+    };
+    expect(list.alerts[0]?.feedback).toBeNull();
+  });
+
+  it('rejects unauthenticated requests with 401', async () => {
+    const res = await ctx.app.request('/api/alerts/00000000-0000-4000-8000-000000000000/feedback', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ feedback: 'noise' }),
+    });
+    expect(res.status).toBe(401);
+  });
+});
+
+describe('GET /api/alerts/feedback-stats', () => {
+  let ctx: TestApp;
+
+  beforeEach(async () => {
+    ctx = await setup();
+  });
+
+  afterEach(async () => {
+    await ctx.testDb.close();
+  });
+
+  it('rolls labels up per rule inside the window', async () => {
+    const agent = await createAgent(ctx, 'Bot', WALLET);
+    const g1 = await seedAlert(ctx, agent.id, 'gas_spike');
+    const g2 = await seedAlert(ctx, agent.id, 'gas_spike');
+    await seedAlert(ctx, agent.id, 'gas_spike');
+    const d1 = await seedAlert(ctx, agent.id, 'drawdown');
+    // Outside the 30-day window — must not count.
+    await seedAlert(ctx, agent.id, 'drawdown', '2020-01-01T00:00:00.000Z');
+    await setFeedback(ctx, g1, { feedback: 'noise' });
+    await setFeedback(ctx, g2, { feedback: 'useful' });
+    await setFeedback(ctx, d1, { feedback: 'noise' });
+
+    const res = await ctx.app.request(`/api/alerts/feedback-stats?agentId=${agent.id}`, {
+      headers: { Authorization: BEARER },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { windowDays: number; rules: unknown[] };
+    expect(body.windowDays).toBe(30);
+    // Ordered by the pg enum's declaration order, not alphabetically.
+    expect(body.rules).toEqual([
+      { ruleName: 'gas_spike', total: 3, useful: 1, noise: 1 },
+      { ruleName: 'drawdown', total: 1, useful: 0, noise: 1 },
+    ]);
+  });
+
+  it("returns 404 for another user's agent", async () => {
+    const agent = await createAgent(ctx, 'Alice bot', WALLET);
+    const res = await bobApp(ctx).request(`/api/alerts/feedback-stats?agentId=${agent.id}`, {
+      headers: { Authorization: BEARER },
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 422 without an agentId', async () => {
+    const res = await ctx.app.request('/api/alerts/feedback-stats', {
+      headers: { Authorization: BEARER },
+    });
+    expect(res.status).toBe(422);
+  });
+});

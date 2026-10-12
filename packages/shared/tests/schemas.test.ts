@@ -414,8 +414,28 @@ describe('alertSchema', () => {
       deliveryChannel: null,
       deliveryStatus: 'pending',
       deliveryError: null,
+      feedback: null,
+      feedbackAt: null,
     });
     expect(alert.severity).toBe('critical');
+  });
+
+  it('accepts an owner feedback label and rejects an unknown one', () => {
+    const base = {
+      id: VALID_UUID,
+      agentId: VALID_UUID,
+      ruleName: 'gas_spike',
+      severity: 'warning',
+      payload: {},
+      triggeredAt: VALID_TIMESTAMP,
+      deliveredAt: null,
+      deliveryChannel: null,
+      deliveryStatus: 'skipped',
+      deliveryError: null,
+      feedbackAt: VALID_TIMESTAMP,
+    };
+    expect(alertSchema.parse({ ...base, feedback: 'noise' }).feedback).toBe('noise');
+    expect(() => alertSchema.parse({ ...base, feedback: 'meh' })).toThrow();
   });
 
   it('rejects unknown ruleName', () => {
@@ -431,6 +451,8 @@ describe('alertSchema', () => {
         deliveryChannel: null,
         deliveryStatus: 'pending',
         deliveryError: null,
+        feedback: null,
+        feedbackAt: null,
       }),
     ).toThrow();
   });

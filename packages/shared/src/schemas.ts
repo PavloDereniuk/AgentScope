@@ -30,6 +30,7 @@ import {
   AGENT_FRAMEWORKS,
   AGENT_STATUSES,
   AGENT_TYPES,
+  ALERT_FEEDBACK_VALUES,
   ALERT_RULE_NAMES,
   ALERT_SEVERITIES,
   DELIVERY_CHANNELS,
@@ -82,6 +83,7 @@ export const alertSeveritySchema = z.enum(ALERT_SEVERITIES);
 export const alertRuleNameSchema = z.enum(ALERT_RULE_NAMES);
 export const deliveryChannelSchema = z.enum(DELIVERY_CHANNELS);
 export const deliveryStatusSchema = z.enum(DELIVERY_STATUSES);
+export const alertFeedbackSchema = z.enum(ALERT_FEEDBACK_VALUES);
 
 // ─── User ──────────────────────────────────────────────────────────────────
 
@@ -255,6 +257,8 @@ export const alertSchema = z.object({
   deliveryChannel: deliveryChannelSchema.nullable(),
   deliveryStatus: deliveryStatusSchema,
   deliveryError: z.string().nullable(),
+  feedback: alertFeedbackSchema.nullable(),
+  feedbackAt: isoTimestampSchema.nullable(),
 });
 
 // ─── API envelopes ─────────────────────────────────────────────────────────

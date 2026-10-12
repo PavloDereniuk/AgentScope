@@ -1,16 +1,19 @@
+import { nextFeedback } from '@/lib/alert-feedback';
 import { markAlertsSeen } from '@/lib/alerts-seen';
 import { apiClient } from '@/lib/api-client';
 import { cn } from '@/lib/utils';
 import {
+  type AlertFeedback,
   formatAlertDetails,
   formatAlertSummary,
   formatRuleTitle,
   isOnChainSignature,
 } from '@agentscope/shared';
-import { useQuery } from '@tanstack/react-query';
-import { ChevronDown, ChevronRight, ExternalLink } from 'lucide-react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { ChevronDown, ChevronRight, ExternalLink, ThumbsDown, ThumbsUp } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { toast } from 'sonner';
 
 type Severity = 'info' | 'warning' | 'critical';
 
@@ -26,6 +29,7 @@ interface AlertRow {
   deliveryChannel: string | null;
   deliveryStatus: string;
   deliveryError: string | null;
+  feedback: AlertFeedback | null;
 }
 
 const SEVERITIES: Severity[] = ['info', 'warning', 'critical'];
@@ -66,6 +70,34 @@ export function AlertsPage() {
   });
 
   const alerts = data?.alerts ?? [];
+
+  const queryClient = useQueryClient();
+  // C.10 — label an alert useful / noise. Optimistic: the thumbs flip at
+  // once across every cached alerts list, and roll back if the PATCH fails.
+  const feedbackMutation = useMutation({
+    mutationFn: ({ id, feedback }: { id: string; feedback: AlertFeedback | null }) =>
+      apiClient.patch(`/api/alerts/${id}/feedback`, { feedback }),
+    onMutate: async ({ id, feedback }) => {
+      await queryClient.cancelQueries({ queryKey: ['alerts'] });
+      const previous = queryClient.getQueriesData<{ alerts: AlertRow[] }>({
+        queryKey: ['alerts'],
+      });
+      queryClient.setQueriesData<{ alerts: AlertRow[] }>({ queryKey: ['alerts'] }, (old) =>
+        old?.alerts
+          ? { ...old, alerts: old.alerts.map((a) => (a.id === id ? { ...a, feedback } : a)) }
+          : old,
+      );
+      return { previous };
+    },
+    onError: (err, _vars, context) => {
+      for (const [key, value] of context?.previous ?? []) queryClient.setQueryData(key, value);
+      toast.error(`Could not save feedback: ${(err as Error).message}`);
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['alerts'] });
+      queryClient.invalidateQueries({ queryKey: ['alert-feedback-stats'] });
+    },
+  });
 
   // Mark the global feed as "seen" after every successful fetch on
   // this page, so the sidebar badge collapses to 0 and stays there
@@ -186,34 +218,46 @@ export function AlertsPage() {
                 const isOpen = expandedId === alert.id;
                 return (
                   <div key={alert.id} className="border-b border-line-soft last:border-b-0">
-                    <button
-                      type="button"
-                      onClick={() => setExpandedId(isOpen ? null : alert.id)}
-                      aria-expanded={isOpen}
-                      className={cn(
-                        'grid w-full grid-cols-[16px_10px_160px_1fr_auto_auto] items-center gap-3.5 px-4 py-3 text-left text-[13px] transition-colors',
-                        'hover:bg-surface-3',
-                      )}
-                    >
-                      {isOpen ? (
-                        <ChevronDown className="h-3.5 w-3.5 text-fg-3" />
-                      ) : (
-                        <ChevronRight className="h-3.5 w-3.5 text-fg-3" />
-                      )}
-                      <SevDot severity={alert.severity} />
-                      <span className="font-mono text-[10.5px] uppercase tracking-[0.06em] text-fg-2">
-                        {alert.ruleName.replace(/_/g, '·')}
-                      </span>
-                      <span className="min-w-0 truncate text-fg-2">
-                        <span className="text-fg">
-                          {formatAlertSummary(alert.ruleName, alert.payload)}
+                    {/* Feedback buttons sit beside the toggle, not inside it —
+                        a <button> cannot nest interactive content. */}
+                    <div className="flex items-center transition-colors hover:bg-surface-3">
+                      <button
+                        type="button"
+                        onClick={() => setExpandedId(isOpen ? null : alert.id)}
+                        aria-expanded={isOpen}
+                        className={cn(
+                          'grid min-w-0 flex-1 grid-cols-[16px_10px_160px_1fr_auto_auto] items-center gap-3.5 py-3 pl-4 pr-2 text-left text-[13px]',
+                        )}
+                      >
+                        {isOpen ? (
+                          <ChevronDown className="h-3.5 w-3.5 text-fg-3" />
+                        ) : (
+                          <ChevronRight className="h-3.5 w-3.5 text-fg-3" />
+                        )}
+                        <SevDot severity={alert.severity} />
+                        <span className="font-mono text-[10.5px] uppercase tracking-[0.06em] text-fg-2">
+                          {alert.ruleName.replace(/_/g, '·')}
                         </span>
-                      </span>
-                      <span className="font-mono text-[11px] text-fg-3">{alert.agentName}</span>
-                      <span className="font-mono text-[11px] text-fg-3">
-                        {formatRelative(alert.triggeredAt)}
-                      </span>
-                    </button>
+                        <span className="min-w-0 truncate text-fg-2">
+                          <span className="text-fg">
+                            {formatAlertSummary(alert.ruleName, alert.payload)}
+                          </span>
+                        </span>
+                        <span className="font-mono text-[11px] text-fg-3">{alert.agentName}</span>
+                        <span className="font-mono text-[11px] text-fg-3">
+                          {formatRelative(alert.triggeredAt)}
+                        </span>
+                      </button>
+                      <FeedbackButtons
+                        feedback={alert.feedback}
+                        onChange={(feedback) =>
+                          feedbackMutation.mutate({
+                            id: alert.id,
+                            feedback: nextFeedback(alert.feedback, feedback),
+                          })
+                        }
+                      />
+                    </div>
                     {isOpen ? <AlertDetails alert={alert} /> : null}
                   </div>
                 );
@@ -222,6 +266,49 @@ export function AlertsPage() {
           )}
         </section>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Thumbs up / down for one alert (C.10). Toggle semantics live in
+ * `nextFeedback`; this only renders the active state.
+ */
+function FeedbackButtons({
+  feedback,
+  onChange,
+}: {
+  feedback: AlertFeedback | null;
+  onChange: (clicked: AlertFeedback) => void;
+}) {
+  return (
+    <div className="flex shrink-0 items-center gap-0.5 pr-3">
+      <button
+        type="button"
+        onClick={() => onChange('useful')}
+        aria-pressed={feedback === 'useful'}
+        aria-label="Mark alert as useful"
+        title="Useful"
+        className={cn(
+          'rounded-sm p-1 transition-colors',
+          feedback === 'useful' ? 'text-accent' : 'text-fg-3 hover:text-fg',
+        )}
+      >
+        <ThumbsUp className="h-3.5 w-3.5" />
+      </button>
+      <button
+        type="button"
+        onClick={() => onChange('noise')}
+        aria-pressed={feedback === 'noise'}
+        aria-label="Mark alert as noise"
+        title="Noise"
+        className={cn(
+          'rounded-sm p-1 transition-colors',
+          feedback === 'noise' ? 'text-warn' : 'text-fg-3 hover:text-fg',
+        )}
+      >
+        <ThumbsDown className="h-3.5 w-3.5" />
+      </button>
     </div>
   );
 }

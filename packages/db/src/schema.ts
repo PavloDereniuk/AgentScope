@@ -18,6 +18,7 @@ import {
   AGENT_TYPES,
   ALERT_RULE_NAMES,
   ALERT_SEVERITIES,
+  type AlertFeedback,
   DELIVERY_CHANNELS,
   DELIVERY_STATUSES,
 } from '@agentscope/shared';
@@ -254,6 +255,13 @@ export const alerts = pgTable(
      * key silently falls back to per-agent/per-rule pairing.
      */
     dedupeKey: text('dedupe_key'),
+    /**
+     * Owner's label from the alerts feed (C.10): `useful` | `noise`, null
+     * while unlabelled. CHECK-constrained in migration 0022. Feeds the
+     * per-rule noise rate in Settings and the D.1 threshold tuner.
+     */
+    feedback: text('feedback').$type<AlertFeedback>(),
+    feedbackAt: timestamp('feedback_at', { withTimezone: true, mode: 'string' }),
   },
   (t) => ({
     agentTimeIdx: index('alerts_agent_time_idx').on(t.agentId, t.triggeredAt),

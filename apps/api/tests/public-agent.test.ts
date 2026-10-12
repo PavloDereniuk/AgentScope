@@ -153,6 +153,22 @@ describe('Public demo agent endpoints (C.0b)', () => {
       expect(body.lastAlert).toBeNull();
     });
 
+    it("omits the owner's alert feedback label from lastAlert", async () => {
+      await ctx.testDb.db.insert(alerts).values({
+        agentId: ctx.demoAgentDbId,
+        ruleName: 'gas_spike',
+        severity: 'warning',
+        payload: {},
+        feedback: 'noise',
+        feedbackAt: new Date().toISOString(),
+      });
+      const res = await ctx.app.request(`/public/agents/${ctx.demoAgentDbId}/overview`);
+      const body = (await res.json()) as { lastAlert: Record<string, unknown> | null };
+      expect(body.lastAlert?.ruleName).toBe('gas_spike');
+      expect(body.lastAlert).not.toHaveProperty('feedback');
+      expect(body.lastAlert).not.toHaveProperty('feedbackAt');
+    });
+
     it('is accessible without Authorization header', async () => {
       const res = await ctx.app.request(`/public/agents/${ctx.demoAgentDbId}/overview`, {
         headers: {},

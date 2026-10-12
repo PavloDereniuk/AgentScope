@@ -43,6 +43,10 @@ export type DeliveryChannel = (typeof DELIVERY_CHANNELS)[number];
 export const DELIVERY_STATUSES = ['pending', 'delivered', 'failed', 'skipped'] as const;
 export type DeliveryStatus = (typeof DELIVERY_STATUSES)[number];
 
+/** Owner's label on an alert (C.10). Null on the row means unlabelled. */
+export const ALERT_FEEDBACK_VALUES = ['useful', 'noise'] as const;
+export type AlertFeedback = (typeof ALERT_FEEDBACK_VALUES)[number];
+
 // ─── Branded primitives ───────────────────────────────────────────────────────
 
 import type { Brand } from './brand';
@@ -294,6 +298,8 @@ export interface Alert {
   deliveryChannel: DeliveryChannel | null;
   deliveryStatus: DeliveryStatus;
   deliveryError: string | null;
+  feedback: AlertFeedback | null;
+  feedbackAt: ISOTimestamp | null;
 }
 
 // ─── API response envelopes ───────────────────────────────────────────────────

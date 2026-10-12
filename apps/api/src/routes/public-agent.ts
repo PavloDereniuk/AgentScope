@@ -147,12 +147,18 @@ export function createPublicAgentRouter(deps: PublicAgentRouterDeps) {
     const txCount = recentTxCount;
     const successCount = solDeltaRow?.successCount ?? 0;
 
+    // The owner's useful/noise label (C.10) is private triage state, not
+    // part of the public demo surface.
+    const publicLastAlert = lastAlert
+      ? (({ feedback: _feedback, feedbackAt: _feedbackAt, ...rest }) => rest)(lastAlert)
+      : null;
+
     return c.json({
       agent,
       recentTxCount,
       solDelta24h: solDeltaRow?.solDelta24h ?? '0',
       successRate24h: txCount > 0 ? successCount / txCount : null,
-      lastAlert: lastAlert ?? null,
+      lastAlert: publicLastAlert,
     });
   });
 

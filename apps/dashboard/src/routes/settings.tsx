@@ -9,6 +9,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import { type RuleFeedbackStats, noiseRate } from '@/lib/alert-feedback';
 import { apiClient } from '@/lib/api-client';
 import { formatPausedUntil } from '@/lib/format-paused';
 import { cn } from '@/lib/utils';
@@ -87,6 +88,17 @@ export function SettingsPage() {
     enabled: Boolean(selectedId),
   });
   const selected = detail?.agent;
+
+  // C.10 — useful/noise labels rolled up per rule, shown beside each rule
+  // in the per-rule pause list so a noisy rule is one click from silenced.
+  const { data: feedbackStats } = useQuery({
+    queryKey: ['alert-feedback-stats', selectedId],
+    queryFn: () =>
+      apiClient.get<{ windowDays: number; rules: RuleFeedbackStats[] }>(
+        `/api/alerts/feedback-stats?agentId=${selectedId}`,
+      ),
+    enabled: Boolean(selectedId),
+  });
 
   const mutation = useMutation({
     mutationFn: (body: Record<string, unknown>) =>
@@ -449,6 +461,7 @@ export function SettingsPage() {
                   alertRules={selected?.alertRules ?? null}
                   onUpdate={updateRulePause}
                   isPending={perRulePauseMutation.isPending}
+                  feedbackStats={feedbackStats}
                 />
                 <div>
                   <div className="mb-1.5 flex items-center justify-between">
@@ -900,13 +913,16 @@ function PerRulePauseControls({
   alertRules,
   onUpdate,
   isPending,
+  feedbackStats,
 }: {
   selectedId: string;
   alertRules: AlertRuleThresholds | null;
   onUpdate: (ruleName: AlertRuleName, untilIso: string | null) => void;
   isPending: boolean;
+  feedbackStats: { windowDays: number; rules: RuleFeedbackStats[] } | undefined;
 }) {
   const now = new Date();
+  const statsByRule = new Map(feedbackStats?.rules.map((r) => [r.ruleName, r]));
 
   function presetIso(label: string): string {
     if (label === 'forever') return PAUSE_FOREVER;
@@ -923,12 +939,16 @@ function PerRulePauseControls({
 
   return (
     <div>
-      <FieldLabel hint="silence specific rules without muting the agent">Per-rule pause</FieldLabel>
+      <FieldLabel hint="silence specific rules without muting the agent · noise % = your thumbs-down share in Alerts">
+        Per-rule pause
+      </FieldLabel>
       <div className="overflow-hidden rounded-[5px] border border-line bg-surface-2">
         {ALERT_RULE_NAMES.map((ruleName, idx) => {
           const paused = isRulePaused(alertRules, ruleName, now);
           const untilIso = paused ? (alertRules?.pausedUntil?.[ruleName] ?? null) : null;
           const display = formatPausedUntil(untilIso, now);
+          const stats = statsByRule.get(ruleName);
+          const noise = noiseRate(stats);
           return (
             <div
               key={ruleName}
@@ -951,6 +971,17 @@ function PerRulePauseControls({
                     active
                   </span>
                 )}
+                {noise ? (
+                  <span
+                    title={`${stats?.noise ?? 0} noise · ${stats?.useful ?? 0} useful · ${stats?.total ?? 0} alerts in the last ${feedbackStats?.windowDays ?? 30} days`}
+                    className={cn(
+                      'font-mono text-[10.5px]',
+                      noise.pct >= 50 ? 'text-warn' : 'text-fg-3',
+                    )}
+                  >
+                    {noise.pct}% noise · {noise.labelled} rated
+                  </span>
+                ) : null}
               </div>
               {paused ? (
                 <button
