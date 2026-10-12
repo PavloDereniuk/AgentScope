@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.3] - 2026-10-12
+
+### Added
+- **Alert feedback** (C.10) — rate every alert in the Alerts feed as useful or noise with a thumbs up / down; clicking the active one clears it. The change shows instantly and rolls back if the save fails.
+- Settings → Per-rule pause shows each rule's noise rate (`X% noise · N rated`) over the last 30 days, highlighted at 50% and above, so a noisy rule is one click from paused. Only rated alerts count, so unrated ones don't dilute the rate. These labels are the ground truth for the upcoming threshold auto-tuning (D.1).
+- `PATCH /api/alerts/:id/feedback` — `{ "feedback": "useful" | "noise" | null }`, owner-scoped (404 for alerts you don't own).
+- `GET /api/alerts/feedback-stats?agentId=` — per-rule `total / useful / noise` for the last 30 days.
+- Labels are private: the public demo agent's overview never exposes them.
+
+⚠️ DB migration required: `0022_alert_feedback.sql` (already applied to production).
+
 ## [0.6.2] - 2026-10-11
 
 ### Added

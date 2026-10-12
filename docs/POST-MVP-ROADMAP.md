@@ -400,10 +400,11 @@
   **Залежність:** public sanitization паттерн з C.0b/C.6. **Відкрите питання:** SVG→PNG без депа — треба перевірити, чи вистачає можливостей; якщо ні, віддавати SVG і не тягнути `resvg`/`sharp`.
 
 ### C.10 — Alert feedback («useful / noise»)
-- [ ] **C.10** (додано 2026-07-28) Дві кнопки на кожному alert у фіді → `alerts.feedback` enum (`useful` / `noise` / null). Показувати noise-rate per rule у settings. Дає **реальні лейбли** замість чистої статистики і напряму годує D.1 auto-tuning
+- [x] **C.10** (додано 2026-07-28) Дві кнопки на кожному alert у фіді → `alerts.feedback` enum (`useful` / `noise` / null). Показувати noise-rate per rule у settings. Дає **реальні лейбли** замість чистої статистики і напряму годує D.1 auto-tuning
   ⏱ 1 день · 📦 v0.8.3 · 🎯 *"Every AgentScope alert now has a thumbs up/down. Tell us which ones were noise and your thresholds tune themselves against your labels, not our guesses. Alert fatigue is a product bug, not a user problem."*
   **Файли:** `packages/db` migration (`alerts.feedback`) · `apps/api/src/routes/alerts.ts` PATCH · `apps/dashboard/src/routes/alerts.tsx`
   **Залежність:** D.1 (auto-tuning) стає суттєво сильнішим з цими даними → **робити C.10 ПЕРЕД D.1**, щоб на момент D.1 уже назбиралась історія лейблів.
+  ✅ **Shipped v0.8.3 (2026-10-12, `5c0c7e5`).** `alerts.feedback` як `text` + CHECK замість enum (міграція 0022, прецедент 0020), `PATCH /api/alerts/:id/feedback` + `GET /api/alerts/feedback-stats` (30 днів), 👍/👎 у фіді з optimistic toggle, noise % у Settings → Per-rule pause (знаменник — лише оцінені). Лейбл вирізано з публічного overview.
 
 **Cluster C total:** ~16.5 днів, 12 micro-releases (v0.4.8 → v0.8.3)
 
@@ -670,6 +671,7 @@
 | v0.5.13 | 2026-09-28 | stale/low-balance alerts once a day + no-channel → skipped (`6512890`) + E.16 Helius credit leaks | ✅ released |
 | v0.5.14 | 2026-10-11 | H.1 upgrade request waitlist at the agent cap (`e57f0d9`) | ✅ released |
 | v0.6.2 | 2026-10-11 | B.3 webhook HMAC signing (`5a278a5`) | ✅ released |
+| v0.8.3 | 2026-10-12 | C.10 alert feedback useful/noise + per-rule noise rate (`5c0c7e5`) | ✅ released |
 | … | … | … | … |
 
 ---
