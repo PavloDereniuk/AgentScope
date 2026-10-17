@@ -319,7 +319,7 @@
   **Файли:** `Dockerfile` · `docker-compose.yml` · `docs/SELF-HOST.md` · CI build push на GHCR
 
 ### B.8 — Agent ingest-token rotation
-- [ ] **B.8** `POST /api/agents/:id/rotate-token` — генерує новий `ingest_token`, інвалідує старий (grace period 1h). Settings UI кнопка "Rotate token"
+- [x] **B.8** `POST /api/agents/:id/rotate-token` — генерує новий `ingest_token`, інвалідує старий (grace period 1h). Settings UI кнопка "Rotate token"
   ⏱ 1 день · 📦 v0.7.1 · 🎯 *"Compromised an agent's ingest token? Rotate it from the dashboard with one click — 1h grace window so your running agent keeps emitting while you redeploy. Security 101 for production agents."*
   **Файли:** `apps/api/src/routes/agents.ts` POST endpoint · `apps/dashboard/src/routes/settings.tsx`
 
@@ -672,6 +672,7 @@
 | v0.5.14 | 2026-10-11 | H.1 upgrade request waitlist at the agent cap (`e57f0d9`) | ✅ released |
 | v0.6.2 | 2026-10-11 | B.3 webhook HMAC signing (`5a278a5`) | ✅ released |
 | v0.8.3 | 2026-10-12 | C.10 alert feedback useful/noise + per-rule noise rate (`5c0c7e5`) | ✅ released |
+| v0.8.4 | 2026-10-17 | B.8 ingest-token rotation with 1h grace + revoke-now (`eaa6385`; slot was v0.7.1, bumped to stay monotonic after v0.8.3) | ✅ released |
 | … | … | … | … |
 
 ---

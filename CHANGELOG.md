@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.4] - 2026-10-17
+
+### Added
+- **Ingest token rotation** (B.8) — Settings → Ingest Token now has a rotate button with two choices. **1h grace** issues a new token and keeps the old one working for an hour, so a running agent keeps reporting while you redeploy it with the new one; Settings shows how long the old token has left. **Revoke now** kills the old token immediately — use it when a token has leaked.
+- `POST /api/agents/:id/rotate-token` — returns `{ ingestToken, previousIngestTokenExpiresAt }`; `?immediate=true` skips the grace window. Applies to every ingest surface (`/v1/traces`, `/v1/spans`, `agentscope stream`). Only one previous token is kept: rotating again inside the window revokes the older one. The old token is never returned by the API; the agent detail endpoint only reports when it expires.
+
+⚠️ DB migration required: `0023_ingest_token_rotation.sql` (already applied to production).
+
 ## [0.8.3] - 2026-10-12
 
 ### Added
