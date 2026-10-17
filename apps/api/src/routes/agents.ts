@@ -7,6 +7,7 @@
  * 3.8 — PATCH  /api/agents/:id       partial update (name/tags/webhookUrl/alertRules)
  * 3.9 — DELETE /api/agents/:id       cascade delete via FK
  * B.3 — POST   /api/agents/:id/webhook-secret   rotate the webhook signing secret
+ * B.8 — POST   /api/agents/:id/rotate-token     rotate the ingest token (1h grace)
  *
  * Every route expects `c.var.userId` (a Privy DID) populated by
  * `requireAuth`, and looks up the real `users.id` via `ensureUser`
@@ -62,6 +63,17 @@ function generateWebhookSecret(): string {
 const RECENT_TX_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 const agentIdParamSchema = z.object({ id: z.string().uuid() });
+
+/**
+ * How long a rotated-out ingest token keeps authenticating (B.8). An hour
+ * covers a redeploy of a running agent; `?immediate=true` skips it for a
+ * leaked token.
+ */
+const INGEST_TOKEN_GRACE_SECONDS = 60 * 60;
+
+const rotateTokenQuerySchema = z.object({
+  immediate: z.enum(['true', 'false']).optional(),
+});
 
 /**
  * Public projection for list/update responses. `ingestToken` and
@@ -320,14 +332,17 @@ export function createAgentsRouter(
       // exporter setup / webhook signature verification). The list endpoint omits it on purpose (fewer exposures,
       // many-agent cache surface). A dedicated reveal endpoint with an
       // explicit confirmation step is tracked for post-MVP.
-      const [agent] = await db
+      const [row] = await db
         .select()
         .from(agents)
         .where(and(eq(agents.id, agentId), eq(agents.userId, user.id)))
         .limit(1);
-      if (!agent) {
+      if (!row) {
         throw new HTTPException(404, { message: 'agent not found' });
       }
+      // The rotated-out token never leaves the database — the owner only
+      // needs to know when it stops working.
+      const { previousIngestToken: _previousIngestToken, ...agent } = row;
 
       const since = new Date(Date.now() - RECENT_TX_WINDOW_MS).toISOString();
       const [txCountRow] = await db
@@ -695,6 +710,60 @@ export function createAgentsRouter(
         throw new HTTPException(404, { message: 'agent not found' });
       }
       return c.json({ webhookSecret: updated.webhookSecret });
+    },
+  );
+
+  // B.8 — Rotate the ingest token. The old token moves to
+  // previous_ingest_token and keeps authenticating for an hour so a running
+  // agent survives its redeploy; `?immediate=true` revokes it on the spot.
+  // Rotating again inside the window drops the older token right away —
+  // only one previous token is kept. Already-open CLI streams are not cut.
+  router.post(
+    '/:id/rotate-token',
+    zValidator('param', agentIdParamSchema, (result) => {
+      if (!result.success) {
+        throw new HTTPException(422, { message: 'invalid agent id (expected uuid)' });
+      }
+    }),
+    zValidator('query', rotateTokenQuerySchema, (result) => {
+      if (!result.success) {
+        throw new HTTPException(422, { message: 'immediate must be true or false' });
+      }
+    }),
+    async (c) => {
+      const privyDid = c.get('userId');
+      const { id: agentId } = c.req.valid('param');
+      const immediate = c.req.valid('query').immediate === 'true';
+
+      const user = await ensureUser(db, privyDid);
+
+      // SET right-hand sides read the pre-update row, so the old token is
+      // copied before it is overwritten — one statement, no race with a
+      // concurrent rotation.
+      const [updated] = await db
+        .update(agents)
+        .set(
+          immediate
+            ? {
+                ingestToken: generateIngestToken(),
+                previousIngestToken: null,
+                previousIngestTokenExpiresAt: null,
+              }
+            : {
+                ingestToken: generateIngestToken(),
+                previousIngestToken: sql`${agents.ingestToken}`,
+                previousIngestTokenExpiresAt: sql`now() + make_interval(secs => ${INGEST_TOKEN_GRACE_SECONDS})`,
+              },
+        )
+        .where(and(eq(agents.id, agentId), eq(agents.userId, user.id)))
+        .returning({
+          ingestToken: agents.ingestToken,
+          previousIngestTokenExpiresAt: agents.previousIngestTokenExpiresAt,
+        });
+      if (!updated) {
+        throw new HTTPException(404, { message: 'agent not found' });
+      }
+      return c.json(updated);
     },
   );
 

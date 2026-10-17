@@ -11,7 +11,7 @@ import {
 } from '@/components/ui/dialog';
 import { type RuleFeedbackStats, noiseRate } from '@/lib/alert-feedback';
 import { apiClient } from '@/lib/api-client';
-import { formatPausedUntil } from '@/lib/format-paused';
+import { formatPausedUntil, humanizeMs } from '@/lib/format-paused';
 import { cn } from '@/lib/utils';
 import {
   ALERT_RULE_NAMES,
@@ -37,6 +37,8 @@ interface AgentRow {
   telegramChatId: string | null;
   alertsPausedUntil: string | null;
   ingestToken?: string;
+  /** End of the rotated-out token's grace window (B.8). Detail endpoint only. */
+  previousIngestTokenExpiresAt?: string | null;
   webhookSecret?: string;
   alertRules: AlertRuleThresholds | null;
   recentTxCount24h?: number;
@@ -56,7 +58,6 @@ export function SettingsPage() {
   const [webhookError, setWebhookError] = useState<string | null>(null);
   const [telegramChatIdError, setTelegramChatIdError] = useState<string | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'error'>('idle');
   // Tracks unsaved edits to delivery-channel fields (telegramChatId,
   // webhookUrl). The test-alert endpoint reads from the DB, not the form,
   // so firing it with a dirty form would test stale state. Cleared on save
@@ -261,27 +262,6 @@ export function SettingsPage() {
     mutation.mutate(body);
   }
 
-  async function copyToken() {
-    if (!selected?.ingestToken) return;
-    try {
-      await navigator.clipboard.writeText(selected.ingestToken);
-      setCopyState('copied');
-    } catch {
-      setCopyState('error');
-    }
-    // The matching reset timer lives in the useEffect below so it's torn
-    // down with the component instead of leaking a setState-after-unmount.
-  }
-
-  // Auto-reset copy state after 1.4 s. Effect cleanup cancels the timer if
-  // the user re-clicks (state already 'copied' → effect re-runs) or
-  // unmounts the page mid-flight, sidestepping the unmount warning.
-  useEffect(() => {
-    if (copyState === 'idle') return;
-    const id = window.setTimeout(() => setCopyState('idle'), 1400);
-    return () => window.clearTimeout(id);
-  }, [copyState]);
-
   return (
     <div className="p-7">
       <form key={selectedId} onSubmit={handleSubmit}>
@@ -424,27 +404,11 @@ export function SettingsPage() {
           <div className="flex flex-col gap-4">
             <Card title="Ingest Token" meta="secret · rotate if leaked">
               <div className="px-4 py-4">
-                <FieldLabel>OTLP agent.token</FieldLabel>
-                <div className="flex items-center gap-2 rounded-[5px] border border-line bg-surface-2 px-2.5 py-1.5">
-                  <input
-                    value={selected?.ingestToken ?? ''}
-                    readOnly
-                    className="flex-1 bg-transparent font-mono text-[11.5px] text-fg outline-none"
-                  />
-                  <button
-                    type="button"
-                    onClick={copyToken}
-                    disabled={!selected?.ingestToken}
-                    className="inline-flex items-center gap-1 rounded-sm border border-line px-1.5 py-0.5 font-mono text-[10px] text-fg-2 hover:border-fg-3 hover:text-fg disabled:opacity-50"
-                  >
-                    <Copy className="h-2.5 w-2.5" />
-                    {copyState === 'copied' ? 'copied' : copyState === 'error' ? 'failed' : 'copy'}
-                  </button>
-                </div>
-                <p className="mt-2.5 font-mono text-[11px] text-fg-3">
-                  Set as <span className="text-accent">agent.token</span> resource attribute in your
-                  OTel SDK.
-                </p>
+                <IngestTokenField
+                  selectedId={selectedId}
+                  token={selected?.ingestToken}
+                  previousExpiresAt={selected?.previousIngestTokenExpiresAt ?? null}
+                />
               </div>
             </Card>
 
@@ -670,6 +634,164 @@ function FieldLabel({ children, hint }: { children: React.ReactNode; hint?: stri
       {hint ? (
         <span className="normal-case tracking-normal text-[11px] text-fg-3">{hint}</span>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * B.8 — Ingest token: copy + rotate. Rotation needs a second click that picks
+ * how the old token dies: after a 1h grace window (planned redeploy — the
+ * running agent keeps emitting meanwhile) or right away (leaked token).
+ */
+function IngestTokenField({
+  selectedId,
+  token,
+  previousExpiresAt,
+}: {
+  selectedId: string;
+  token: string | undefined;
+  previousExpiresAt: string | null;
+}) {
+  const queryClient = useQueryClient();
+  const [copied, setCopied] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [now, setNow] = useState(() => new Date());
+
+  // Agent switch → drop a half-finished confirmation.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reset only on agent switch
+  useEffect(() => {
+    setConfirming(false);
+  }, [selectedId]);
+
+  useEffect(() => {
+    if (!copied) return;
+    const id = window.setTimeout(() => setCopied(false), 1400);
+    return () => window.clearTimeout(id);
+  }, [copied]);
+
+  // Tick once a minute while a grace window is open so the countdown moves
+  // and the notice disappears on its own when the old token dies.
+  useEffect(() => {
+    if (!previousExpiresAt) return;
+    const id = window.setInterval(() => setNow(new Date()), 60_000);
+    return () => window.clearInterval(id);
+  }, [previousExpiresAt]);
+
+  const rotateMutation = useMutation({
+    mutationFn: (immediate: boolean) =>
+      apiClient.post<{ ingestToken: string; previousIngestTokenExpiresAt: string | null }>(
+        `/api/agents/${selectedId}/rotate-token${immediate ? '?immediate=true' : ''}`,
+        {},
+      ),
+    onSuccess: (_data, immediate) => {
+      setConfirming(false);
+      setNow(new Date());
+      queryClient.invalidateQueries({ queryKey: ['agent', selectedId] });
+      toast.success(
+        immediate
+          ? 'Token rotated — the old one is revoked.'
+          : 'Token rotated — the old one keeps working for 1h. Redeploy your agent now.',
+      );
+    },
+    onError: (err) => {
+      toast.error(`Failed: ${(err as Error).message}`);
+    },
+  });
+
+  async function copyToken() {
+    if (!token) return;
+    try {
+      await navigator.clipboard.writeText(token);
+      setCopied(true);
+    } catch {
+      toast.error('Copy failed');
+    }
+  }
+
+  const graceMs = previousExpiresAt ? Date.parse(previousExpiresAt) - now.getTime() : 0;
+  const pendingImmediate = rotateMutation.isPending ? rotateMutation.variables : undefined;
+
+  const smallButton = cn(
+    'inline-flex items-center gap-1 rounded-sm border border-line px-1.5 py-0.5',
+    'font-mono text-[10px] text-fg-2 hover:border-fg-3 hover:text-fg disabled:opacity-50',
+  );
+
+  return (
+    <div>
+      <FieldLabel>OTLP agent.token</FieldLabel>
+      <div className="flex items-center gap-2 rounded-[5px] border border-line bg-surface-2 px-2.5 py-1.5">
+        <input
+          value={token ?? ''}
+          readOnly
+          className="min-w-0 flex-1 bg-transparent font-mono text-[11.5px] text-fg outline-none"
+        />
+        <button type="button" onClick={copyToken} disabled={!token} className={smallButton}>
+          <Copy className="h-2.5 w-2.5" />
+          {copied ? 'copied' : 'copy'}
+        </button>
+        {!confirming && (
+          <button
+            type="button"
+            onClick={() => setConfirming(true)}
+            disabled={!selectedId || !token}
+            className={smallButton}
+          >
+            <RefreshCw className="h-2.5 w-2.5" />
+            rotate
+          </button>
+        )}
+      </div>
+      {confirming && (
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => rotateMutation.mutate(false)}
+            disabled={rotateMutation.isPending}
+            className={smallButton}
+          >
+            {pendingImmediate === false ? (
+              <Loader2 className="h-2.5 w-2.5 animate-spin" />
+            ) : (
+              <RefreshCw className="h-2.5 w-2.5" />
+            )}
+            rotate · 1h grace
+          </button>
+          <button
+            type="button"
+            onClick={() => rotateMutation.mutate(true)}
+            disabled={rotateMutation.isPending}
+            className={cn(smallButton, 'border-crit text-crit hover:border-crit hover:text-crit')}
+          >
+            {pendingImmediate === true ? (
+              <Loader2 className="h-2.5 w-2.5 animate-spin" />
+            ) : (
+              <RefreshCw className="h-2.5 w-2.5" />
+            )}
+            revoke now
+          </button>
+          <button type="button" onClick={() => setConfirming(false)} className={smallButton}>
+            cancel
+          </button>
+        </div>
+      )}
+      <p className="mt-2.5 font-mono text-[11px] text-fg-3">
+        {confirming ? (
+          <span className="text-crit">
+            Grace keeps the old token working for 1h while you redeploy. Revoke now if it leaked —
+            the agent stops reporting until it uses the new one.
+          </span>
+        ) : graceMs > 0 ? (
+          <span className="text-warn">
+            Previous token still accepted for {humanizeMs(graceMs)} — redeploy your agent with the
+            new one.
+          </span>
+        ) : (
+          <>
+            Set as <span className="text-accent">agent.token</span> resource attribute in your OTel
+            SDK.
+          </>
+        )}
+      </p>
     </div>
   );
 }

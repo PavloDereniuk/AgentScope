@@ -122,6 +122,16 @@ export const agents = pgTable(
     alertRules: jsonb('alert_rules').notNull().default({}),
     /** Opaque token used by the agent's OTel exporter for /v1/traces. */
     ingestToken: text('ingest_token').notNull(),
+    /**
+     * The token replaced by the last rotation (B.8). Ingest auth still
+     * accepts it while `now() < previous_ingest_token_expires_at`, so a
+     * running agent survives the redeploy onto the new token.
+     */
+    previousIngestToken: text('previous_ingest_token'),
+    previousIngestTokenExpiresAt: timestamp('previous_ingest_token_expires_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
     status: agentStatusEnum('status').notNull().default('stale'),
     /**
      * Notifications gate (Epic 18). Null = active. Non-null = the alerter
@@ -145,6 +155,9 @@ export const agents = pgTable(
     userIdx: index('agents_user_idx').on(t.userId),
     walletIdx: index('agents_wallet_idx').on(t.walletPubkey),
     ingestTokenUnique: uniqueIndex('agents_ingest_token_unique').on(t.ingestToken),
+    previousIngestTokenIdx: index('agents_previous_ingest_token_idx')
+      .on(t.previousIngestToken)
+      .where(sql`${t.previousIngestToken} IS NOT NULL`),
   }),
 );
 

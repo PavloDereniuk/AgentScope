@@ -148,7 +148,7 @@ Base URL: `http://localhost:3000` (dev) / `https://api.agentscopehq.dev` (prod)
 |---|---|---|
 | `POST` | `/v1/traces` | OpenTelemetry OTLP/HTTP JSON receiver |
 
-Auth: the OTel `Resource` must carry `agent.token = <ingest_token>` attribute (not an HTTP header). The receiver validates the token against `agents.ingest_token` in the database.
+Auth: the OTel `Resource` must carry `agent.token = <ingest_token>` attribute (not an HTTP header). The receiver validates the token against `agents.ingest_token` in the database. After a rotation (Settings → Ingest Token → rotate) the previous token is still accepted for 1h, so a running agent keeps reporting while you redeploy it; choose **revoke now** instead if the token leaked.
 
 Request: `ExportTraceServiceRequest` JSON (OTLP spec). Response: `{ partialSuccess: {} }` 200.
 
@@ -166,6 +166,7 @@ All `/api/*` routes require a valid Privy access token. The token is verified by
 | `PATCH` | `/api/agents/:id` | Update agent metadata / alert thresholds |
 | `DELETE` | `/api/agents/:id` | Delete agent and cascade all child records |
 | `POST` | `/api/agents/:id/webhook-secret` | Rotate the webhook signing secret (returns the new `whsec_…`) |
+| `POST` | `/api/agents/:id/rotate-token` | Rotate the ingest token; the old one keeps working for 1h (`?immediate=true` revokes it at once) |
 
 #### Transactions
 

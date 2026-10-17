@@ -34,7 +34,7 @@
  */
 
 import { type Database, agents } from '@agentscope/db';
-import { eq } from 'drizzle-orm';
+import { and, eq, gt, or, sql } from 'drizzle-orm';
 import type { ExportTraceServiceRequest } from './schema';
 
 /** Resource attribute key the agent SDK is expected to set. */
@@ -70,6 +70,11 @@ export interface ResolvedAgent {
  * `ingest_token` index. Returns `null` when no row is found —
  * the caller turns that into 401.
  *
+ * A token replaced by a rotation (B.8) still resolves until its
+ * grace window ends. The expiry is compared with the database clock,
+ * the same clock that stamped it, so api replicas with skewed clocks
+ * agree on when the old token dies.
+ *
  * We deliberately return the minimal pair the persistence layer
  * (task 4.4) will need: `agents.id` (for the FK) and
  * `agents.user_id` (for future per-tenant checks or quotas).
@@ -81,7 +86,15 @@ export async function resolveAgentByToken(
   const rows = await db
     .select({ id: agents.id, userId: agents.userId })
     .from(agents)
-    .where(eq(agents.ingestToken, token))
+    .where(
+      or(
+        eq(agents.ingestToken, token),
+        and(
+          eq(agents.previousIngestToken, token),
+          gt(agents.previousIngestTokenExpiresAt, sql`now()`),
+        ),
+      ),
+    )
     .limit(1);
 
   const row = rows[0];

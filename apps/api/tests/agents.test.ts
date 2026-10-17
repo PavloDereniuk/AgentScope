@@ -1633,3 +1633,158 @@ describe('webhook signing secret (B.3)', () => {
     expect(row?.webhookSecret).toBe(agent.webhookSecret);
   });
 });
+
+describe('ingest token rotation (B.8)', () => {
+  let ctx: TestApp;
+
+  beforeEach(async () => {
+    ctx = await setup();
+  });
+
+  afterEach(async () => {
+    await ctx.testDb.close();
+  });
+
+  async function createAgent() {
+    const res = await ctx.app.request('/api/agents', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: BEARER },
+      body: JSON.stringify({
+        walletPubkey: 'So11111111111111111111111111111111111111112',
+        name: 'Rotator',
+        framework: 'custom',
+        agentType: 'other',
+      }),
+    });
+    if (res.status !== 201) throw new Error(`seed create failed: ${res.status}`);
+    return (await res.json()) as { agent: { id: string; ingestToken: string } };
+  }
+
+  function rotate(id: string, query = '', app = ctx.app) {
+    return app.request(`/api/agents/${id}/rotate-token${query}`, {
+      method: 'POST',
+      headers: { Authorization: BEARER },
+    });
+  }
+
+  /** Status of an L0 ingest call authenticated with `token`. */
+  async function ingestStatus(token: string): Promise<number> {
+    const res = await ctx.app.request('/v1/spans', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        traceId: 'a1b2c3d4e5f6'.padEnd(32, '0'),
+        spanId: nextSpanId(),
+        name: 'agent.decide',
+        startTime: '2026-10-17T12:00:00.000Z',
+        endTime: '2026-10-17T12:00:01.000Z',
+      }),
+    });
+    return res.status;
+  }
+
+  let spanSeq = 0;
+  function nextSpanId(): string {
+    spanSeq += 1;
+    return spanSeq.toString(16).padStart(16, '0');
+  }
+
+  it('issues a new token and keeps the old one working for an hour', async () => {
+    const { agent } = await createAgent();
+    const before = Date.now();
+
+    const res = await rotate(agent.id);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      ingestToken: string;
+      previousIngestTokenExpiresAt: string;
+    };
+    expect(body.ingestToken).toMatch(/^tok_[A-Za-z0-9_-]{32}$/);
+    expect(body.ingestToken).not.toBe(agent.ingestToken);
+    const expiresAt = Date.parse(body.previousIngestTokenExpiresAt);
+    expect(expiresAt - before).toBeGreaterThan(59 * 60 * 1000);
+    expect(expiresAt - before).toBeLessThan(61 * 60 * 1000);
+
+    expect(await ingestStatus(body.ingestToken)).toBe(200);
+    expect(await ingestStatus(agent.ingestToken)).toBe(200);
+  });
+
+  it('rejects the old token once the grace window has passed', async () => {
+    const { agent } = await createAgent();
+    await rotate(agent.id);
+
+    await ctx.testDb.pg.exec(
+      `UPDATE agents SET previous_ingest_token_expires_at = now() - interval '1 second'`,
+    );
+
+    expect(await ingestStatus(agent.ingestToken)).toBe(401);
+  });
+
+  it('revokes the old token on the spot with ?immediate=true', async () => {
+    const { agent } = await createAgent();
+
+    const res = await rotate(agent.id, '?immediate=true');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      ingestToken: string;
+      previousIngestTokenExpiresAt: string | null;
+    };
+    expect(body.previousIngestTokenExpiresAt).toBeNull();
+
+    expect(await ingestStatus(agent.ingestToken)).toBe(401);
+    expect(await ingestStatus(body.ingestToken)).toBe(200);
+  });
+
+  it('keeps only one previous token when rotated twice inside the window', async () => {
+    const { agent } = await createAgent();
+    const first = (await (await rotate(agent.id)).json()) as { ingestToken: string };
+    const second = (await (await rotate(agent.id)).json()) as { ingestToken: string };
+
+    expect(await ingestStatus(agent.ingestToken)).toBe(401);
+    expect(await ingestStatus(first.ingestToken)).toBe(200);
+    expect(await ingestStatus(second.ingestToken)).toBe(200);
+  });
+
+  it('shows the grace expiry on the detail endpoint but never the old token', async () => {
+    const { agent } = await createAgent();
+    const rotated = (await (await rotate(agent.id)).json()) as {
+      ingestToken: string;
+      previousIngestTokenExpiresAt: string;
+    };
+
+    const res = await ctx.app.request(`/api/agents/${agent.id}`, {
+      headers: { Authorization: BEARER },
+    });
+    const body = (await res.json()) as { agent: Record<string, unknown> };
+    expect(body.agent.ingestToken).toBe(rotated.ingestToken);
+    expect(body.agent.previousIngestTokenExpiresAt).toBe(rotated.previousIngestTokenExpiresAt);
+    expect(body.agent).not.toHaveProperty('previousIngestToken');
+    expect(JSON.stringify(body)).not.toContain(agent.ingestToken);
+  });
+
+  it('returns 401 without auth, 422 for bad input, 404 for an unknown id', async () => {
+    const unauth = await ctx.app.request(
+      '/api/agents/11111111-1111-1111-1111-111111111111/rotate-token',
+      { method: 'POST' },
+    );
+    expect(unauth.status).toBe(401);
+    expect((await rotate('not-a-uuid')).status).toBe(422);
+
+    const { agent } = await createAgent();
+    expect((await rotate(agent.id, '?immediate=yes')).status).toBe(422);
+    expect((await rotate('11111111-1111-1111-1111-111111111111')).status).toBe(404);
+  });
+
+  it("returns 404 and leaves the token alone for another user's agent", async () => {
+    const { agent } = await createAgent();
+    const mallory = buildApp({
+      db: ctx.testDb.db,
+      verifier: makeVerifier('did:privy:mallory'),
+      sseBus: createSseBus(),
+      logger: silentLogger,
+    });
+
+    expect((await rotate(agent.id, '', mallory)).status).toBe(404);
+    expect(await ingestStatus(agent.ingestToken)).toBe(200);
+  });
+});
